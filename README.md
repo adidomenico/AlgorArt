@@ -9,7 +9,8 @@ server — holds the funds and enforces the rules: if the goal is met by the dea
 creator can claim the funds; if not, every backer can reclaim their pledge.
 
 > Technical details live in [`docs/`](docs/): contract internals, on-chain state,
-> design decisions, and [the CI plan](docs/ci.md).
+> design decisions, the [frontend design](docs/frontend.md), and
+> [the CI plan](docs/ci.md).
 
 ## The idea
 
@@ -123,10 +124,14 @@ AlgorArt/
 
 ### Phase 2 — Frontend
 
-- [ ] Wallet connect (Pera / Defly) via `use-wallet`
+The full UI plan — pages, data flow, and the exact `create`/`pledge`/`claim`/
+`refund` call patterns — is designed in [`docs/frontend.md`](docs/frontend.md).
+
+- [x] Wallet connect (Pera / Defly) via `use-wallet` (from the AlgoKit starter)
+- [ ] Campaign list & detail — read global state + boxes via indexer
 - [ ] Create campaign form → `create()` ABI call
-- [ ] Campaign list & detail (read via indexer + generated client)
-- [ ] Pledge flow (sign payment + app call), claim, refund buttons
+- [ ] Pledge flow → `pledge()` ABI call (payment + app call in one group)
+- [ ] Claim & refund buttons → `claim()` / `refund()` ABI calls
 - [ ] Unit tests (Vitest) with line coverage ≥ 90% on components & utils
 
 ### Phase 3 — TestNet demo
