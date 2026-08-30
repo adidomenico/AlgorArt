@@ -1,0 +1,28 @@
+name: unit-test
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  unit:
+    name: unit-test (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Frontend unit tests join this matrix in Phase 2, once a `test` /
+        # `test:coverage` script exists there. Offline AVM tests and frontend
+        # unit tests share the same prerequisites: pure Node, no Docker/AlgoKit.
+        project: [contracts]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: projects/${{ matrix.project }}/package-lock.json
+      - run: npm ci
+        working-directory: projects/${{ matrix.project }}
+      - run: npm run test:coverage
+        working-directory: projects/${{ matrix.project }}

@@ -1,0 +1,19 @@
+name: markdown-lint
+
+on:
+  pull_request:
+    paths:
+      - '**/*.md'
+      - '.markdownlint-cli2.jsonc'
+  push:
+    paths:
+      - '**/*.md'
+      - '.markdownlint-cli2.jsonc'
+
+jobs:
+  markdown:
+    name: markdown-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: npx --yes markdownlint-cli2@0.17.2

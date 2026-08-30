@@ -4,9 +4,8 @@ Guidance for AI coding agents (and contributors) working in this repository.
 
 ## What this is
 
-AlgorArt is a non-custodial crowdfunding dApp on Algorand. The v2 implementation is an
-AlgoKit workspace; the old v1 (ASP.NET Core, server-side wallets) lives in the sibling
-`AlgorArt-v1/` folder and is reference-only. This repo covers v2 only.
+AlgorArt is a non-custodial crowdfunding dApp on Algorand, built as an AlgoKit
+workspace: an Algorand TypeScript smart contract plus a React + Vite frontend.
 
 ## Layout
 
@@ -16,7 +15,7 @@ AlgoKit workspace; the old v1 (ASP.NET Core, server-side wallets) lives in the s
   - `smart_contracts/artifacts/` — **generated** (compiled TEAL, ARC-32/56 specs, clients)
 - `projects/frontend/` — React + Vite + TypeScript dApp
 - `docs/` — human-readable technical docs (contract internals, design decisions)
-- `README.md` — the v2 specification (contract design, roadmap, testing strategy)
+- `README.md` — the project specification (contract design, roadmap, testing strategy)
 
 ## Commands
 
@@ -26,6 +25,8 @@ Run from the repo root unless noted.
 algokit project bootstrap all    # install deps for contracts + frontend
 algokit localnet start           # start algod + indexer (Docker)
 
+npx --yes markdownlint-cli2@0.17.2        # markdownlint across all docs (add --fix to autofix)
+
 cd projects/contracts
 npm run build                    # compile contracts + generate typed clients
 npm run check-types              # tsc --noEmit
@@ -34,12 +35,13 @@ npm run format                   # Prettier check (also: npm run format:fix)
 
 cd ../frontend
 npm run dev                      # regenerates app clients then runs Vite
+npm run check-types              # tsc --noEmit
 npm run lint                     # ESLint (+ react/react-hooks plugins)
 npm run format                   # Prettier check
 ```
 
-Or from the repo root: `algokit project run lint` / `algokit project run format`
-applies to every project in the workspace.
+Or from the repo root: `algokit project run lint` / `algokit project run format` /
+`algokit project run check-types` applies to every project in the workspace.
 
 ## Conventions
 
@@ -49,6 +51,10 @@ applies to every project in the workspace.
 - **Lint & format are required.** ESLint (flat config, `typescript-eslint`) and Prettier
   run per project via `npm run lint` / `npm run format`. Keep sources lint- and
   format-clean; configs are shared from the repo-root `.prettierrc.json`.
+- **Markdown is linted too.** Run `npx --yes markdownlint-cli2@0.17.2` (from the repo
+  root) to lint every `*.md` file; add `--fix` to autofix. Rules, globs, and ignores
+  all live in a single `.markdownlint-cli2.jsonc`, shared with the VS Code extension.
+  The version is pinned in the command (no root `package.json` needed).
 - **Never commit secrets.** `.env` files are gitignored; mnemonics/API keys never go in code.
 - **Algorand TypeScript gotchas** (contracts use `@algorandfoundation/algorand-typescript`):
   - `assert` must be imported explicitly — it is not a global.

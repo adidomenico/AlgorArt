@@ -1,0 +1,45 @@
+name: integration-test
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  integration:
+    name: integration-test (localnet)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: projects/contracts/package-lock.json
+
+      - name: Install contract dependencies
+        run: npm ci
+        working-directory: projects/contracts
+
+      - name: Set up Python (for AlgoKit CLI)
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install AlgoKit CLI
+        run: |
+          if ! command -v algokit >/dev/null 2>&1; then
+            pipx install algokit==2.10.2
+          fi
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        shell: bash
+
+      - name: Start LocalNet (algod + indexer)
+        run: algokit localnet start
+
+      - name: Build contracts (compile TEAL + generate clients)
+        run: npm run build
+        working-directory: projects/contracts
+
+      - name: Run LocalNet integration tests
+        run: npm run test:integration
+        working-directory: projects/contracts
