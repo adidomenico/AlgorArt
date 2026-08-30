@@ -6,7 +6,7 @@ on:
 
 jobs:
   unit:
-    name: ${{ matrix.project }}
+    name: test (${{ matrix.project }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
