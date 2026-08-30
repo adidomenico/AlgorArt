@@ -22,8 +22,8 @@ this documents the reasoning behind the split.
 | --- | --- | --- | --- |
 | `lint-format-type-check` — lint, format, type-check | ✅ | — | — |
 | `markdown-lint` — markdownlint | ✅ | — | — |
+| `test` — offline unit tests + coverage | ✅ | — | — |
 | `build` — compile contracts, build frontend | ✅ | ✅ | — |
-| `test` — contract simulator + frontend unit | ✅ | ✅ (compile contracts) | — |
 | localnet integration — deploy + exercise | ✅ | ✅ | ✅ (algod + indexer) |
 
 Key point: **`lint-format-type-check` and `markdown-lint` are pure Node**.
@@ -60,27 +60,32 @@ Compiling the contracts (`algokit compile`) and linking the frontend clients
 enough. This workflow installs Node + AlgoKit, then runs `npm run build` in each
 project. No Docker required — compilation is offline.
 
-## Workflow: test
+## Workflow: test (implemented)
 
 Testing taxonomy — the two parts have *different* shapes:
 
 | Part | Test layers | Why |
 | --- | --- | --- |
-| **Contracts** | Simulator tests (`contract.spec.ts`) only | Contract code compiles to AVM bytecode and only executes inside the AVM. There is no way to unit-test a method in isolation — the simulator *is* the contract's test layer. (Pure helper modules extracted from the contract, if any, could get plain Vitest unit tests.) |
+| **Contracts** | Offline AVM tests (`contract.algo.spec.ts`) only | Contract code compiles to AVM bytecode and only executes inside the AVM. There is no way to unit-test a method in isolation — the offline AVM runtime *is* the contract's test layer. (Pure helper modules extracted from the contract, if any, could get plain Vitest unit tests.) |
 | **Frontend** | Unit (utils) + component (React + Testing Library) + optional E2E | Ordinary TypeScript/React, so the full pyramid applies. |
 
-Note: "spec" in `*.spec.ts` is a **filename convention** (the generator names
-test files `.spec.ts`), not a test *type*. Don't read "spec tests vs unit tests"
-as two contract layers — the simulator suite is the whole pyramid for contracts.
-
-1. **Contract simulator tests** (`contract.spec.ts`) — full behavioral coverage
+1. **Contract offline AVM tests** (`contract.algo.spec.ts`) — full behavioral coverage
    (every method × every branch). Runs in-process under Node; no Docker.
 2. **Frontend unit/component tests** — **Vitest** over components and utils,
    line coverage ≥ 90%.
 
-Both are planned but **not written yet** (Phase 1 tests, Phase 2 frontend).
-Once they exist, the `test` workflow installs Node + AlgoKit, compiles the
-contracts, and runs both suites.
+Implemented at `.github/workflows/test.yml`. A matrix over `[contracts]`
+(frontend joins in Phase 2, once its `test` script exists) that runs
+`npm run test:coverage` — the offline AVM tests plus the V8 coverage gate
+(lines/branches/functions at 100%; see `docs/contracts/testing.md`).
+
+This is **pure Node**: offline tests don't need the AlgoKit CLI, Docker, or a
+compile step, because the `algorand-typescript-testing` transformer runs the
+contract source directly under Node. That's why it's a separate, fast workflow
+rather than being bundled with the heavier build/integration lanes.
+
+The frontend's `test` script does not exist yet — to be added when Phase 2
+tests land, at which point `frontend` joins the matrix.
 
 > The frontend `.algokit.toml` references `npm run test`, but the frontend
 > `package.json` has no `test` script yet — to be added when Phase 2 tests land.
