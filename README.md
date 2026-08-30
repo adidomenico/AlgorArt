@@ -116,10 +116,11 @@ AlgorArt/
 - [x] Toolchain: Node.js, Docker Desktop, AlgoKit CLI
 - [x] README = this spec
 - [x] Local sandbox (algod + indexer in Docker) up and verified
+- [ ] Dev container (`.devcontainer`) + frontend `Dockerfile` so contributors only need Docker Desktop
 
 ### Phase 1 — Smart contract (core)
 - [ ] `campaign/contract.algo.ts`: `create`, `pledge`, `claim`, `refund`
-- [ ] Simulator tests covering: pledge before/after deadline, claim gating, refund gating
+- [ ] Simulator tests: **100% behavioral coverage** — every method × every branch (pledge before/after deadline, claim gating by caller/deadline/goal, refund gating by deadline/outcome/backer)
 - [ ] Deploy to localnet, exercise the flow with `goal` / AlgoKit
 
 ### Phase 2 — Frontend
@@ -127,6 +128,7 @@ AlgorArt/
 - [ ] Create campaign form → `create()` ABI call
 - [ ] Campaign list & detail (read via indexer + generated client)
 - [ ] Pledge flow (sign payment + app call), claim, refund buttons
+- [ ] Unit tests (Vitest) with line coverage ≥ 90% on components & utils
 
 ### Phase 3 — TestNet demo
 - [ ] Deploy contracts to **TestNet**
@@ -136,19 +138,44 @@ AlgorArt/
 ### Phase 4 — Polish (nice-to-have)
 - [ ] Campaign images/metadata on **IPFS** (or Algorand's metadata standard)
 - [ ] Cancel-before-deadline option for creators
-- [ ] CI: contract tests + frontend build
+- [ ] CI: contract simulator tests + frontend build + **coverage gate** + Docker image build
 - [ ] ARC-32/56 spec published for the contract
 
 ## Getting started
 
-> Prerequisites: Node.js LTS, Docker Desktop, and AlgoKit CLI.
+> Prerequisites: Node.js LTS, Docker Desktop, and AlgoKit CLI. (Or just Docker Desktop —
+> see [Running in Docker](#running-in-docker).)
 
 ```bash
 algokit project bootstrap all    # install deps for contracts/ + frontend/
 algokit localnet start           # start algod + indexer in Docker
 algokit project run build        # compile contracts + generate clients
-algokit project test             # run contract simulator tests
+algokit project run test         # run contract simulator tests (once defined)
 ```
+
+## Testing strategy
+
+The goal is near-total coverage, measured two ways:
+
+- **Smart contract — 100% behavioral coverage.** AVM bytecode has no mature line-coverage
+  tool, so coverage is defined by the test matrix: every method × every branch (caller
+  checks, deadline checks, goal checks, re-pledge). Each `[success]` / `[failure]` case
+  gets an explicit simulator test in `contract.spec.ts`.
+- **Frontend — line coverage.** Vitest + `@vitest/coverage-v8` over components and utils
+  (`ellipseAddress`, `getAlgoClientConfigs`, feature components). Target ≥ 90%, enforced
+  as a CI gate.
+
+## Running in Docker
+
+Contributors shouldn't need to install the whole toolchain. Two complementary pieces:
+
+1. **Dev container** — `algokit generate devcontainer` produces a `.devcontainer/` that
+   pre-installs AlgoKit + Node and launches the sandbox. Anyone with VS Code + Docker
+   Desktop can open the repo and be ready immediately.
+2. **Frontend image** — a multi-stage `Dockerfile` (build with Node, serve with nginx)
+   plus `docker-compose.yml` to run the UI alongside the algod/indexer sandbox.
+
+The localnet is already fully containerized via `algokit localnet start`.
 
 ## v1 vs v2
 
