@@ -140,9 +140,16 @@ AlgorArt/
 
 - [ ] Campaign images/metadata on **IPFS** (or Algorand's metadata standard)
 - [ ] Cancel-before-deadline option for creators
-- [ ] CI: contract simulator tests + frontend build + **coverage gate** + lint/format/type-check gate + frontend image build
+- [ ] CI: contract simulator tests + frontend build + **coverage gate** + lint/format/type-check gate + markdown lint (`npx --yes markdownlint-cli2@0.17.2`) + frontend image build
 - [ ] Package the frontend as a container image for portable hosting
 - [ ] ARC-32/56 spec published for the contract
+
+> **Root `package.json`?** Intentionally absent for now. Markdown linting runs via
+> `npx --yes markdownlint-cli2@0.17.2` (version pinned in the command), and the two
+> projects manage their own dependencies. If a future need arises for repo-level
+> scripts (e.g. a `check-all` convenience wrapper), add a root `package.json` then —
+> the markdown lint command can move into it as an `npm run lint:md` script without
+> changing the config.
 
 ## Getting started
 
@@ -166,6 +173,8 @@ algokit project run format       # Prettier check across all projects
 algokit project run check-types  # type-check across all projects
 algokit project run test         # run contract simulator tests (once defined)
 
+npx --yes markdownlint-cli2@0.17.2        # markdownlint across all docs (add --fix to autofix)
+
 cd projects/frontend
 npm run dev                      # frontend on http://localhost:5173
 ```
@@ -180,6 +189,10 @@ Each project exposes the same three gates, runnable individually or via
 | `lint` | ESLint (bugs, unused vars, import style) | `npm run lint` | `npm run lint` |
 | `format` | Prettier (style: quotes, spacing, line width) | `npm run format` | `npm run format` |
 | `check-types` | `tsc --noEmit` (type safety) | `npm run check-types` | `npm run check-types` |
+
+Markdown is linted separately from the repo root with
+`npx --yes markdownlint-cli2@0.17.2`; its rules live in `.markdownlint-cli2.jsonc`.
+The version is pinned in the command, so no root `package.json` is needed.
 
 ## Testing strategy
 

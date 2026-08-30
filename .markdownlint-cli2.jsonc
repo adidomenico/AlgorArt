@@ -1,0 +1,20 @@
+{
+  // Single source of truth for markdownlint — read by BOTH the VS Code
+  // extension (davidanson.vscode-markdownlint, which is powered by the
+  // markdownlint-cli2 engine) and the markdownlint-cli2 CLI.
+  "globs": ["**/*.md"],
+  "ignores": [
+    "node_modules",
+    "projects/*/node_modules",
+    "projects/*/dist",
+    "projects/contracts/smart_contracts/artifacts",
+    ".git"
+  ],
+  "config": {
+    "default": true,
+    "MD013": false, // line length is handled by Prettier (printWidth: 140)
+    "MD024": false, // allow repeated headings (e.g. "Global state" / "Boxes" tables)
+    "MD033": false, // allow inline HTML (used sparingly in docs)
+    "MD041": false // first line need not be a top-level heading (AGENTS.md etc.)
+  }
+}

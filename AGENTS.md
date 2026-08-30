@@ -26,6 +26,8 @@ Run from the repo root unless noted.
 algokit project bootstrap all    # install deps for contracts + frontend
 algokit localnet start           # start algod + indexer (Docker)
 
+npx --yes markdownlint-cli2@0.17.2        # markdownlint across all docs (add --fix to autofix)
+
 cd projects/contracts
 npm run build                    # compile contracts + generate typed clients
 npm run check-types              # tsc --noEmit
@@ -49,6 +51,10 @@ applies to every project in the workspace.
 - **Lint & format are required.** ESLint (flat config, `typescript-eslint`) and Prettier
   run per project via `npm run lint` / `npm run format`. Keep sources lint- and
   format-clean; configs are shared from the repo-root `.prettierrc.json`.
+- **Markdown is linted too.** Run `npx --yes markdownlint-cli2@0.17.2` (from the repo
+  root) to lint every `*.md` file; add `--fix` to autofix. Rules, globs, and ignores
+  all live in a single `.markdownlint-cli2.jsonc`, shared with the VS Code extension.
+  The version is pinned in the command (no root `package.json` needed).
 - **Never commit secrets.** `.env` files are gitignored; mnemonics/API keys never go in code.
 - **Algorand TypeScript gotchas** (contracts use `@algorandfoundation/algorand-typescript`):
   - `assert` must be imported explicitly — it is not a global.
