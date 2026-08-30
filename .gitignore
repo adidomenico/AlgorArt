@@ -20,6 +20,10 @@ artifacts/
 debug_traces/
 *.source_map
 
+# Generated application clients (linked from contract artifacts)
+projects/frontend/src/contracts/*
+!projects/frontend/src/contracts/README.md
+
 # Environment / secrets
 .env
 .env.*
