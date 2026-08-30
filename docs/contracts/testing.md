@@ -1,7 +1,7 @@
 # Contract testing
 
-How the `Campaign` contract is tested, and the plan for getting to full behavioral
-coverage.
+How the `Campaign` contract is tested: the full offline behavioral matrix plus
+LocalNet integration.
 
 ## Approach
 
@@ -10,8 +10,9 @@ Two complementary layers:
 1. **Offline AVM unit tests** (`algorand-typescript-testing` + Vitest) — the main
    behavioral matrix. Runs in-process, no network, deterministic and fast. This is
    where "every method × every branch" is proven.
-2. **LocalNet integration** (Phase 1 later step) — deploy with AlgoKit, exercise the
-   flow through real algod. Proves the compiled TEAL behaves as the unit tests expect.
+2. **LocalNet integration** (`contract.integration.test.ts`) — deploy the compiled
+   TEAL to a live algod and exercise the flow end-to-end. Proves the compiled
+   bytecode behaves as the unit tests expect.
 
 > The offline tests are not a substitute for the on-chain run — they're the fast
 > feedback loop. Both are required before Phase 1 is "done".
@@ -31,6 +32,13 @@ Config lives in:
 
 Run with `npm run test` (see `package.json`).
 
+Commands:
+
+- `npm run test` — offline AVM unit tests only.
+- `npm run test:integration` — LocalNet integration tests (requires
+  `algokit localnet start` + `npm run build`).
+- `npm run test:all` — both.
+
 ## Test file naming (important)
 
 The transformer only processes files whose name ends in `.algo.ts`, `.algo.spec.ts`
@@ -38,6 +46,23 @@ or `.algo.test.ts`. The contract (`contract.algo.ts`) is transformed; **the test
 must also be transformed**, so it must be named `contract.algo.spec.ts` (not plain
 `.spec.ts`). Otherwise contract creation fails with "Cannot create a contract for
 class as it does not extend Contract or BaseContract".
+
+## LocalNet integration notes
+
+- Integration tests live in `contract.integration.test.ts` — a **plain `.test.ts`**
+  file, so the puya transformer skips it (no AVM emulation; it talks to real algod).
+- Uses `algorandFixture()` to fund throwaway accounts from the LocalNet dispenser.
+- Loads `Campaign.arc56.json` at runtime via `fs.readFileSync` with the generic
+  `AppFactory` — avoids statically importing the gitignored `CampaignClient.ts`,
+  which would break `tsc --noEmit` in CI (artifacts aren't checked in).
+- LocalNet algod runs in **dev mode**: block timestamp = previous tip timestamp +
+  offset. `advanceTime(n)` sets the offset, produces any transaction (a self-payment
+  "time bump"), then resets the offset in a `finally`.
+- `claim`/`refund` issue an inner payment, so they need `extraFee: (1000).microAlgo()`.
+- Box references for `pledge`/`refund` are auto-populated (`populateAppCallResources`
+  defaults to true).
+- Do **not** pass `updatable`/`deletable` to `factory.send.create` — the contract TEAL
+  has no deploy-time templates for them.
 
 ## API cheat sheet (learned the hard way)
 
@@ -91,7 +116,7 @@ class as it does not extend Contract or BaseContract".
       branches (double-refund, multi-backer).
 - [x] **M3 — Full matrix.** Added the `create`-once branch; every method × every
       branch is now covered (see the matrix below).
-- [ ] **M4 — LocalNet integration.** Deploy to the sandbox, exercise
+- [x] **M4 — LocalNet integration.** Deploy to the sandbox, exercise
       create → pledge → claim and → refund end-to-end.
 
 ## Coverage matrix (every method × every branch)

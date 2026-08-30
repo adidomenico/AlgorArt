@@ -119,7 +119,7 @@ AlgorArt/
 
 - [x] `campaign/contract.algo.ts`: `create`, `pledge`, `claim`, `refund`
 - [x] Contract tests: **100% behavioral coverage** — every method × every branch (pledge before/after deadline, claim gating by caller/deadline/goal/double-claim, refund gating by deadline/outcome/backer/double-refund). Offline AVM tests in `contract.algo.spec.ts`; matrix in [`docs/contracts/testing.md`](docs/contracts/testing.md).
-- [ ] Deploy to localnet, exercise the flow with `goal` / AlgoKit
+- [x] Deploy to localnet, exercise the flow (create → pledge → claim, and → refund) via integration tests in `contract.integration.test.ts`
 
 ### Phase 2 — Frontend
 
@@ -195,6 +195,7 @@ Each project exposes the same three gates, runnable individually or via
 | `format` | Prettier (style: quotes, spacing, line width) | `npm run format` | `npm run format` |
 | `check-types` | `tsc --noEmit` (type safety) | `npm run check-types` | `npm run check-types` |
 | `test` | Offline AVM unit tests (Vitest) | `npm run test` | `npm run test` |
+| `test-integration` | LocalNet integration tests (Vitest) | `npm run test:integration` | — |
 
 Markdown is linted separately from the repo root with
 `npx --yes markdownlint-cli2@0.17.2`; its rules live in `.markdownlint-cli2.jsonc`.
@@ -208,7 +209,9 @@ The goal is near-total coverage, measured two ways:
   tool, so coverage is defined by the test matrix: every method × every branch (caller
   checks, deadline checks, goal checks, re-pledge). Each `[success]` / `[failure]` case
   gets an explicit offline AVM test in `contract.algo.spec.ts` (via
-  `@algorandfoundation/algorand-typescript-testing` + Vitest).
+  `@algorandfoundation/algorand-typescript-testing` + Vitest), plus a LocalNet
+  integration test in `contract.integration.test.ts` that exercises the compiled TEAL
+  end-to-end.
 - **Frontend — line coverage.** Vitest + `@vitest/coverage-v8` over components and utils
   (`ellipseAddress`, `getAlgoClientConfigs`, feature components). Target ≥ 90%, enforced
   as a CI gate.

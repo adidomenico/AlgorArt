@@ -96,5 +96,8 @@ A full behavioral matrix lives in `contract.algo.spec.ts` — every method × ev
 branch (caller checks, deadline checks, goal checks, re-pledge, double-claim,
 double-refund). Tests run offline via `algorand-typescript-testing` + Vitest.
 
+A LocalNet integration suite in `contract.integration.test.ts` deploys the compiled
+TEAL and exercises the full lifecycle (create → pledge → claim, and → refund).
+
 See [`testing.md`](testing.md) for the tooling setup, API cheat sheet, coverage
-matrix, and the incremental roadmap toward 100% behavioral coverage.
+matrix, and integration notes.
