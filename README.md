@@ -118,7 +118,7 @@ AlgorArt/
 ### Phase 1 — Smart contract (core)
 
 - [x] `campaign/contract.algo.ts`: `create`, `pledge`, `claim`, `refund`
-- [ ] Simulator tests: **100% behavioral coverage** — every method × every branch (pledge before/after deadline, claim gating by caller/deadline/goal, refund gating by deadline/outcome/backer). **In progress** — the offline AVM test harness is in place and the core branches are covered; see [`docs/contracts/testing.md`](docs/contracts/testing.md) for the matrix.
+- [x] Contract tests: **100% behavioral coverage** — every method × every branch (pledge before/after deadline, claim gating by caller/deadline/goal/double-claim, refund gating by deadline/outcome/backer/double-refund). Offline AVM tests in `contract.algo.spec.ts`; matrix in [`docs/contracts/testing.md`](docs/contracts/testing.md).
 - [ ] Deploy to localnet, exercise the flow with `goal` / AlgoKit
 
 ### Phase 2 — Frontend

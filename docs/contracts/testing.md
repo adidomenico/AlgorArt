@@ -87,9 +87,10 @@ class as it does not extend Contract or BaseContract".
 - [x] **M1 — Create + pledge.** `create` success + guard failures; `pledge` success,
       re-pledge accumulation, and every guard failure. (Also covered `claim` and
       `refund` happy paths + core guards while proving the harness.)
-- [ ] **M2 — Settlement.** Remaining `claim` branches (double-claim) and `refund`
-      branches (double-refund, multi-backer). See the matrix below.
-- [ ] **M3 — Full matrix.** Sweep any remaining branches; check off the full matrix.
+- [x] **M2 — Settlement.** Remaining `claim` branch (double-claim) and `refund`
+      branches (double-refund, multi-backer).
+- [x] **M3 — Full matrix.** Added the `create`-once branch; every method × every
+      branch is now covered (see the matrix below).
 - [ ] **M4 — LocalNet integration.** Deploy to the sandbox, exercise
       create → pledge → claim and → refund end-to-end.
 
@@ -100,6 +101,7 @@ class as it does not extend Contract or BaseContract".
 | `create` | success | ✅ |
 | `create` | `goal == 0` | ✅ |
 | `create` | `deadline <= latestTimestamp` | ✅ |
+| `create` | called again (not app-create) | ✅ |
 | `pledge` | success (first pledge) | ✅ |
 | `pledge` | re-pledge accumulates | ✅ |
 | `pledge` | `amount == 0` | ✅ |
@@ -110,10 +112,10 @@ class as it does not extend Contract or BaseContract".
 | `claim` | non-creator | ✅ |
 | `claim` | before deadline | ✅ |
 | `claim` | `raised < goal` | ✅ |
-| `claim` | double claim (`status != Open`) | ⬜ |
+| `claim` | double claim (`status != Open`) | ✅ |
 | `refund` | success | ✅ |
 | `refund` | before deadline | ✅ |
 | `refund` | `raised >= goal` | ✅ |
 | `refund` | non-backer (no box) | ✅ |
-| `refund` | double refund (box deleted) | ⬜ |
-| `refund` | second backer after first (status already `Failed`) | ⬜ |
+| `refund` | double refund (box deleted) | ✅ |
+| `refund` | second backer after first (status already `Failed`) | ✅ |

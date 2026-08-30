@@ -56,6 +56,12 @@ describe('Campaign', () => {
       // latestTimestamp is pinned to CREATION_TIME, so a deadline equal to it is not in the future.
       expect(() => contract.create(GOAL, CREATION_TIME)).toThrowError('deadline must be in the future')
     })
+
+    test('can only be called once, at app creation', () => {
+      const contract = createCampaign()
+      // `onCreate: 'require'` means create only runs in the app-create transaction.
+      expect(() => contract.create(GOAL, DEADLINE)).toThrowError('method can only be called while creating')
+    })
   })
 
   describe('pledge', () => {
@@ -172,6 +178,19 @@ describe('Campaign', () => {
       ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
       expect(() => contract.claim()).toThrowError('goal not reached')
     })
+
+    test('rejects a second claim after funds are claimed', () => {
+      const contract = createCampaign()
+      const appAddress = ctx.ledger.getApplicationForContract(contract).address
+
+      contract.pledge(ctx.any.txn.payment({ sender: ctx.defaultSender, receiver: appAddress, amount: GOAL }))
+      ctx.ledger.patchAccountData(appAddress, { account: { balance: GOAL + MIN_BALANCE } })
+
+      ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
+      contract.claim()
+
+      expect(() => contract.claim()).toThrowError('already claimed')
+    })
   })
 
   describe('refund', () => {
@@ -213,6 +232,49 @@ describe('Campaign', () => {
       const contract = createCampaign()
       ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
       expect(() => contract.refund()).toThrowError('nothing to refund')
+    })
+
+    test('rejects a second refund from the same backer', () => {
+      const contract = createCampaign()
+      const backer = ctx.defaultSender
+      const appAddress = ctx.ledger.getApplicationForContract(contract).address
+
+      contract.pledge(ctx.any.txn.payment({ sender: backer, receiver: appAddress, amount: 100_000 }))
+      ctx.ledger.patchAccountData(appAddress, { account: { balance: 100_000 + MIN_BALANCE } })
+
+      ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
+      contract.refund()
+
+      expect(() => contract.refund()).toThrowError('nothing to refund')
+    })
+
+    test('lets each backer refund their own pledge after the first refund', () => {
+      const contract = createCampaign()
+      const backerA = ctx.defaultSender
+      const backerB = ctx.any.account()
+      const appAddress = ctx.ledger.getApplicationForContract(contract).address
+
+      contract.pledge(ctx.any.txn.payment({ sender: backerA, receiver: appAddress, amount: 60_000 }))
+      ctx.txn
+        .createScope([ctx.any.txn.applicationCall({ appId: contract, sender: backerB })])
+        .execute(() => contract.pledge(ctx.any.txn.payment({ sender: backerB, receiver: appAddress, amount: 40_000 })))
+
+      ctx.ledger.patchAccountData(appAddress, { account: { balance: 100_000 + MIN_BALANCE } })
+      ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
+
+      // First backer materialises the Failed status.
+      contract.refund()
+      expect(contract.status.value).toEqual(1)
+
+      // Second backer can still reclaim their own pledge.
+      ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: contract, sender: backerB })]).execute(() => contract.refund())
+
+      expect(contract.pledges(backerA).exists).toEqual(false)
+      expect(contract.pledges(backerB).exists).toEqual(false)
+
+      const payout = ctx.txn.lastGroup.lastItxnGroup().getPaymentInnerTxn()
+      expect(payout.receiver).toEqual(backerB)
+      expect(payout.amount).toEqual(40_000)
     })
   })
 })
