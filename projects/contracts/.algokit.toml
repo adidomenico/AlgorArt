@@ -44,6 +44,9 @@ check-types = { commands = [
 test = { commands = [
   'npm run test',
 ], description = 'Run contract unit tests (offline AVM)' }
+test-coverage = { commands = [
+  'npm run test:coverage',
+], description = 'Run contract unit tests with coverage (fails below thresholds)' }
 test-integration = { commands = [
   'npm run test:integration',
 ], description = 'Run contract integration tests against LocalNet' }

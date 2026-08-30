@@ -38,6 +38,24 @@ Commands:
 - `npm run test:integration` — LocalNet integration tests (requires
   `algokit localnet start` + `npm run build`).
 - `npm run test:all` — both.
+- `npm run test:coverage` — offline tests with coverage; fails below the
+  configured thresholds (see below).
+
+## Coverage
+
+Coverage uses Vitest's built-in V8 provider (`@vitest/coverage-v8`). It measures
+the contract source (`smart_contracts/**/*.algo.ts`) and excludes tests and
+generated artifacts.
+
+The **meaningful** metrics are lines, branches, and functions — all gated at
+100% in `vitest.config.mts`. Statements are intentionally left un-thresholded:
+the `@abimethod` decorator wraps each method signature in a statement V8 never
+marks as executed, so statement coverage tops out at ~93% even when every real
+line is covered.
+
+Run it with `npm run test:coverage`. The thresholds live in
+`vitest.config.mts` and are ready to be enforced as a CI gate when the test
+workflow is added.
 
 ## Test file naming (important)
 
