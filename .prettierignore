@@ -1,8 +1,0 @@
-node_modules/
-dist/
-build/
-coverage/
-projects/*/node_modules/
-projects/contracts/smart_contracts/artifacts/
-projects/frontend/src/contracts/
-package-lock.json
