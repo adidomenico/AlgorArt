@@ -1,12 +1,10 @@
 // src/components/Home.tsx
 import { useWallet } from '@txnlab/use-wallet-react'
-import React, { useState } from 'react'
+import { useState } from 'react'
 import ConnectWallet from './components/ConnectWallet'
 import Transact from './components/Transact'
 
-interface HomeProps {}
-
-const Home: React.FC<HomeProps> = () => {
+const Home = () => {
   const [openWalletModal, setOpenWalletModal] = useState<boolean>(false)
   const [openDemoModal, setOpenDemoModal] = useState<boolean>(false)
   const { activeAddress } = useWallet()
@@ -35,6 +33,7 @@ const Home: React.FC<HomeProps> = () => {
               data-test-id="getting-started"
               className="btn btn-primary m-2"
               target="_blank"
+              rel="noreferrer"
               href="https://github.com/algorandfoundation/algokit-cli"
             >
               Getting started

@@ -1,4 +1,4 @@
-import { AlgoClientConfig } from '@algorandfoundation/algokit-utils/types/network-client'
+import type { AlgoClientConfig } from '@algorandfoundation/algokit-utils/types/network-client'
 import type { TokenHeader } from 'algosdk/dist/types/client/urlTokenBaseHTTPClient'
 
 export interface AlgoViteClientConfig extends AlgoClientConfig {

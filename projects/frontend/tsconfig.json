@@ -22,14 +22,7 @@
     "jsx": "react-jsx",
     "outDir": "./dist/"
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
-    "vite.config.js",
-    "src/utils/",
-    "src/utils/",
-    "src/main.tsx",
-  ],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.js", "src/utils/", "src/utils/", "src/main.tsx"],
   "references": [
     {
       "path": "./tsconfig.node.json"

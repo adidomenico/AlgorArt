@@ -1,7 +1,3 @@
 {
-  "recommendations": [
-    "EditorConfig.EditorConfig",
-    "dotenv.dotenv-vscode",
-    ]
+  "recommendations": ["EditorConfig.EditorConfig", "dotenv.dotenv-vscode"]
 }
-

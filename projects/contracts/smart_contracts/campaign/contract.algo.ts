@@ -1,4 +1,5 @@
-import { Contract, abimethod, assert, GlobalState, BoxMap, Global, Txn, gtxn, itxn, Account, uint64 } from '@algorandfoundation/algorand-typescript'
+import type { gtxn, Account, uint64 } from '@algorandfoundation/algorand-typescript'
+import { Contract, abimethod, assert, GlobalState, BoxMap, Global, Txn, itxn } from '@algorandfoundation/algorand-typescript'
 
 /**
  * Campaign — a non-custodial crowdfunding escrow.

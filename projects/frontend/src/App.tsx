@@ -1,4 +1,5 @@
-import { SupportedWallet, WalletId, WalletManager, WalletProvider } from '@txnlab/use-wallet-react'
+import type { SupportedWallet } from '@txnlab/use-wallet-react'
+import { WalletId, WalletManager, WalletProvider } from '@txnlab/use-wallet-react'
 import { SnackbarProvider } from 'notistack'
 import Home from './Home'
 import { getAlgodConfigFromViteEnvironment, getKmdConfigFromViteEnvironment } from './utils/network/getAlgoClientConfigs'

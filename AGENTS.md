@@ -29,16 +29,26 @@ algokit localnet start           # start algod + indexer (Docker)
 cd projects/contracts
 npm run build                    # compile contracts + generate typed clients
 npm run check-types              # tsc --noEmit
+npm run lint                     # ESLint (also: npm run lint:fix)
+npm run format                   # Prettier check (also: npm run format:fix)
 
 cd ../frontend
 npm run dev                      # regenerates app clients then runs Vite
+npm run lint                     # ESLint (+ react/react-hooks plugins)
+npm run format                   # Prettier check
 ```
+
+Or from the repo root: `algokit project run lint` / `algokit project run format`
+applies to every project in the workspace.
 
 ## Conventions
 
 - **Generated files are gitignored.** `smart_contracts/artifacts/` (compiled TEAL, specs,
   `*Client.ts`) and the frontend's linked clients are build outputs — never edit or commit
   them. Rebuild instead.
+- **Lint & format are required.** ESLint (flat config, `typescript-eslint`) and Prettier
+  run per project via `npm run lint` / `npm run format`. Keep sources lint- and
+  format-clean; configs are shared from the repo-root `.prettierrc.json`.
 - **Never commit secrets.** `.env` files are gitignored; mnemonics/API keys never go in code.
 - **Algorand TypeScript gotchas** (contracts use `@algorandfoundation/algorand-typescript`):
   - `assert` must be imported explicitly — it is not a global.

@@ -39,13 +39,11 @@ async function getDeployers() {
 }
 
 // execute all the deployers
-(async () => {
+;(async () => {
   const contractName = process.argv.length > 2 ? process.argv[2] : undefined
   const contractDeployers = await getDeployers()
-  
-  const filteredDeployers = contractName
-    ? contractDeployers.filter(deployer => deployer.name === contractName)
-    : contractDeployers
+
+  const filteredDeployers = contractName ? contractDeployers.filter((deployer) => deployer.name === contractName) : contractDeployers
 
   if (contractName && filteredDeployers.length === 0) {
     console.warn(`No deployer found for contract name: ${contractName}`)

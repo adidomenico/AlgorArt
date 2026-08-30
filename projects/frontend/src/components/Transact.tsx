@@ -38,7 +38,7 @@ const Transact = ({ openModal, setModalState }: TransactInterface) => {
       })
       enqueueSnackbar(`Transaction sent: ${result.txIds[0]}`, { variant: 'success' })
       setReceiverAddress('')
-    } catch (e) {
+    } catch {
       enqueueSnackbar('Failed to send transaction', { variant: 'error' })
     }
 
@@ -46,7 +46,11 @@ const Transact = ({ openModal, setModalState }: TransactInterface) => {
   }
 
   return (
-    <dialog id="transact_modal" className={`modal ${openModal ? 'modal-open' : ''} bg-slate-200`}style={{ display: openModal ? 'block' : 'none' }}>
+    <dialog
+      id="transact_modal"
+      className={`modal ${openModal ? 'modal-open' : ''} bg-slate-200`}
+      style={{ display: openModal ? 'block' : 'none' }}
+    >
       <form method="dialog" className="modal-box">
         <h3 className="font-bold text-lg">Send payment transaction</h3>
         <br />

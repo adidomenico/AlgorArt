@@ -1,4 +1,4 @@
-import { AlgoViteClientConfig, AlgoViteKMDConfig } from '../../interfaces/network'
+import type { AlgoViteClientConfig, AlgoViteKMDConfig } from '../../interfaces/network'
 
 export function getAlgodConfigFromViteEnvironment(): AlgoViteClientConfig {
   if (!import.meta.env.VITE_ALGOD_SERVER) {
