@@ -1,4 +1,4 @@
-name: test
+name: unit-test
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
 
 jobs:
   unit:
-    name: test (${{ matrix.project }})
+    name: unit-test (${{ matrix.project }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

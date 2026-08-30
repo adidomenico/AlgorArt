@@ -1,4 +1,4 @@
-name: localnet
+name: integration-test
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
 
 jobs:
   integration:
-    name: localnet integration
+    name: integration-test (localnet)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

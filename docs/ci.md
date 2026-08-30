@@ -22,9 +22,9 @@ this documents the reasoning behind the split.
 | --- | --- | --- | --- |
 | `lint-format-type-check` — lint, format, type-check | ✅ | — | — |
 | `markdown-lint` — markdownlint | ✅ | — | — |
-| `test` — offline unit tests + coverage | ✅ | — | — |
+| `unit-test` — offline unit tests + coverage | ✅ | — | — |
 | `build` — compile contracts, build frontend | ✅ | ✅ | — |
-| `localnet` — deploy + exercise integration tests | ✅ | ✅ | ✅ (algod + indexer) |
+| `integration-test` — deploy + exercise on LocalNet | ✅ | ✅ | ✅ (algod + indexer) |
 
 Key point: **`lint-format-type-check` and `markdown-lint` are pure Node**.
 `eslint`, `prettier`, `tsc`, and `markdownlint-cli2` need nothing else — no
@@ -60,7 +60,7 @@ Compiling the contracts (`algokit compile`) and linking the frontend clients
 enough. This workflow installs Node + AlgoKit, then runs `npm run build` in each
 project. No Docker required — compilation is offline.
 
-## Workflow: test (implemented)
+## Workflow: unit-test (implemented)
 
 Testing taxonomy — the two parts have *different* shapes:
 
@@ -74,7 +74,7 @@ Testing taxonomy — the two parts have *different* shapes:
 2. **Frontend unit/component tests** — **Vitest** over components and utils,
    line coverage ≥ 90%.
 
-Implemented at `.github/workflows/test.yml`. A matrix over `[contracts]`
+Implemented at `.github/workflows/unit-test.yml`. A matrix over `[contracts]`
 (frontend joins in Phase 2, once its `test` script exists) that runs
 `npm run test:coverage` — the offline AVM tests plus the V8 coverage gate
 (lines/branches/functions at 100%; see `docs/contracts/testing.md`).
@@ -93,7 +93,7 @@ tests land, at which point `frontend` joins the matrix.
 ## Caching — avoid redoing work every run
 
 No custom Docker image is built or pulled for `lint-format-type-check`,
-`markdown-lint`, `build`, or `test`. Tooling is installed on the runner and
+`markdown-lint`, `build`, or `unit-test`. Tooling is installed on the runner and
 **cached**, which is simpler than maintaining a CI image:
 
 - **Node** — `actions/setup-node@v7` with `cache: npm` and
@@ -112,18 +112,19 @@ install-on-runner + cache is the right default.
 
 ## Localnet integration (implemented)
 
-Implemented at `.github/workflows/localnet.yml`. This is the one lane that
-needs the full stack: **Docker** (algod + indexer via `algokit localnet start`),
-the **AlgoKit CLI**, and a **build** step (the integration tests read the
-gitignored `Campaign.arc56.json` artifact).
+Implemented at `.github/workflows/integration-test.yml`. This is the one lane
+that needs the full stack: **Docker** (algod + indexer via `algokit localnet
+start`), the **AlgoKit CLI**, and a **build** step (the integration tests read
+the gitignored `Campaign.arc56.json` artifact).
 
 Steps:
 
-1. Node + AlgoKit CLI (pipx, cached by version).
+1. Node + AlgoKit CLI (pipx, installed fresh).
 2. `algokit localnet start` — pulls the prebuilt algod/indexer sandbox images.
 3. `npm run build` — compile the contracts.
 4. `npm run test:integration` — deploy and exercise the full lifecycle.
 
-This is intentionally a **separate workflow** from `test`: it's slower (~2–3 min
-for the containers) and flakier than the pure-Node lane, so it shouldn't block
-ordinary fast feedback. Its status check is named `localnet integration`.
+This is intentionally a **separate workflow** from `unit-test`: it's slower
+(~2–3 min for the containers) and flakier than the pure-Node lane, so it
+shouldn't block ordinary fast feedback. Its status check is named
+`integration-test (localnet)`.

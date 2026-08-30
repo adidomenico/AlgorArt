@@ -141,7 +141,7 @@ AlgorArt/
 - [ ] Campaign images/metadata on **IPFS** (or Algorand's metadata standard)
 - [ ] Cancel-before-deadline option for creators
 - [ ] CI: contract simulator tests + frontend build + **coverage gate** + lint/format/type-check gate + markdown lint + frontend image build
-  - *In progress*: the pure-Node `test` workflow (contract offline tests + coverage gate) and the `localnet` integration workflow are done; frontend build/coverage and image build remain.
+  - *In progress*: the pure-Node `unit-test` workflow (contract offline tests + coverage gate) and the `integration-test` workflow (LocalNet) are done; frontend build/coverage and image build remain.
 - [ ] Package the frontend as a container image for portable hosting
 - [ ] ARC-32/56 spec published for the contract
 
