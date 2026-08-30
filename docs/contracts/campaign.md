@@ -92,6 +92,6 @@ The generated client (`CampaignClient.ts`) exposes each method with typed args. 
 
 ## Testing
 
-Full behavioral matrix lives in `contract.spec.ts` (simulator) — every method × every
-branch (caller checks, deadline checks, goal checks, re-pledge, double-claim,
+A full behavioral matrix will live in `contract.spec.ts` (simulator) — every method ×
+every branch (caller checks, deadline checks, goal checks, re-pledge, double-claim,
 double-refund).
