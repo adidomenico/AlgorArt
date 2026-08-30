@@ -8,6 +8,7 @@
     "deploy": "ts-node-dev --transpile-only --watch .env -r dotenv/config smart_contracts/index.ts",
     "deploy:ci": "ts-node --transpile-only -r dotenv/config smart_contracts/index.ts",
     "check-types": "tsc --noEmit",
+    "test": "vitest run --no-color",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --check .",
@@ -24,9 +25,10 @@
     "@algorandfoundation/algokit-client-generator": "^6.0.0",
     "@algorandfoundation/algokit-utils": "^9.0.0",
     "@algorandfoundation/algokit-utils-debug": "^1.0.4",
+    "@algorandfoundation/algorand-typescript-testing": "^1.2.0",
     "@algorandfoundation/puya-ts": "^1.0.1",
     "@eslint/js": "^9.39.5",
-    "@rollup/plugin-typescript": "^12.1.2",
+    "@rollup/plugin-typescript": "^12.3.0",
     "@tsconfig/node22": "^22.0.0",
     "algosdk": "^3.0.0",
     "dotenv": "^16.4.7",
@@ -36,7 +38,8 @@
     "prettier": "^3.9.6",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.7.3",
-    "typescript-eslint": "^8.68.0"
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "esbuild": "0.25.0"

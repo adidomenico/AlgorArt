@@ -91,7 +91,7 @@ AlgorArt/
 │   │   └── smart_contracts/
 │   │       ├── campaign/         # the escrow app (create/pledge/claim/refund)
 │   │       │   ├── contract.algo.ts
-│   │       │   ├── contract.spec.ts   # simulator tests
+│   │       │   ├── contract.algo.spec.ts   # offline AVM tests (Vitest)
 │   │       │   └── deploy-config.ts
 │   │       └── index.ts          # deploy orchestrator
 │   └── frontend/                 # AlgoKit frontend project (React + Vite + TS)
@@ -118,7 +118,7 @@ AlgorArt/
 ### Phase 1 — Smart contract (core)
 
 - [x] `campaign/contract.algo.ts`: `create`, `pledge`, `claim`, `refund`
-- [ ] Simulator tests: **100% behavioral coverage** — every method × every branch (pledge before/after deadline, claim gating by caller/deadline/goal, refund gating by deadline/outcome/backer)
+- [ ] Simulator tests: **100% behavioral coverage** — every method × every branch (pledge before/after deadline, claim gating by caller/deadline/goal, refund gating by deadline/outcome/backer). **In progress** — the offline AVM test harness is in place and the core branches are covered; see [`docs/contracts/testing.md`](docs/contracts/testing.md) for the matrix.
 - [ ] Deploy to localnet, exercise the flow with `goal` / AlgoKit
 
 ### Phase 2 — Frontend
@@ -176,7 +176,7 @@ algokit project run build        # compile contracts + generate typed clients
 algokit project run lint         # ESLint across all projects
 algokit project run format       # Prettier check across all projects
 algokit project run check-types  # type-check across all projects
-algokit project run test         # run contract simulator tests (once defined)
+algokit project run test         # contract unit tests (offline AVM, via Vitest)
 
 npx --yes markdownlint-cli2@0.17.2        # markdownlint across all docs (add --fix to autofix)
 
@@ -194,6 +194,7 @@ Each project exposes the same three gates, runnable individually or via
 | `lint` | ESLint (bugs, unused vars, import style) | `npm run lint` | `npm run lint` |
 | `format` | Prettier (style: quotes, spacing, line width) | `npm run format` | `npm run format` |
 | `check-types` | `tsc --noEmit` (type safety) | `npm run check-types` | `npm run check-types` |
+| `test` | Offline AVM unit tests (Vitest) | `npm run test` | `npm run test` |
 
 Markdown is linted separately from the repo root with
 `npx --yes markdownlint-cli2@0.17.2`; its rules live in `.markdownlint-cli2.jsonc`.
@@ -206,7 +207,8 @@ The goal is near-total coverage, measured two ways:
 - **Smart contract — 100% behavioral coverage.** AVM bytecode has no mature line-coverage
   tool, so coverage is defined by the test matrix: every method × every branch (caller
   checks, deadline checks, goal checks, re-pledge). Each `[success]` / `[failure]` case
-  gets an explicit simulator test in `contract.spec.ts`.
+  gets an explicit offline AVM test in `contract.algo.spec.ts` (via
+  `@algorandfoundation/algorand-typescript-testing` + Vitest).
 - **Frontend — line coverage.** Vitest + `@vitest/coverage-v8` over components and utils
   (`ellipseAddress`, `getAlgoClientConfigs`, feature components). Target ≥ 90%, enforced
   as a CI gate.

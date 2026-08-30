@@ -92,6 +92,9 @@ The generated client (`CampaignClient.ts`) exposes each method with typed args. 
 
 ## Testing
 
-A full behavioral matrix will live in `contract.spec.ts` (simulator) — every method ×
-every branch (caller checks, deadline checks, goal checks, re-pledge, double-claim,
-double-refund).
+A full behavioral matrix lives in `contract.algo.spec.ts` — every method × every
+branch (caller checks, deadline checks, goal checks, re-pledge, double-claim,
+double-refund). Tests run offline via `algorand-typescript-testing` + Vitest.
+
+See [`testing.md`](testing.md) for the tooling setup, API cheat sheet, coverage
+matrix, and the incremental roadmap toward 100% behavioral coverage.
