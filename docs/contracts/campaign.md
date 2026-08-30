@@ -11,7 +11,7 @@ and enforces the campaign rules.
 ### Global state
 
 | Key | Type | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `creator` | `Account` | Campaign creator; the only account allowed to `claim()` |
 | `goal` | `uint64` | Funding target, in microAlgos |
 | `deadline` | `uint64` | UNIX timestamp (seconds) after which the outcome is decided |
@@ -21,7 +21,7 @@ and enforces the campaign rules.
 ### Boxes
 
 | Map | Key | Value | Meaning |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `pledges` | backer address | `uint64` | That backer's pledged microAlgos |
 
 ## State machine

@@ -156,7 +156,7 @@ The full UI plan — pages, data flow, and the exact `create`/`pledge`/`claim`/
 > [the CI plan](docs/ci.md).
 >
 > **Root `package.json`?** Intentionally absent for now. Markdown linting runs via
-> `npx --yes markdownlint-cli2@0.17.2` (version pinned in the command), and the two
+> `npx --yes markdownlint-cli2@0.23.2` (version pinned in the command), and the two
 > projects manage their own dependencies. If a future need arises for repo-level
 > scripts (e.g. a `check-all` convenience wrapper), add a root `package.json` then —
 > the markdown lint command can move into it as an `npm run lint:md` script without
@@ -184,7 +184,7 @@ algokit project run format       # Prettier check across all projects
 algokit project run check-types  # type-check across all projects
 algokit project run test         # contract unit tests (offline AVM, via Vitest)
 
-npx --yes markdownlint-cli2@0.17.2        # markdownlint across all docs (add --fix to autofix)
+npx --yes markdownlint-cli2@0.23.2        # markdownlint across all docs (add --fix to autofix)
 
 cd projects/frontend
 npm run dev                      # frontend on http://localhost:5173
@@ -204,7 +204,7 @@ Each project exposes the same three gates, runnable individually or via
 | `test-integration` | LocalNet integration tests (Vitest) | `npm run test:integration` | — |
 
 Markdown is linted separately from the repo root with
-`npx --yes markdownlint-cli2@0.17.2`; its rules live in `.markdownlint-cli2.jsonc`.
+`npx --yes markdownlint-cli2@0.23.2`; its rules live in `.markdownlint-cli2.jsonc`.
 The version is pinned in the command, so no root `package.json` is needed.
 
 ## Testing strategy
