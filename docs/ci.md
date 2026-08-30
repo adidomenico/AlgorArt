@@ -24,7 +24,7 @@ this documents the reasoning behind the split.
 | `markdown-lint` — markdownlint | ✅ | — | — |
 | `test` — offline unit tests + coverage | ✅ | — | — |
 | `build` — compile contracts, build frontend | ✅ | ✅ | — |
-| localnet integration — deploy + exercise | ✅ | ✅ | ✅ (algod + indexer) |
+| `localnet` — deploy + exercise integration tests | ✅ | ✅ | ✅ (algod + indexer) |
 
 Key point: **`lint-format-type-check` and `markdown-lint` are pure Node**.
 `eslint`, `prettier`, `tsc`, and `markdownlint-cli2` need nothing else — no
@@ -108,9 +108,20 @@ ever becomes worth it (runner install time is the trigger), publish it once to
 GHCR and rebuild only when its `Dockerfile` changes — but at this scale,
 install-on-runner + cache is the right default.
 
-## Localnet integration (later)
+## Localnet integration (implemented)
 
-Deploying to a local sandbox and exercising the flow needs `algokit localnet
-start` (algod + indexer in Docker). This is Phase 1's "deploy to localnet" and
-Phase 3's TestNet demo — a separate, heavier job, not part of
-`lint-format-type-check`.
+Implemented at `.github/workflows/localnet.yml`. This is the one lane that
+needs the full stack: **Docker** (algod + indexer via `algokit localnet start`),
+the **AlgoKit CLI**, and a **build** step (the integration tests read the
+gitignored `Campaign.arc56.json` artifact).
+
+Steps:
+
+1. Node + AlgoKit CLI (pipx, cached by version).
+2. `algokit localnet start` — pulls the prebuilt algod/indexer sandbox images.
+3. `npm run build` — compile the contracts.
+4. `npm run test:integration` — deploy and exercise the full lifecycle.
+
+This is intentionally a **separate workflow** from `test`: it's slower (~2–3 min
+for the containers) and flakier than the pure-Node lane, so it shouldn't block
+ordinary fast feedback. Its status check is named `localnet integration`.

@@ -9,7 +9,7 @@
     "deploy:ci": "ts-node --transpile-only -r dotenv/config smart_contracts/index.ts",
     "check-types": "tsc --noEmit",
     "test": "vitest run --no-color --exclude '**/*.integration.test.ts'",
-    "test:integration": "vitest run --no-color '**/*.integration.test.ts'",
+    "test:integration": "vitest run --no-color integration",
     "test:all": "vitest run --no-color",
     "test:coverage": "vitest run --no-color --coverage --exclude '**/*.integration.test.ts'",
     "lint": "eslint .",
