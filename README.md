@@ -141,7 +141,7 @@ AlgorArt/
 ### Phase 4 — Polish (nice-to-have)
 - [ ] Campaign images/metadata on **IPFS** (or Algorand's metadata standard)
 - [ ] Cancel-before-deadline option for creators
-- [ ] CI: contract simulator tests + frontend build + **coverage gate** + Docker image build
+- [ ] CI: contract simulator tests + frontend build + **coverage gate** + lint/format gate + Docker image build
 - [ ] ARC-32/56 spec published for the contract
 
 ## Getting started
@@ -153,6 +153,8 @@ AlgorArt/
 algokit project bootstrap all    # install deps for contracts/ + frontend/
 algokit localnet start           # start algod + indexer in Docker
 algokit project run build        # compile contracts + generate clients
+algokit project run lint         # ESLint across all projects
+algokit project run format       # Prettier check across all projects
 algokit project run test         # run contract simulator tests (once defined)
 ```
 
