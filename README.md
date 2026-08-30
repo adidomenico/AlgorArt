@@ -85,31 +85,40 @@ stateDiagram-v2
 
 ## Project structure (target)
 
+AlgoKit's standard **workspace** layout (what `algokit init` produces and the CLI
+expects), with the spec's feature organization inside the frontend.
+
 ```
-algorart/
-├── contracts/                 # Algo TypeScript smart contracts
-│   ├── campaign.app.ts        # the escrow application (create/pledge/claim/refund)
-│   └── campaign.app.spec.ts   # simulator tests
-├── frontend/                  # React + Vite + TypeScript
-│   ├── src/
-│   │   ├── features/
-│   │   │   ├── campaigns/     # create, browse, details
-│   │   │   └── wallet/        # connect button + provider
-│   │   ├── clients/           # generated typed client from contract ABI
-│   │   └── lib/               # algod/indexer config
+AlgorArt/
+├── projects/
+│   ├── contracts/                # AlgoKit contract project (TypeScript)
+│   │   └── smart_contracts/
+│   │       ├── campaign/         # the escrow app (create/pledge/claim/refund)
+│   │       │   ├── contract.algo.ts
+│   │       │   ├── contract.spec.ts   # simulator tests
+│   │       │   └── deploy-config.ts
+│   │       └── index.ts          # deploy orchestrator
+│   └── frontend/                 # AlgoKit frontend project (React + Vite + TS)
+│       └── src/
+│           ├── features/
+│           │   ├── campaigns/    # create, browse, details
+│           │   └── wallet/       # connect button + provider
+│           ├── contracts/        # generated typed clients (from ABI)
+│           └── lib/              # algod/indexer config
 ├── README.md
-└── .github/                   # branch protection / security config (added manually)
+└── .github/                      # branch protection / security config (added manually)
 ```
 
 ## Roadmap
 
-### Phase 0 — Setup (now)
-- [ ] `algokit init` — TypeScript full-stack template
-- [ ] Local sandbox (algod + indexer in Docker)
-- [ ] README = this spec
+### Phase 0 — Setup
+- [x] `algokit init` — AlgoKit workspace (contracts + frontend projects)
+- [x] Toolchain: Node.js, Docker Desktop, AlgoKit CLI
+- [x] README = this spec
+- [ ] Local sandbox (algod + indexer in Docker) up and verified
 
 ### Phase 1 — Smart contract (core)
-- [ ] `campaign.app.ts`: `create`, `pledge`, `claim`, `refund`
+- [ ] `campaign/contract.algo.ts`: `create`, `pledge`, `claim`, `refund`
 - [ ] Simulator tests covering: pledge before/after deadline, claim gating, refund gating
 - [ ] Deploy to localnet, exercise the flow with `goal` / AlgoKit
 
@@ -132,12 +141,13 @@ algorart/
 
 ## Getting started
 
-> Placeholder — filled in after `algokit init`.
+> Prerequisites: Node.js LTS, Docker Desktop, and AlgoKit CLI.
 
 ```bash
-algokit init          # scaffold contracts/ + frontend/
-algokit localnet start # start algod + indexer in Docker
-algokit project test   # run contract simulator tests
+algokit project bootstrap all    # install deps for contracts/ + frontend/
+algokit localnet start           # start algod + indexer in Docker
+algokit project run build        # compile contracts + generate clients
+algokit project test             # run contract simulator tests
 ```
 
 ## v1 vs v2

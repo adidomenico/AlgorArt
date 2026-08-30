@@ -14,9 +14,11 @@ coverage/
 artifacts/
 *.arc32.json
 *.arc56.json
-.teal
+*.teal
 *.approval.teal
 *.clear.teal
+debug_traces/
+*.source_map
 
 # Environment / secrets
 .env
