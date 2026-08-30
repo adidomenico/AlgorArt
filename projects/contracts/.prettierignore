@@ -1,6 +1,0 @@
-node_modules/
-dist/
-coverage/
-smart_contracts/artifacts/
-.algokit/
-package-lock.json

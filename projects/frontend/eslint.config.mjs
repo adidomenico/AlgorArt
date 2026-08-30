@@ -34,7 +34,13 @@ export default tseslint.config(
     },
     rules: {
       ...react.configs.recommended.rules,
-      ...reactHooks.configs.recommended.rules,
+      // Classic React 18 hooks rules. The newer react-hooks "compiler" rules
+      // (immutability, purity, set-state-in-render, ...) are skipped because
+      // this project does not use the React Compiler.
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
+      // PropTypes are redundant when components are fully typed with TypeScript.
+      'react/prop-types': 'off',
       'react/react-in-jsx-scope': 'off', // not needed with the new JSX transform
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/consistent-type-imports': 'error',
