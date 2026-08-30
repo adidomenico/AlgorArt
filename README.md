@@ -115,7 +115,7 @@ AlgorArt/
 - [x] `algokit init` — AlgoKit workspace (contracts + frontend projects)
 - [x] Toolchain: Node.js, Docker Desktop, AlgoKit CLI
 - [x] README = this spec
-- [ ] Local sandbox (algod + indexer in Docker) up and verified
+- [x] Local sandbox (algod + indexer in Docker) up and verified
 
 ### Phase 1 — Smart contract (core)
 - [ ] `campaign/contract.algo.ts`: `create`, `pledge`, `claim`, `refund`

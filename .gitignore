@@ -23,6 +23,7 @@ debug_traces/
 # Environment / secrets
 .env
 .env.*
+!.env.template
 !.env.example
 .local/
 *.local
