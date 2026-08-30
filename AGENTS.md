@@ -15,6 +15,7 @@ AlgoKit workspace; the old v1 (ASP.NET Core, server-side wallets) lives in the s
     (`create`, `pledge`, `claim`, `refund`)
   - `smart_contracts/artifacts/` — **generated** (compiled TEAL, ARC-32/56 specs, clients)
 - `projects/frontend/` — React + Vite + TypeScript dApp
+- `docs/` — human-readable technical docs (contract internals, design decisions)
 - `README.md` — the v2 specification (contract design, roadmap, testing strategy)
 
 ## Commands
@@ -50,6 +51,12 @@ npm run dev                      # regenerates app clients then runs Vite
     `Global.currentApplicationAddress`.
 - **The contract is the source of truth.** The indexer is only a read model; no backend
   holds funds or keys.
+- **Keep docs aligned.** Whenever a change affects behavior, structure, commands, or
+  conventions, update the relevant docs in the same change set:
+  - `docs/` for technical details and design decisions
+  - `README.md` for spec-level behavior, roadmap status, and getting-started steps
+  - `AGENTS.md` (this file) for commands, conventions, and agent-facing guidance
+  If the change doesn't affect these, no doc update is needed.
 
 ## Testing
 

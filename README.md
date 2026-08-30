@@ -12,6 +12,9 @@ creator can claim the funds; if not, every backer can reclaim their pledge.
 > server-side wallets) is kept for reference in the old repo. v2 is a ground-up
 > rewrite that turns the idea into a real dApp. See [v1 vs v2](#v1-vs-v2).
 
+> Technical details live in [`docs/`](docs/): contract internals, on-chain state,
+> and design decisions.
+
 ## The idea
 
 Crowdfunding is a **trust problem**: you give money to a stranger and hope they deliver.
