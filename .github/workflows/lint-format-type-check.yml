@@ -1,0 +1,29 @@
+name: lint-format-type-check
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  checks:
+    name: ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [contracts, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: projects/${{ matrix.project }}/package-lock.json
+      - run: npm ci
+        working-directory: projects/${{ matrix.project }}
+      - run: npm run lint
+        working-directory: projects/${{ matrix.project }}
+      - run: npm run format
+        working-directory: projects/${{ matrix.project }}
+      - run: npm run check-types
+        working-directory: projects/${{ matrix.project }}

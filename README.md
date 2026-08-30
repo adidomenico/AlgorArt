@@ -9,7 +9,7 @@ server — holds the funds and enforces the rules: if the goal is met by the dea
 creator can claim the funds; if not, every backer can reclaim their pledge.
 
 > Technical details live in [`docs/`](docs/): contract internals, on-chain state,
-> and design decisions.
+> design decisions, and [the CI plan](docs/ci.md).
 
 ## The idea
 
@@ -140,10 +140,15 @@ AlgorArt/
 
 - [ ] Campaign images/metadata on **IPFS** (or Algorand's metadata standard)
 - [ ] Cancel-before-deadline option for creators
-- [ ] CI: contract simulator tests + frontend build + **coverage gate** + lint/format/type-check gate + markdown lint (`npx --yes markdownlint-cli2@0.17.2`) + frontend image build
+- [ ] CI: contract simulator tests + frontend build + **coverage gate** + lint/format/type-check gate + markdown lint + frontend image build
 - [ ] Package the frontend as a container image for portable hosting
 - [ ] ARC-32/56 spec published for the contract
 
+> **CI split.** The lint/format/type-check/markdown workflow (`checks`) is pure Node
+> and can be added now — it needs no Docker, AlgoKit, build, or tests. Build, test,
+> and localnet integration are separate workflows with heavier prerequisites. See
+> [the CI plan](docs/ci.md).
+>
 > **Root `package.json`?** Intentionally absent for now. Markdown linting runs via
 > `npx --yes markdownlint-cli2@0.17.2` (version pinned in the command), and the two
 > projects manage their own dependencies. If a future need arises for repo-level
