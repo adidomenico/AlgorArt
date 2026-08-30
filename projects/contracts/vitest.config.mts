@@ -31,7 +31,7 @@ export default defineConfig({
       // The contract tsconfig targets CommonJS (for ts-node deploys); Vitest/Vite
       // needs ESM output so the transformer's injected `runtime-helpers` import
       // resolves against the package's ESM-only "exports" map.
-      compilerOptions: { module: 'esnext' },
+      compilerOptions: { module: 'esnext', moduleResolution: 'bundler' },
       transformers: {
         before: [puyaTsTransformer],
       },
