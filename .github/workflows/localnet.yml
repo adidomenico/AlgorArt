@@ -22,11 +22,11 @@ jobs:
         working-directory: projects/contracts
 
       - name: Set up Python (for AlgoKit CLI)
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Cache AlgoKit (pipx)
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.local/pipx
           key: algokit-${{ runner.os }}-2.10.2

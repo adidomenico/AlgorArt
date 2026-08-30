@@ -96,10 +96,10 @@ No custom Docker image is built or pulled for `lint-format-type-check`,
 `markdown-lint`, `build`, or `test`. Tooling is installed on the runner and
 **cached**, which is simpler than maintaining a CI image:
 
-- **Node** — `actions/setup-node@v4` with `cache: npm` and
+- **Node** — `actions/setup-node@v7` with `cache: npm` and
   `cache-dependency-path` pointing at the project's `package-lock.json`. This
   caches `node_modules`, so `npm ci` is ~seconds on cache hits.
-- **AlgoKit (Python)** — `actions/cache@v4` over `~/.local/pipx` keyed by the
+- **AlgoKit (Python)** — `actions/cache@v6` over `~/.local/pipx` keyed by the
   AlgoKit version.
 
 The only Docker in CI is the **prebuilt** algod/indexer sandbox images, pulled
