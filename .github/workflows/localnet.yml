@@ -25,11 +25,6 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - name: Cache AlgoKit (pipx)
-        uses: actions/cache@v6
-        with:
-          path: ~/.local/pipx
-          key: algokit-${{ runner.os }}-2.10.2
       - name: Install AlgoKit CLI
         run: |
           if ! command -v algokit >/dev/null 2>&1; then

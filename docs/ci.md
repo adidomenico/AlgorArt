@@ -99,8 +99,10 @@ No custom Docker image is built or pulled for `lint-format-type-check`,
 - **Node** — `actions/setup-node@v7` with `cache: npm` and
   `cache-dependency-path` pointing at the project's `package-lock.json`. This
   caches `node_modules`, so `npm ci` is ~seconds on cache hits.
-- **AlgoKit (Python)** — `actions/cache@v6` over `~/.local/pipx` keyed by the
-  AlgoKit version.
+- **AlgoKit (Python)** — installed fresh via `pipx` in the localnet job (not
+  cached). The install is fast relative to the Docker container startup that
+  dominates that job, and caching pipx correctly (venv *and* the `bin`
+  symlinks) isn't worth the complexity.
 
 The only Docker in CI is the **prebuilt** algod/indexer sandbox images, pulled
 only by the localnet integration job (not the hot path). If a custom CI image
