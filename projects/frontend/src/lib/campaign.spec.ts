@@ -54,6 +54,18 @@ describe('decodeGlobalState', () => {
     const state = decodeGlobalState(app)
     expect(state).toEqual({})
   })
+
+  it('returns an empty object when global state is absent', () => {
+    const app = new algosdk.indexerModels.Application({
+      id: 1n,
+      params: new algosdk.indexerModels.ApplicationParams({
+        approvalProgram: new Uint8Array(),
+        clearStateProgram: new Uint8Array(),
+        globalState: undefined,
+      }),
+    })
+    expect(decodeGlobalState(app)).toEqual({})
+  })
 })
 
 describe('isCampaignApp', () => {
@@ -65,6 +77,18 @@ describe('isCampaignApp', () => {
     const app = new algosdk.indexerModels.Application({
       id: 1n,
       params: appParams([kv('something-else', tealUint(1n))]),
+    })
+    expect(isCampaignApp(app)).toBe(false)
+  })
+
+  it('returns false when global state is absent', () => {
+    const app = new algosdk.indexerModels.Application({
+      id: 1n,
+      params: new algosdk.indexerModels.ApplicationParams({
+        approvalProgram: new Uint8Array(),
+        clearStateProgram: new Uint8Array(),
+        globalState: undefined,
+      }),
     })
     expect(isCampaignApp(app)).toBe(false)
   })
@@ -132,5 +156,17 @@ describe('toCampaignViewModel', () => {
     const vm = toCampaignViewModel(app, 1_000n)
     expect(vm.goalMicroAlgos).toBe(0n)
     expect(vm.raisedMicroAlgos).toBe(0n)
+  })
+
+  it('defaults missing deadline, status, and creator', () => {
+    const app = new algosdk.indexerModels.Application({
+      id: 7n,
+      params: appParams([kv('goal', tealUint(10n)), kv('raised', tealUint(5n))]),
+    })
+    const vm = toCampaignViewModel(app, 1_000n)
+    expect(vm.deadlineSeconds).toBe(0n)
+    expect(vm.creator).toBe('')
+    // deadline (0) <= now (1000) and raised < goal -> failed
+    expect(vm.status).toBe('failed')
   })
 })

@@ -4,6 +4,12 @@ import userEvent from '@testing-library/user-event'
 import type { CampaignViewModel } from '../../lib/campaign'
 import CampaignList from './CampaignList'
 
+// Capture the resolver so we can control when the promise settles, letting us
+// unmount the component before the async result arrives (covers the
+// `cancelled` guard branches in the effect's cleanup path).
+let resolveList: ((value: CampaignViewModel[]) => void) | undefined
+let rejectList: ((reason: unknown) => void) | undefined
+
 vi.mock('@txnlab/use-wallet-react', () => ({
   useWallet: () => ({ activeAddress: null }),
 }))
@@ -69,5 +75,31 @@ describe('CampaignList', () => {
 
     await user.click(await screen.findByText('#1'))
     expect(onSelectCampaign).toHaveBeenCalledWith(1n)
+  })
+
+  it('does not update state when unmounted before the load resolves', async () => {
+    listCampaignsMock.mockReturnValue(
+      new Promise<CampaignViewModel[]>((resolve) => {
+        resolveList = resolve
+      }),
+    )
+    const { unmount } = render(<CampaignList onSelectCampaign={() => {}} />)
+    unmount()
+
+    await new Promise((r) => setTimeout(r, 0))
+    resolveList?.(campaigns)
+  })
+
+  it('does not update state when unmounted before the load rejects', async () => {
+    listCampaignsMock.mockReturnValue(
+      new Promise<CampaignViewModel[]>((_, reject) => {
+        rejectList = reject
+      }),
+    )
+    const { unmount } = render(<CampaignList onSelectCampaign={() => {}} />)
+    unmount()
+
+    await new Promise((r) => setTimeout(r, 0))
+    rejectList?.(new Error('boom'))
   })
 })

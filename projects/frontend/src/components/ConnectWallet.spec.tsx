@@ -57,6 +57,32 @@ describe('ConnectWallet', () => {
     expect(disconnect).toHaveBeenCalled()
   })
 
+  it('cleans up and reloads when no wallet is active on logout', async () => {
+    const inactiveWallets = wallets.map((w) => ({ ...w, isActive: false }))
+    useWalletMock.mockReturnValue({ wallets: inactiveWallets, activeAddress: 'ADDRESS' })
+    const removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem')
+    const reloadSpy = vi.fn()
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, reload: reloadSpy },
+    })
+    const user = userEvent.setup()
+    render(<ConnectWallet openModal closeModal={() => {}} />)
+
+    await user.click(screen.getByText('Logout'))
+    expect(removeItemSpy).toHaveBeenCalledWith('@txnlab/use-wallet:v3')
+    expect(reloadSpy).toHaveBeenCalled()
+  })
+
+  it('renders the KMD wallet as "LocalNet Wallet" without an icon', () => {
+    const kmdWallet = { id: 'kmd', metadata: { name: 'LocalNet', icon: 'http://icon/kmd.png' }, connect: vi.fn(), isActive: false }
+    useWalletMock.mockReturnValue({ wallets: [kmdWallet], activeAddress: null })
+    render(<ConnectWallet openModal closeModal={() => {}} />)
+
+    expect(screen.getByText('LocalNet Wallet')).toBeInTheDocument()
+    expect(screen.queryByAltText('wallet_icon_kmd')).not.toBeInTheDocument()
+  })
+
   it('closes the modal when Close is clicked', async () => {
     const closeModal = vi.fn()
     useWalletMock.mockReturnValue({ wallets, activeAddress: null })

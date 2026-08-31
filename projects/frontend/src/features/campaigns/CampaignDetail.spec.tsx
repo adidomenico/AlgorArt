@@ -33,12 +33,15 @@ vi.mock('./PledgeForm', () => ({
 
 const nowSeconds = BigInt(Math.floor(Date.now() / 1000))
 
-function viewModel(status: string, overrides: { creator?: string; myPledgeMicroAlgos?: bigint } = {}) {
+function viewModel(
+  status: string,
+  overrides: { creator?: string; myPledgeMicroAlgos?: bigint; goalMicroAlgos?: bigint; raisedMicroAlgos?: bigint } = {},
+) {
   return {
     id: 42n,
     creator: overrides.creator ?? 'CREATOR',
-    goalMicroAlgos: 10_000_000n,
-    raisedMicroAlgos: 10_000_000n,
+    goalMicroAlgos: overrides.goalMicroAlgos ?? 10_000_000n,
+    raisedMicroAlgos: overrides.raisedMicroAlgos ?? 10_000_000n,
     deadlineSeconds: nowSeconds + 86_400n,
     status,
     myPledgeMicroAlgos: overrides.myPledgeMicroAlgos,
@@ -136,5 +139,65 @@ describe('CampaignDetail', () => {
 
     await user.click(await screen.findByText('Claim funds'))
     expect(await screen.findByText(/Transaction failed/)).toBeInTheDocument()
+  })
+
+  it('shows an error when the indexer fetch throws', async () => {
+    getCampaignMock.mockRejectedValue(new Error('boom'))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    expect(await screen.findByText(/Failed to load campaign/)).toBeInTheDocument()
+  })
+
+  it('renders with a zero-percent progress when the goal is zero', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('open', { goalMicroAlgos: 0n, raisedMicroAlgos: 5_000_000n }))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await screen.findByText('Campaign #42')
+    expect(screen.getByText(/ALGO raised of/)).toBeInTheDocument()
+  })
+
+  it('caps the progress bar at 100% when raised exceeds the goal', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('funded', { creator: 'ADDRESS', goalMicroAlgos: 1_000_000n }))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await screen.findByText('Campaign #42')
+    const fill = document.querySelector('.detail__progress-fill') as HTMLElement
+    expect(fill.style.width).toBe('100%')
+  })
+
+  it('renders the viewer pledge when one exists', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('open', { myPledgeMicroAlgos: 250_000n }))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await screen.findByText('Campaign #42')
+    expect(screen.getByText(/Your pledge/)).toBeInTheDocument()
+  })
+
+  it('shows a success message after a successful claim', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('funded', { creator: 'ADDRESS' }))
+    claimMock.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await user.click(await screen.findByText('Claim funds'))
+    expect(await screen.findByText('Claim submitted!')).toBeInTheDocument()
+  })
+
+  it('shows an error when refund fails', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('failed', { myPledgeMicroAlgos: 1_000_000n }))
+    refundMock.mockRejectedValue(new Error('boom'))
+    const user = userEvent.setup()
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await user.click(await screen.findByText('Refund my pledge'))
+    expect(await screen.findByText(/Transaction failed/)).toBeInTheDocument()
+  })
+
+  it('does not render a claim button for an empty creator address', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('funded', { creator: '' }))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await screen.findByText('Campaign #42')
+    expect(screen.queryByText('Claim funds')).not.toBeInTheDocument()
   })
 })
