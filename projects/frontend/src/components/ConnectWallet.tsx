@@ -32,6 +32,7 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
           {!activeAddress &&
             wallets?.map((wallet) => (
               <button
+                type="button"
                 data-test-id={`${wallet.id}-connect`}
                 className="btn border-teal-800 border-1  m-2"
                 key={`provider-${wallet.id}`}
@@ -53,6 +54,7 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
 
         <div className="modal-action grid">
           <button
+            type="button"
             data-test-id="close-wallet-modal"
             className="btn"
             onClick={() => {
@@ -63,6 +65,7 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
           </button>
           {activeAddress && (
             <button
+              type="button"
               className="btn btn-warning"
               data-test-id="logout"
               onClick={async () => {

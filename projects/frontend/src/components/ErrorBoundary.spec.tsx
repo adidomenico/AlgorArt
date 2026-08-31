@@ -1,8 +1,25 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import ErrorBoundary from './ErrorBoundary'
 
 describe('ErrorBoundary', () => {
+  // React's DEV error-boundary machinery re-reports deliberately thrown errors
+  // through jsdom's `window` error event (bypassing `console.error`, so a
+  // console spy can't silence it). Marking the event as handled prevents jsdom
+  // from printing noisy "uncaught" stack traces while the boundary still
+  // catches the error and renders the fallback.
+  let cleanup: () => void
+
+  beforeEach(() => {
+    const handler = (event: ErrorEvent) => event.preventDefault()
+    window.addEventListener('error', handler)
+    cleanup = () => window.removeEventListener('error', handler)
+  })
+
+  afterEach(() => {
+    cleanup()
+  })
+
   it('renders children when there is no error', () => {
     render(
       <ErrorBoundary>
