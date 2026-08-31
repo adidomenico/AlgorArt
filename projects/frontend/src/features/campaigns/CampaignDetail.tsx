@@ -46,9 +46,12 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
 
   const nowSeconds = BigInt(Math.floor(Date.now() / 1000))
   const percent = campaign.goalMicroAlgos > 0n ? Number((campaign.raisedMicroAlgos * 100n) / campaign.goalMicroAlgos) : 0
-  const canPledge = campaign.status === 'open' && Boolean(activeWallet && transactionSigner)
-  const canClaim = campaign.status === 'funded' && Boolean(activeWallet && transactionSigner)
-  const canRefund = campaign.status === 'failed' && Boolean(activeWallet && transactionSigner)
+  const connected = Boolean(activeWallet && activeAddress)
+  const isCreator = connected && campaign.creator !== '' && activeAddress === campaign.creator
+  const hasPledge = (campaign.myPledgeMicroAlgos ?? 0n) > 0n
+  const canPledge = campaign.status === 'open' && connected
+  const canClaim = campaign.status === 'funded' && isCreator
+  const canRefund = campaign.status === 'failed' && connected && hasPledge
 
   const runAction = async (action: () => Promise<void>, success: string) => {
     setBusy(true)

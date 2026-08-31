@@ -91,9 +91,13 @@ interface CampaignViewModel {
 }
 ```
 
-The derived `funded` state (deadline passed **and** `raised >= goal`) is
+The derived `funded` state (deadline passed **and** `raised >= goal`) and the
+derived `failed` state (deadline passed **and** `raised < goal`) are both
 computed client-side from `goal`/`raised`/`deadline` — exactly the same rule
-the contract evaluates. It is never stored on-chain.
+the contract evaluates. Neither is stored on-chain: `funded` is never
+materialised, and `failed` only becomes a stored `status` after the first
+`refund()` call. Deriving `failed` client-side is what lets a backer start the
+first refund from the UI.
 
 ## Campaign metadata (decided)
 

@@ -36,7 +36,13 @@ const STATUS_UINT_TO_LABEL: Record<number, CampaignStatus> = {
   2: 'claimed',
 }
 
-/** Derive the display status. `funded` is recomputed from deadline/raised/goal. */
+/**
+ * Derive the display status. `funded` and `failed` are recomputed from
+ * deadline/raised/goal — exactly the rule the contract evaluates — because
+ * neither is materialised into global state until someone acts. The stored
+ * `status` uint only ever holds `0` (Open), `1` (Failed, after a refund) or
+ * `2` (Claimed), and is authoritative for `failed`/`claimed` once set.
+ */
 export function deriveStatus(
   goal: bigint,
   raised: bigint,
@@ -46,7 +52,9 @@ export function deriveStatus(
 ): CampaignStatus {
   if (statusUint === 1n) return STATUS_UINT_TO_LABEL[1]
   if (statusUint === 2n) return STATUS_UINT_TO_LABEL[2]
-  if (deadlineSeconds <= nowSeconds && raised >= goal) return 'funded'
+  if (deadlineSeconds <= nowSeconds) {
+    return raised >= goal ? 'funded' : 'failed'
+  }
   return STATUS_UINT_TO_LABEL[0]
 }
 

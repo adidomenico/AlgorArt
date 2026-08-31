@@ -83,8 +83,12 @@ describe('deriveStatus', () => {
     expect(deriveStatus(10n, 10n, 1_000n, 0n, 2_000n)).toBe('funded')
   })
 
-  it('returns open when deadline passed but goal not met (not yet materialised)', () => {
-    expect(deriveStatus(10n, 5n, 1_000n, 0n, 2_000n)).toBe('open')
+  it('returns failed when deadline passed but goal not met (derived, pre-refund)', () => {
+    expect(deriveStatus(10n, 5n, 1_000n, 0n, 2_000n)).toBe('failed')
+  })
+
+  it('returns failed when the status uint is 1', () => {
+    expect(deriveStatus(10n, 5n, 1_000n, 1n, 2_000n)).toBe('failed')
   })
 
   it('returns open while before the deadline', () => {
