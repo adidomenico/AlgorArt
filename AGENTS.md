@@ -14,8 +14,8 @@ workspace: an Algorand TypeScript smart contract plus a React + Vite frontend.
     (`create`, `pledge`, `claim`, `refund`)
   - `smart_contracts/artifacts/` — **generated** (compiled TEAL, ARC-32/56 specs, clients)
 - `projects/frontend/` — React + Vite + TypeScript dApp
-- `docs/` — human-readable technical docs (contract internals, design decisions)
-- `README.md` — the project specification (contract design, roadmap, testing strategy)
+- [`docs/`](docs/) — human-readable technical docs (contract internals, design decisions)
+- [`README.md`](README.md) — the project specification (contract design, roadmap, testing strategy)
 
 ## Commands
 
@@ -43,6 +43,19 @@ npm run format                   # Prettier check
 Or from the repo root: `algokit project run lint` / `algokit project run format` /
 `algokit project run check-types` applies to every project in the workspace.
 
+## How to work
+
+- Read [`README.md`](README.md) and the relevant file under [`docs/`](docs/) **before**
+  changing behavior.
+- Implement the smallest change that satisfies the request; no unrequested refactors
+  or speculative extensibility.
+- Add or update tests for any code you change, even when not asked.
+- Don't create or switch branches or worktrees without explicit approval.
+- If it's unclear how to verify a change, ask.
+- The contract is the source of truth; the indexer is only a read model.
+- When you edit any Markdown file, run `npx --yes markdownlint-cli2@0.23.2`
+  (from the repo root) to lint it.
+
 ## Conventions
 
 - **Generated files are gitignored.** `smart_contracts/artifacts/` (compiled TEAL, specs,
@@ -65,19 +78,32 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
     `.get({ default: 0 })` for first-write patterns.
   - ABI payment arguments are `gtxn.PaymentTxn`; the escrow address is
     `Global.currentApplicationAddress`.
-- **The contract is the source of truth.** The indexer is only a read model; no backend
-  holds funds or keys.
 - **Keep docs aligned.** Whenever a change affects behavior, structure, commands, or
   conventions, update the relevant docs in the same change set:
   - `docs/` for technical details and design decisions
   - `README.md` for spec-level behavior, roadmap status, and getting-started steps
   - `AGENTS.md` (this file) for commands, conventions, and agent-facing guidance
   If the change doesn't affect these, no doc update is needed.
+- When updating any `*.md` file, run `npx --yes markdownlint-cli2@0.23.2` (from the
+  repo root; add `--fix` to autofix) to keep it lint-clean.
 
 ## Testing
 
 - Contracts: simulator tests for full behavioral coverage (every method × every branch).
 - Frontend: Vitest, with line coverage ≥ 90% on components and utils.
+- Add or update tests in the same change set as the code they cover.
+
+## Definition of done
+
+Before marking work complete, run these from `projects/contracts` and/or
+`projects/frontend` (or `algokit project run …` from the repo root), in order:
+
+1. `npm run format` (then `npm run format:fix` if it reports)
+2. `npm run lint`
+3. `npm run check-types`
+4. The relevant test suite
+
+Fix everything until green — don't skip a step because the change "looks small."
 
 ## Commits & pull requests
 
@@ -89,7 +115,7 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
     change spans everything.
   - Description is imperative and ≤ 72 chars, e.g. `feat(contracts): add pledge escrow contract`.
   - No body unless needed; when present, explain the "why" as a short bullet list.
-- **Pull requests** use the template in `.github/pull_request_template.md`.
+- **Pull requests** use the template in [`.github/pull_request_template.md`](.github/pull_request_template.md).
 
 ## Roadmap
 
