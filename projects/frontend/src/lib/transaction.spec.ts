@@ -2,11 +2,13 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import type { TransactionSigner } from 'algosdk'
 import { createCampaign, claim, pledge, refund } from './transaction'
 
-const sendCreateMock = vi.fn()
-const sendClaimMock = vi.fn()
-const sendRefundMock = vi.fn()
-const sendPledgeMock = vi.fn()
-const paymentMock = vi.fn()
+const { sendCreateMock, sendClaimMock, sendRefundMock, sendPledgeMock, paymentMock } = vi.hoisted(() => ({
+  sendCreateMock: vi.fn(),
+  sendClaimMock: vi.fn(),
+  sendRefundMock: vi.fn(),
+  sendPledgeMock: vi.fn(),
+  paymentMock: vi.fn(),
+}))
 
 vi.mock('../contracts/Campaign', () => ({
   CampaignClient: class {
@@ -23,9 +25,9 @@ vi.mock('../contracts/Campaign', () => ({
 }))
 
 vi.mock('./algorand', () => ({
-  getAlgorand: () => ({
+  algorand: {
     createTransaction: { payment: paymentMock },
-  }),
+  },
 }))
 
 const session = {

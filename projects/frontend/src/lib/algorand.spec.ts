@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import algosdk from 'algosdk'
-import { getAlgorand, getIndexer } from './algorand'
+import { algorand, indexer } from './algorand'
 
 vi.mock('../utils/network/getAlgoClientConfigs', () => {
   const token = 'a'.repeat(64)
@@ -11,15 +11,11 @@ vi.mock('../utils/network/getAlgoClientConfigs', () => {
 })
 
 describe('algorand service', () => {
-  it('returns a memoised indexer client', () => {
-    const indexer = getIndexer()
+  it('builds an indexer client from the environment', () => {
     expect(indexer).toBeInstanceOf(algosdk.Indexer)
-    expect(getIndexer()).toBe(indexer)
   })
 
-  it('returns a memoised AlgorandClient', () => {
-    const algorand = getAlgorand()
+  it('builds an AlgorandClient from the environment', () => {
     expect(algorand).toBeDefined()
-    expect(getAlgorand()).toBe(algorand)
   })
 })

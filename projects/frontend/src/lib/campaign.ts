@@ -1,5 +1,5 @@
 import algosdk, { decodeAddress, encodeAddress } from 'algosdk'
-import { getIndexer } from './algorand'
+import { indexer } from './algorand'
 
 /**
  * Read model: maps indexer responses into a `CampaignViewModel` the UI can
@@ -145,7 +145,7 @@ export function decodePledgeBoxValue(value: Uint8Array): bigint {
  */
 export async function fetchMyPledge(appId: bigint, address: string): Promise<bigint | undefined> {
   try {
-    const box = await getIndexer().lookupApplicationBoxByIDandName(appId, pledgeBoxName(address)).do()
+    const box = await indexer.lookupApplicationBoxByIDandName(appId, pledgeBoxName(address)).do()
     return decodePledgeBoxValue(box.value)
   } catch {
     return undefined
@@ -158,7 +158,7 @@ export async function fetchMyPledge(appId: bigint, address: string): Promise<big
  * the discriminator (docs/frontend.md).
  */
 export async function listCampaigns(nowSeconds: bigint, viewerAddress?: string): Promise<CampaignViewModel[]> {
-  const response = await getIndexer().searchForApplications().limit(100).do()
+  const response = await indexer.searchForApplications().limit(100).do()
 
   const campaigns: CampaignViewModel[] = []
   for (const app of response.applications) {
@@ -174,7 +174,7 @@ export async function listCampaigns(nowSeconds: bigint, viewerAddress?: string):
 
 /** Fetch a single campaign by app id. */
 export async function getCampaign(appId: bigint, nowSeconds: bigint, viewerAddress?: string): Promise<CampaignViewModel | undefined> {
-  const response = await getIndexer().lookupApplications(appId).do()
+  const response = await indexer.lookupApplications(appId).do()
   const app = response.application
   if (!app || !isCampaignApp(app)) return undefined
 

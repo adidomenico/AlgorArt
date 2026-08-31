@@ -9,11 +9,11 @@ const searchAppsDoMock = vi.fn()
 const lookupAppsMock = { do: vi.fn() }
 
 vi.mock('./algorand', () => ({
-  getIndexer: () => ({
+  indexer: {
     lookupApplicationBoxByIDandName: vi.fn(() => lookupBoxMock),
     searchForApplications: vi.fn(() => ({ limit: () => ({ do: searchAppsDoMock }) })),
     lookupApplications: vi.fn(() => lookupAppsMock),
-  }),
+  },
 }))
 
 function tealUint(value: bigint): algosdk.indexerModels.TealValue {

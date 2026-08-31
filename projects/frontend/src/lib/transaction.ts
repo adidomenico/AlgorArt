@@ -1,7 +1,7 @@
 import { microAlgos } from '@algorandfoundation/algokit-utils'
 import type { TransactionSigner } from 'algosdk'
 import { CampaignClient, CampaignFactory } from '../contracts/Campaign'
-import { getAlgorand } from './algorand'
+import { algorand } from './algorand'
 
 /**
  * Write path: assembles + signs transactions through the generated
@@ -16,7 +16,7 @@ export interface WalletSession {
 
 function clientFor(appId: bigint, session: WalletSession): CampaignClient {
   return new CampaignClient({
-    algorand: getAlgorand(),
+    algorand,
     appId,
     defaultSender: session.address,
     defaultSigner: session.signer,
@@ -30,7 +30,7 @@ export async function createCampaign(
   deadlineSeconds: bigint,
 ): Promise<{ appId: bigint; appAddress: string }> {
   const factory = new CampaignFactory({
-    algorand: getAlgorand(),
+    algorand,
     defaultSender: session.address,
     defaultSigner: session.signer,
   })
@@ -48,7 +48,7 @@ export async function pledge(appId: bigint, session: WalletSession, amountMicroA
 
   await client.send.pledge({
     args: {
-      payment: await getAlgorand().createTransaction.payment({
+      payment: await algorand.createTransaction.payment({
         sender: session.address,
         receiver: client.appAddress,
         amount: microAlgos(amountMicroAlgos),
