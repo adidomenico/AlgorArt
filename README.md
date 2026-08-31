@@ -128,11 +128,11 @@ The full UI plan — pages, data flow, and the exact `create`/`pledge`/`claim`/
 `refund` call patterns — is designed in [`docs/frontend.md`](docs/frontend.md).
 
 - [x] Wallet connect (Pera / Defly) via `use-wallet` (from the AlgoKit starter)
-- [ ] Campaign list & detail — read global state + boxes via indexer
-- [ ] Create campaign form → `create()` ABI call
-- [ ] Pledge flow → `pledge()` ABI call (payment + app call in one group)
-- [ ] Claim & refund buttons → `claim()` / `refund()` ABI calls
-- [ ] Unit tests (Vitest) with line coverage ≥ 90% on components & utils
+- [x] Campaign list & detail — read global state + boxes via indexer
+- [x] Create campaign form → `create()` ABI call
+- [x] Pledge flow → `pledge()` ABI call (payment + app call in one group)
+- [x] Claim & refund buttons → `claim()` / `refund()` ABI calls
+- [x] Unit tests (Vitest) with line coverage ≥ 90% on components & utils
 
 ### Phase 3 — TestNet demo
 
@@ -143,7 +143,7 @@ The full UI plan — pages, data flow, and the exact `create`/`pledge`/`claim`/
 
 ### Phase 4 — Polish (nice-to-have)
 
-- [ ] Campaign images/metadata on **IPFS** (or Algorand's metadata standard)
+- [ ] Campaign metadata — **decided, not yet implemented** (see [docs/frontend.md](docs/frontend.md)): hybrid approach — on-chain `title` + `metadata_uri` pointing to an off-chain JSON blob (IPFS) for description/image/category
 - [ ] Cancel-before-deadline option for creators
 - [ ] CI: contract simulator tests + frontend build + **coverage gate** + lint/format/type-check gate + markdown lint + frontend image build
   - *In progress*: the pure-Node `unit-test` workflow (contract offline tests + coverage gate) and the `integration-test` workflow (LocalNet) are done; frontend build/coverage and image build remain.

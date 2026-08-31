@@ -22,15 +22,14 @@ It never holds keys, never holds funds, and never decides a campaign outcome.
 4. **Feature folders, thin components.** The AlgoKit starter's
    `Home.tsx`/`Transact.tsx` demo is replaced by a feature-based layout.
 
-## Current state (baseline)
+## Current state
 
-The frontend is still the **AlgoKit React starter**: a `Home` hero with a
-wallet-connect modal (`ConnectWallet`) and a generic "send 1 ALGO" demo
-(`Transact`). The wallet plumbing (`WalletManager` + `WalletProvider` +
-Pera/Defly/Exodus/KMD) already works — that part is done and stays. What's
-missing is everything campaign-specific.
+The Phase 2 frontend is implemented. The AlgoKit starter's `Home` hero and
+"send 1 ALGO" demo (`Transact`) are replaced by the campaign feature set
+below. The wallet plumbing (`WalletManager` + `WalletProvider` +
+Pera/Defly/Exodus/KMD) is unchanged.
 
-## Target structure
+## Structure (implemented)
 
 ```text
 projects/frontend/src/
@@ -38,24 +37,21 @@ projects/frontend/src/
 │   ├── campaigns/            # create, browse, details
 │   │   ├── CampaignList.tsx        # browse all campaigns
 │   │   ├── CampaignCard.tsx        # one card in the list
-│   │   ├── CampaignDetail.tsx      # single campaign + actions
+│   │   ├── CampaignDetail.tsx      # single campaign + claim/refund/pledge
 │   │   ├── CreateCampaignForm.tsx  # create() ABI call
-│   │   ├── PledgeForm.tsx          # pledge() ABI call (payment + app call)
-│   │   └── campaigns.utils.ts      # status/deadline/format helpers (pure)
-│   ├── wallet/               # connect button + provider (already exists)
-│   │   ├── ConnectWallet.tsx
-│   │   └── Account.tsx
+│   │   └── PledgeForm.tsx          # pledge() ABI call (payment + app call)
 │   └── app/                  # shared app chrome
-│       └── Nav.tsx                 # brand, wallet button, network badge
-├── lib/                      # shared services (new)
-│   ├── algorand.ts           # AlgorandClient + IndexerClient singletons
+│       └── Nav.tsx                 # brand, wallet button, address badge
+├── lib/                      # shared services
+│   ├── algorand.ts           # lazy AlgorandClient + IndexerClient singletons
 │   ├── campaign.ts           # indexer -> CampaignViewModel mapping
 │   ├── transaction.ts        # create/pledge/claim/refund send helpers
 │   └── format.ts             # microAlgo / deadline formatting
 ├── contracts/                # generated typed clients (gitignored)
 │   └── CampaignClient.ts
-├── components/               # generic UI (ErrorBoundary stays)
-└── utils/                    # ellipseAddress, network config (keep)
+├── components/               # generic UI (ConnectWallet, Account, ErrorBoundary)
+├── Home.tsx                  # state-based navigation between list/detail/create
+└── utils/                    # ellipseAddress, network config
 ```
 
 ## Pages & routing
@@ -98,6 +94,25 @@ interface CampaignViewModel {
 The derived `funded` state (deadline passed **and** `raised >= goal`) is
 computed client-side from `goal`/`raised`/`deadline` — exactly the same rule
 the contract evaluates. It is never stored on-chain.
+
+## Campaign metadata (decided)
+
+The contract currently stores only *state* — `creator`, `goal`, `deadline`,
+`raised`, `status` — nothing a Browse card or Detail page could show as an
+identity (title, description, image). **Decision (2026-08-31): add campaign
+metadata to the contract using the hybrid approach** — not yet implemented.
+
+- **On-chain:** a short `title` (string) in global state, passed to `create()`.
+  Cheap, readable straight from the indexer, no IPFS lookup needed for lists.
+- **Off-chain:** a `metadata_uri` (string) in global state pointing to a JSON
+  blob (ARC-3-style schema) on IPFS with the long description, image, and
+  category. Only fetched for the detail view.
+
+Rationale: there is no official ARC for stateful-app metadata (ARC-3/ARC-69 are
+ASA/NFT conventions), so this is a pragmatic default — instant card titles plus
+rich content off-chain. `title` is fixed at create; `metadata_uri` can be
+re-pointed later. The frontend `CampaignViewModel` will gain `title` and
+`metadataUri` fields when this lands.
 
 ## Reads (indexer)
 
@@ -193,23 +208,31 @@ Already present and unchanged: `App.tsx` builds a `WalletManager`
 
 ## Testing (Vitest)
 
-Phase 2 adds the frontend to the `unit-test` matrix with line coverage ≥ 90%
-on components and utils. Pure helpers first (easiest to cover, most valuable):
+The frontend has its own Vitest config (`vitest.config.ts`, jsdom environment)
+plus `@testing-library/react`, `@testing-library/jest-dom`,
+`@testing-library/user-event`, and `@vitest/coverage-v8`. Run with
+`npm run test`; coverage via `npm run test:coverage`.
+
+Coverage gates **components and utils** (the app shell `App`/`Home`/`main` and
+the generated `src/contracts/**` clients are excluded), with thresholds of
+90% across lines/branches/functions/statements:
 
 - `lib/format.ts` — ALGO/microAlgo conversion, deadline/countdown formatting.
-- `lib/campaign.ts` — global-state decoding and status derivation.
-- `features/campaigns/campaigns.utils.ts` — status/deadline helpers.
+- `lib/campaign.ts` — global-state decoding, status derivation, pledge-box
+  name/value encoding, and the indexer-backed read helpers.
+- `lib/algorand.ts` / `lib/transaction.ts` — lazy client singletons and the
+  create/pledge/claim/refund send helpers (mocked at the `CampaignClient` boundary).
+- `features/campaigns/*` — `CampaignList`, `CampaignCard`, `CampaignDetail`,
+  `CreateCampaignForm`, `PledgeForm`.
+- `features/app/Nav`, `components/*` (ConnectWallet, Account, ErrorBoundary),
+  and `utils/*`.
 
-Component tests (React Testing Library) mock the wallet context and the
-indexer/client services. The existing `vitest.config.mts` /
-`vitest.setup.ts` live in the **contracts** project; the frontend needs its own
-Vitest config plus `@testing-library/react` and `@vitest/coverage-v8` added to
-`package.json` (and a `test` script — currently absent, see
-[`ci.md`](ci.md)).
+Component tests mock `@txnlab/use-wallet-react` (wallet context) and the
+indexer/client services via `vi.mock`.
 
 ## Out of scope for Phase 2
 
-- Campaign images/metadata (IPFS) — Phase 4.
+- Campaign metadata — decided (hybrid, see [Campaign metadata](#campaign-metadata-decided)); implementation pending. Rich media/IPFS pinning remains Phase 4.
 - Cancel-before-deadline — Phase 4 (needs a contract change).
 - TestNet deployment — Phase 3.
 - Backend / database — never; the indexer is the read model.

@@ -1,60 +1,41 @@
-// src/components/Home.tsx
-import { useWallet } from '@txnlab/use-wallet-react'
 import { useState } from 'react'
-import ConnectWallet from './components/ConnectWallet'
-import Transact from './components/Transact'
+import Nav from './features/app/Nav'
+import CampaignList from './features/campaigns/CampaignList'
+import CampaignDetail from './features/campaigns/CampaignDetail'
+import CreateCampaignForm from './features/campaigns/CreateCampaignForm'
+
+type View = { kind: 'list' } | { kind: 'detail'; appId: bigint } | { kind: 'create' }
 
 const Home = () => {
-  const [openWalletModal, setOpenWalletModal] = useState<boolean>(false)
-  const [openDemoModal, setOpenDemoModal] = useState<boolean>(false)
-  const { activeAddress } = useWallet()
-
-  const toggleWalletModal = () => {
-    setOpenWalletModal(!openWalletModal)
-  }
-
-  const toggleDemoModal = () => {
-    setOpenDemoModal(!openDemoModal)
-  }
+  const [view, setView] = useState<View>({ kind: 'list' })
 
   return (
-    <div className="hero min-h-screen bg-teal-400">
-      <div className="hero-content text-center rounded-lg p-6 max-w-md bg-white mx-auto">
-        <div className="max-w-md">
-          <h1 className="text-4xl">
-            Welcome to <div className="font-bold">AlgoKit 🙂</div>
-          </h1>
-          <p className="py-6">
-            This starter has been generated using official AlgoKit React template. Refer to the resource below for next steps.
-          </p>
+    <div className="app">
+      <Nav
+        onNavigateHome={() => {
+          setView({ kind: 'list' })
+        }}
+      />
 
-          <div className="grid">
-            <a
-              data-test-id="getting-started"
-              className="btn btn-primary m-2"
-              target="_blank"
-              rel="noreferrer"
-              href="https://github.com/algorandfoundation/algokit-cli"
-            >
-              Getting started
-            </a>
-
-            <div className="divider" />
-            <button data-test-id="connect-wallet" className="btn m-2" onClick={toggleWalletModal}>
-              Wallet Connection
-            </button>
-
-            {activeAddress && (
-              <button data-test-id="transactions-demo" className="btn m-2" onClick={toggleDemoModal}>
-                Transactions Demo
+      <main className="app__main">
+        {view.kind === 'list' && (
+          <>
+            <div className="app__toolbar">
+              <h1 className="app__heading">Campaigns</h1>
+              <button type="button" className="btn btn--primary" onClick={() => setView({ kind: 'create' })}>
+                + New campaign
               </button>
-            )}
-          </div>
+            </div>
+            <CampaignList onSelectCampaign={(appId) => setView({ kind: 'detail', appId })} />
+          </>
+        )}
 
-          <ConnectWallet openModal={openWalletModal} closeModal={toggleWalletModal} />
-          <Transact openModal={openDemoModal} setModalState={setOpenDemoModal} />
-        </div>
-      </div>
+        {view.kind === 'detail' && <CampaignDetail appId={view.appId} onBack={() => setView({ kind: 'list' })} />}
+
+        {view.kind === 'create' && (
+          <CreateCampaignForm onCreated={(appId) => setView({ kind: 'detail', appId })} onCancel={() => setView({ kind: 'list' })} />
+        )}
+      </main>
     </div>
   )
 }
