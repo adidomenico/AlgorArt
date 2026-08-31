@@ -63,14 +63,14 @@ jobs:
 
       # Share the two build outputs with the downstream jobs.
       - name: Upload contract artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: contracts-artifacts
           path: projects/contracts/smart_contracts/artifacts
           if-no-files-found: error
 
       - name: Upload linked frontend clients
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-clients
           path: projects/frontend/src/contracts
@@ -96,7 +96,7 @@ jobs:
       # The frontend's type-check imports the generated clients; bring them in.
       - name: Download frontend clients
         if: matrix.project == 'frontend'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-clients
           path: projects/frontend/src/contracts
@@ -130,7 +130,7 @@ jobs:
       # Frontend tests import the generated clients (transaction.ts does).
       - name: Download frontend clients
         if: matrix.project == 'frontend'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-clients
           path: projects/frontend/src/contracts
@@ -156,7 +156,7 @@ jobs:
           cache-dependency-path: projects/contracts/package-lock.json
 
       - name: Download contract artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: contracts-artifacts
           path: projects/contracts/smart_contracts/artifacts
