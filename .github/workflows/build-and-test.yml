@@ -1,0 +1,186 @@
+name: build-and-test
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  # Build once: compile contracts (TEAL + generated clients) and link the typed
+  # clients into the frontend. Both outputs are gitignored and regenerable, so
+  # they're shared as artifacts instead of being rebuilt by every consumer.
+  build:
+    name: Build contracts and frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Cache both projects' node_modules (setup-node keys its cache by a
+      # single lockfile path, so one step per project).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: projects/contracts/package-lock.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: projects/frontend/package-lock.json
+
+      - name: Set up Python (for AlgoKit CLI)
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install AlgoKit CLI
+        run: |
+          if ! command -v algokit >/dev/null 2>&1; then
+            pipx install algokit==2.10.2
+          fi
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        shell: bash
+
+      - name: Install contract dependencies
+        run: npm ci
+        working-directory: projects/contracts
+
+      - name: Compile contracts (TEAL + generate clients)
+        run: npm run build
+        working-directory: projects/contracts
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: projects/frontend
+
+      # Link the contracts' generated clients into src/contracts (gitignored).
+      - name: Link clients into frontend
+        run: algokit project link --all
+        working-directory: projects/frontend
+
+      - name: Build frontend bundle (Vite)
+        run: npx vite build
+        working-directory: projects/frontend
+
+      # Share the two build outputs with the downstream jobs.
+      - name: Upload contract artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: contracts-artifacts
+          path: projects/contracts/smart_contracts/artifacts
+          if-no-files-found: error
+
+      - name: Upload linked frontend clients
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-clients
+          path: projects/frontend/src/contracts
+          if-no-files-found: error
+
+  # Pure static checks — no build, no AlgoKit. Symmetric across projects.
+  lint-format-type-check:
+    name: Lint, format, and type-check (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [contracts, frontend]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: projects/${{ matrix.project }}/package-lock.json
+
+      # The frontend's type-check imports the generated clients; bring them in.
+      - name: Download frontend clients
+        if: matrix.project == 'frontend'
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-clients
+          path: projects/frontend/src/contracts
+
+      - run: npm ci
+        working-directory: projects/${{ matrix.project }}
+      - run: npm run lint
+        working-directory: projects/${{ matrix.project }}
+      - run: npm run format
+        working-directory: projects/${{ matrix.project }}
+      - run: npm run check-types
+        working-directory: projects/${{ matrix.project }}
+
+  # Unit tests + coverage — pure Node, symmetric across projects.
+  unit-test:
+    name: Unit tests (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [contracts, frontend]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: projects/${{ matrix.project }}/package-lock.json
+
+      # Frontend tests import the generated clients (transaction.ts does).
+      - name: Download frontend clients
+        if: matrix.project == 'frontend'
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-clients
+          path: projects/frontend/src/contracts
+
+      - run: npm ci
+        working-directory: projects/${{ matrix.project }}
+      - run: npm run test:coverage
+        working-directory: projects/${{ matrix.project }}
+
+  # Deploy + exercise the compiled TEAL on a live LocalNet. Reuses the
+  # compiled contract artifacts from the build job instead of recompiling.
+  integration-test:
+    name: Integration tests (localnet)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: projects/contracts/package-lock.json
+
+      - name: Download contract artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: contracts-artifacts
+          path: projects/contracts/smart_contracts/artifacts
+
+      - name: Set up Python (for AlgoKit CLI)
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install AlgoKit CLI
+        run: |
+          if ! command -v algokit >/dev/null 2>&1; then
+            pipx install algokit==2.10.2
+          fi
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        shell: bash
+
+      - name: Install contract dependencies
+        run: npm ci
+        working-directory: projects/contracts
+
+      - name: Start LocalNet (algod + indexer)
+        run: algokit localnet start
+
+      - name: Run LocalNet integration tests
+        run: npm run test:integration
+        working-directory: projects/contracts

@@ -146,14 +146,15 @@ The full UI plan — pages, data flow, and the exact `create`/`pledge`/`claim`/
 - [ ] Campaign metadata — **decided, not yet implemented** (see [docs/frontend.md](docs/frontend.md)): hybrid approach — on-chain `title` + `metadata_uri` pointing to an off-chain JSON blob (IPFS) for description/image/category
 - [ ] Cancel-before-deadline option for creators
 - [ ] CI: contract simulator tests + frontend build + **coverage gate** + lint/format/type-check gate + markdown lint + frontend image build
-  - *In progress*: the pure-Node `unit-test` workflow (contract offline tests + coverage gate) and the `integration-test` workflow (LocalNet) are done; frontend build/coverage and image build remain.
+  - *In progress*: the consolidated `ci` workflow (build → lint/format/type-check, unit-test, and LocalNet integration) is done; frontend image build remains.
 - [ ] Package the frontend as a container image for portable hosting
 - [ ] ARC-32/56 spec published for the contract
 
-> **CI split.** The lint/format/type-check/markdown workflow (`checks`) is pure Node
-> and can be added now — it needs no Docker, AlgoKit, build, or tests. Build, test,
-> and localnet integration are separate workflows with heavier prerequisites. See
-> [the CI plan](docs/ci.md).
+> **CI.** One consolidated [`build-and-test`](.github/workflows/build-and-test.yml) workflow with four
+> jobs (`build` → lint/format/type-check, unit-test, integration-test), plus a
+> separate markdown-lint workflow with a `paths:` filter. The `build` job
+> compiles the contracts and shares the generated clients/artifacts with the
+> downstream jobs. See [the CI plan](docs/ci.md).
 >
 > **Root `package.json`?** Intentionally absent for now. Markdown linting runs via
 > `npx --yes markdownlint-cli2@0.23.2` (version pinned in the command), and the two
