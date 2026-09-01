@@ -83,6 +83,10 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
   `smart_contracts/artifacts` from `tsc`, and the frontend prepends `// @ts-nocheck` to
   the linked `src/contracts/*.ts` files via `scripts/ts-nocheck-generated.mjs` (wired
   into `generate:app-clients` and the CI link step).
+- **`verbatimModuleSyntax` is on.** `tsconfig.json` in both projects enables it, so
+  type-only imports must be written `import type` and the compiler no longer elides
+  type-only imports silently. This supersedes
+  `@typescript-eslint/consistent-type-imports` at the compiler level.
 - **Imports are checked.** `eslint-plugin-import` enforces `no-duplicates`,
   `no-named-as-default`, and `no-named-as-default-member` at `error` severity.
   Resolution-based rules (`no-unresolved` etc.) are intentionally off — `tsc --noEmit`
