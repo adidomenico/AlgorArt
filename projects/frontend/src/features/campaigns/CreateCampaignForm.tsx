@@ -51,8 +51,9 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
       <label className="create__field">
         Goal (ALGO)
         <input
-          type="text"
-          inputMode="decimal"
+          type="number"
+          min="0"
+          step="any"
           placeholder="e.g. 100"
           value={goal}
           onChange={(e) => {
