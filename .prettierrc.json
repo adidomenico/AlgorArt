@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/prettierrc",
-  "plugins": ["prettier-plugin-jsdoc"],
+  "plugins": ["prettier-plugin-jsdoc", "prettier-plugin-organize-imports"],
   "semi": false,
   "singleQuote": true,
   "printWidth": 140,

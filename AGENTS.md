@@ -71,12 +71,13 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
   with full type information. The `no-unsafe-*` rules are relaxed in test files (Vitest
   mocks return `any`). Config files outside any `tsconfig.json` are listed in
   `allowDefaultProject`.
-- **Imports are checked.** `eslint-plugin-import` enforces `import/order` (alphabetised,
-  case-insensitive) plus `no-duplicates`, `no-named-as-default`, and
-  `no-named-as-default-member`, all at `error` severity. Resolution-based rules
-  (`no-unresolved` etc.) are intentionally off — `tsc --noEmit` already validates
-  module resolution, and the default `eslint-import-resolver-node` cannot read
-  `exports`-only packages.
+- **Imports are checked.** `eslint-plugin-import` enforces `no-duplicates`,
+  `no-named-as-default`, and `no-named-as-default-member` at `error` severity.
+  Resolution-based rules (`no-unresolved` etc.) are intentionally off — `tsc --noEmit`
+  already validates module resolution, and the default `eslint-import-resolver-node`
+  cannot read `exports`-only packages. Import **ordering** is owned by
+  `prettier-plugin-organize-imports` (enabled in the shared `.prettierrc.json`), not by
+  an ESLint rule, so the formatter and linter never disagree.
 - **JSDoc is required on public/exported declarations.** The jsdoc plugin runs the
   `flat/recommended-typescript-error` preset (all rules at `error` severity), with
   `require-jsdoc` and `require-returns` scoped via `publicOnly` so internal helpers are

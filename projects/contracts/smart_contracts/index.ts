@@ -1,8 +1,8 @@
+import { Config } from '@algorandfoundation/algokit-utils'
+import { registerDebugEventHandlers } from '@algorandfoundation/algokit-utils-debug'
+import { consoleLogger } from '@algorandfoundation/algokit-utils/types/logging'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { Config } from '@algorandfoundation/algokit-utils'
-import { consoleLogger } from '@algorandfoundation/algokit-utils/types/logging'
-import { registerDebugEventHandlers } from '@algorandfoundation/algokit-utils-debug'
 
 interface Deployer {
   name: string

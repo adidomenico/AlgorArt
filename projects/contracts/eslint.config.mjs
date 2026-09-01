@@ -1,8 +1,8 @@
 import js from '@eslint/js'
-import { defineConfig } from 'eslint/config'
 import prettier from 'eslint-config-prettier'
 import importPlugin from 'eslint-plugin-import'
 import jsdoc from 'eslint-plugin-jsdoc'
+import { defineConfig } from 'eslint/config'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
@@ -43,7 +43,8 @@ export default defineConfig(
       'jsdoc/tag-lines': ['error', 'never', { startLines: 1 }],
     },
   },
-  // Import rules: duplicates + import ordering.
+  // Import rules: duplicates and named-default safety. Ordering is handled by
+  // `prettier-plugin-organize-imports` so the two tools never disagree.
   {
     files: ['**/*.{js,mjs,cjs,ts}'],
     plugins: { import: importPlugin },
@@ -55,12 +56,6 @@ export default defineConfig(
       'import/no-duplicates': 'error',
       'import/no-named-as-default': 'error',
       'import/no-named-as-default-member': 'error',
-      'import/order': [
-        'error',
-        {
-          alphabetize: { order: 'asc', caseInsensitive: true },
-        },
-      ],
     },
   },
   // Test files (simulator + integration) get Vitest globals.
