@@ -53,6 +53,7 @@ stateDiagram-v2
   - `payment.receiver == Global.currentApplicationAddress` (escrow)
   - `payment.sender == Txn.sender` (payer is the caller)
   - `payment.amount > 0`
+  - `Txn.sender != creator` (a creator cannot pledge to their own campaign)
 - Adds `payment.amount` to the backer's box and to `raised`.
 - **Re-pledging is allowed** — each payment is added to the existing box total.
 
@@ -83,6 +84,9 @@ stateDiagram-v2
 5. **Refund deletes the box after reading it.** This makes a second refund impossible
    (box no longer exists) and is safe because the payment is issued in the same transaction.
 6. **`claim()` guards against re-entrancy/replay** with the `already claimed` status check.
+7. **Creators cannot self-pledge.** `pledge()` rejects `Txn.sender == creator`. A self-pledge is not a direct
+   funds leak (the creator would only move their own ALGO in and out), but it lets a creator fabricate the
+   `raised` number to make a campaign look funded — undermining the trust story the contract exists to provide.
 
 ## Frontend integration (Phase 2)
 

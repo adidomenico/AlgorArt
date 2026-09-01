@@ -74,6 +74,14 @@ describe('CampaignDetail', () => {
     expect(await screen.findByText('PLEDGE_FORM')).toBeInTheDocument()
   })
 
+  it('hides the pledge form when the viewer is the creator', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('open', { creator: 'ADDRESS' }))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await screen.findByText('Campaign #42')
+    expect(screen.queryByText('PLEDGE_FORM')).not.toBeInTheDocument()
+  })
+
   it('shows a claim button when funded and the viewer is the creator', async () => {
     getCampaignMock.mockResolvedValue(viewModel('funded', { creator: 'ADDRESS' }))
     render(<CampaignDetail appId={42n} onBack={() => {}} />)

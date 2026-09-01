@@ -14,6 +14,8 @@ if (import.meta.env.VITE_ALGOD_NETWORK === 'localnet') {
         baseServer: kmdConfig.server,
         token: typeof kmdConfig.token === 'string' ? kmdConfig.token : JSON.stringify(kmdConfig.token),
         port: String(kmdConfig.port),
+        wallet: kmdConfig.wallet,
+        promptForPassword: () => Promise.resolve(kmdConfig.password),
       },
     },
   ]

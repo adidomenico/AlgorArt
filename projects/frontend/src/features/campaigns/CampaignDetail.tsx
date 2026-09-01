@@ -49,7 +49,7 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   const connected = Boolean(activeWallet && activeAddress)
   const isCreator = connected && campaign.creator !== '' && activeAddress === campaign.creator
   const hasPledge = (campaign.myPledgeMicroAlgos ?? 0n) > 0n
-  const canPledge = campaign.status === 'open' && connected
+  const canPledge = campaign.status === 'open' && connected && !isCreator
   const canClaim = campaign.status === 'funded' && isCreator
   const canRefund = campaign.status === 'failed' && connected && hasPledge
 

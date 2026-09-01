@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Nav from './features/app/Nav'
 import CampaignDetail from './features/campaigns/CampaignDetail'
 import CampaignList from './features/campaigns/CampaignList'
@@ -9,11 +9,31 @@ type View = { kind: 'list' } | { kind: 'detail'; appId: bigint } | { kind: 'crea
 const Home = () => {
   const [view, setView] = useState<View>({ kind: 'list' })
 
+  const navigate = useCallback((next: View) => {
+    window.history.pushState(next, '')
+    setView(next)
+  }, [])
+
+  const goBack = useCallback(() => {
+    window.history.back()
+  }, [])
+
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      setView((event.state as View | null) ?? { kind: 'list' })
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [])
+
   return (
     <div className="app">
       <Nav
         onNavigateHome={() => {
-          setView({ kind: 'list' })
+          navigate({ kind: 'list' })
         }}
       />
 
@@ -26,7 +46,7 @@ const Home = () => {
                 type="button"
                 className="btn btn--primary"
                 onClick={() => {
-                  setView({ kind: 'create' })
+                  navigate({ kind: 'create' })
                 }}
               >
                 + New campaign
@@ -34,7 +54,7 @@ const Home = () => {
             </div>
             <CampaignList
               onSelectCampaign={(appId) => {
-                setView({ kind: 'detail', appId })
+                navigate({ kind: 'detail', appId })
               }}
             />
           </>
@@ -44,7 +64,7 @@ const Home = () => {
           <CampaignDetail
             appId={view.appId}
             onBack={() => {
-              setView({ kind: 'list' })
+              goBack()
             }}
           />
         )}
@@ -52,10 +72,10 @@ const Home = () => {
         {view.kind === 'create' && (
           <CreateCampaignForm
             onCreated={(appId) => {
-              setView({ kind: 'detail', appId })
+              navigate({ kind: 'detail', appId })
             }}
             onCancel={() => {
-              setView({ kind: 'list' })
+              goBack()
             }}
           />
         )}

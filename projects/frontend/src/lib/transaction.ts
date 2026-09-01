@@ -1,7 +1,7 @@
 import { microAlgos } from '@algorandfoundation/algokit-utils'
 import type { TransactionSigner } from 'algosdk'
 import { CampaignClient, CampaignFactory } from '../contracts/Campaign'
-import { algorand } from './algorand'
+import { algorand, waitForIndexerCatchUp, waitForIndexerRound } from './algorand'
 
 /**
  * Write path: assembles + signs transactions through the generated `CampaignClient`. Each helper takes the wallet's signer/address so the
@@ -41,11 +41,14 @@ export async function createCampaign(
     defaultSigner: session.signer,
   })
 
-  const { result } = await factory.send.create.create({
+  const sendResult = await factory.send.create.create({
     args: { goal: goalMicroAlgos, deadline: deadlineSeconds },
   })
 
-  return { appId: result.appId, appAddress: result.appAddress.toString() }
+  // The generated create result doesn't expose the confirmation round, so wait for the indexer to catch up to algod's current tip.
+  await waitForIndexerCatchUp()
+
+  return { appId: sendResult.result.appId, appAddress: sendResult.result.appAddress.toString() }
 }
 
 /**
@@ -58,7 +61,7 @@ export async function createCampaign(
 export async function pledge(appId: bigint, session: WalletSession, amountMicroAlgos: bigint): Promise<void> {
   const client = clientFor(appId, session)
 
-  await client.send.pledge({
+  const result = await client.send.pledge({
     args: {
       payment: await algorand.createTransaction.payment({
         sender: session.address,
@@ -68,6 +71,11 @@ export async function pledge(appId: bigint, session: WalletSession, amountMicroA
     },
     populateAppCallResources: true,
   })
+
+  const confirmedRound = result.confirmation.confirmedRound
+  if (confirmedRound !== undefined) {
+    await waitForIndexerRound(confirmedRound)
+  }
 }
 
 /**
@@ -78,7 +86,12 @@ export async function pledge(appId: bigint, session: WalletSession, amountMicroA
  */
 export async function claim(appId: bigint, session: WalletSession): Promise<void> {
   const client = clientFor(appId, session)
-  await client.send.claim({ args: [], coverAppCallInnerTransactionFees: true })
+  const result = await client.send.claim({ args: [], coverAppCallInnerTransactionFees: true })
+
+  const confirmedRound = result.confirmation.confirmedRound
+  if (confirmedRound !== undefined) {
+    await waitForIndexerRound(confirmedRound)
+  }
 }
 
 /**
@@ -89,5 +102,10 @@ export async function claim(appId: bigint, session: WalletSession): Promise<void
  */
 export async function refund(appId: bigint, session: WalletSession): Promise<void> {
   const client = clientFor(appId, session)
-  await client.send.refund({ args: [], coverAppCallInnerTransactionFees: true })
+  const result = await client.send.refund({ args: [], coverAppCallInnerTransactionFees: true })
+
+  const confirmedRound = result.confirmation.confirmedRound
+  if (confirmedRound !== undefined) {
+    await waitForIndexerRound(confirmedRound)
+  }
 }

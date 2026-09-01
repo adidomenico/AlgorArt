@@ -74,6 +74,7 @@ export class Campaign extends Contract {
     assert(payment.receiver === Global.currentApplicationAddress, 'payment must be made to the campaign escrow')
     assert(payment.sender === Txn.sender, 'payment must come from the caller')
     assert(payment.amount > 0, 'pledge must be greater than zero')
+    assert(Txn.sender !== this.creator.value, 'creator cannot pledge to their own campaign')
 
     // A backer can pledge more than once; each payment is added to their box.
     // `.get({ default: 0 })` handles the first pledge, where the box doesn't exist yet.

@@ -38,6 +38,42 @@ describe('Campaign', () => {
     return contract
   }
 
+  /** A freshly generated account that is not the creator (default sender). */
+  function backerAccount() {
+    return ctx.any.account()
+  }
+
+  /**
+   * Pledge `amount` microAlgos as `backer`.
+   *
+   * The pledge must run with `Txn.sender == backer`, so it executes inside a scope whose app-call sender is the backer. The creator is barred
+   * from pledging, so every happy-path pledge in this file goes through here with a non-creator backer.
+   *
+   * @param contract The campaign to pledge to.
+   * @param backer The non-creator backer account.
+   * @param amount Pledge amount in microAlgos.
+   */
+  function pledgeAs(contract: Campaign, backer: ReturnType<typeof backerAccount>, amount: number) {
+    const appAddress = ctx.ledger.getApplicationForContract(contract).address
+    ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: contract, sender: backer })]).execute(() => {
+      contract.pledge(ctx.any.txn.payment({ sender: backer, receiver: appAddress, amount }))
+    })
+  }
+
+  /**
+   * Refund `backer`'s pledge.
+   *
+   * `refund()` reads the caller's box, so it must run with `Txn.sender == backer`.
+   *
+   * @param contract The campaign to refund from.
+   * @param backer The backer whose pledge is refunded.
+   */
+  function refundAs(contract: Campaign, backer: ReturnType<typeof backerAccount>) {
+    ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: contract, sender: backer })]).execute(() => {
+      contract.refund()
+    })
+  }
+
   describe('create', () => {
     test('sets creator, goal, deadline, raised and status', () => {
       const contract = createCampaign()
@@ -76,14 +112,9 @@ describe('Campaign', () => {
   describe('pledge', () => {
     test('records the pledge and bumps raised', () => {
       const contract = createCampaign()
-      const backer = ctx.defaultSender
-      const payment = ctx.any.txn.payment({
-        sender: backer,
-        receiver: ctx.ledger.getApplicationForContract(contract).address,
-        amount: 100_000,
-      })
+      const backer = backerAccount()
 
-      contract.pledge(payment)
+      pledgeAs(contract, backer, 100_000)
 
       expect(contract.pledges(backer).value).toEqual(100_000)
       expect(contract.raised.value).toEqual(100_000)
@@ -91,14 +122,26 @@ describe('Campaign', () => {
 
     test('re-pledging accumulates into the same box', () => {
       const contract = createCampaign()
-      const backer = ctx.defaultSender
-      const appAddress = ctx.ledger.getApplicationForContract(contract).address
+      const backer = backerAccount()
 
-      contract.pledge(ctx.any.txn.payment({ sender: backer, receiver: appAddress, amount: 100_000 }))
-      contract.pledge(ctx.any.txn.payment({ sender: backer, receiver: appAddress, amount: 50_000 }))
+      pledgeAs(contract, backer, 100_000)
+      pledgeAs(contract, backer, 50_000)
 
       expect(contract.pledges(backer).value).toEqual(150_000)
       expect(contract.raised.value).toEqual(150_000)
+    })
+
+    test('rejects the creator pledging to their own campaign', () => {
+      const contract = createCampaign()
+      const payment = ctx.any.txn.payment({
+        sender: ctx.defaultSender,
+        receiver: ctx.ledger.getApplicationForContract(contract).address,
+        amount: 100_000,
+      })
+
+      expect(() => {
+        contract.pledge(payment)
+      }).toThrow('creator cannot pledge to their own campaign')
     })
 
     test('rejects a zero pledge', () => {
@@ -160,9 +203,10 @@ describe('Campaign', () => {
   describe('claim', () => {
     test('pays the escrow balance to the creator once the goal is met', () => {
       const contract = createCampaign()
+      const backer = backerAccount()
       const appAddress = ctx.ledger.getApplicationForContract(contract).address
 
-      contract.pledge(ctx.any.txn.payment({ sender: ctx.defaultSender, receiver: appAddress, amount: GOAL }))
+      pledgeAs(contract, backer, GOAL)
       // Simulate the pledged funds having arrived at the escrow.
       ctx.ledger.patchAccountData(appAddress, { account: { balance: GOAL + MIN_BALANCE } })
 
@@ -204,9 +248,10 @@ describe('Campaign', () => {
 
     test('rejects a second claim after funds are claimed', () => {
       const contract = createCampaign()
+      const backer = backerAccount()
       const appAddress = ctx.ledger.getApplicationForContract(contract).address
 
-      contract.pledge(ctx.any.txn.payment({ sender: ctx.defaultSender, receiver: appAddress, amount: GOAL }))
+      pledgeAs(contract, backer, GOAL)
       ctx.ledger.patchAccountData(appAddress, { account: { balance: GOAL + MIN_BALANCE } })
 
       ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
@@ -221,14 +266,14 @@ describe('Campaign', () => {
   describe('refund', () => {
     test('returns a backer their pledge when the goal was not reached', () => {
       const contract = createCampaign()
-      const backer = ctx.defaultSender
+      const backer = backerAccount()
       const appAddress = ctx.ledger.getApplicationForContract(contract).address
 
-      contract.pledge(ctx.any.txn.payment({ sender: backer, receiver: appAddress, amount: 100_000 }))
+      pledgeAs(contract, backer, 100_000)
       ctx.ledger.patchAccountData(appAddress, { account: { balance: 100_000 + MIN_BALANCE } })
 
       ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
-      contract.refund()
+      refundAs(contract, backer)
 
       expect(contract.status.value).toEqual(1)
       expect(contract.pledges(backer).exists).toEqual(false)
@@ -246,14 +291,12 @@ describe('Campaign', () => {
 
     test('rejects refunding when the goal was reached', () => {
       const contract = createCampaign()
-      const backer = ctx.defaultSender
-      contract.pledge(
-        ctx.any.txn.payment({ sender: backer, receiver: ctx.ledger.getApplicationForContract(contract).address, amount: GOAL }),
-      )
+      const backer = backerAccount()
+      pledgeAs(contract, backer, GOAL)
 
       ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
       expect(() => {
-        contract.refund()
+        refundAs(contract, backer)
       }).toThrow('goal was reached, no refunds')
     })
 
@@ -267,42 +310,38 @@ describe('Campaign', () => {
 
     test('rejects a second refund from the same backer', () => {
       const contract = createCampaign()
-      const backer = ctx.defaultSender
+      const backer = backerAccount()
       const appAddress = ctx.ledger.getApplicationForContract(contract).address
 
-      contract.pledge(ctx.any.txn.payment({ sender: backer, receiver: appAddress, amount: 100_000 }))
+      pledgeAs(contract, backer, 100_000)
       ctx.ledger.patchAccountData(appAddress, { account: { balance: 100_000 + MIN_BALANCE } })
 
       ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
-      contract.refund()
+      refundAs(contract, backer)
 
       expect(() => {
-        contract.refund()
+        refundAs(contract, backer)
       }).toThrow('nothing to refund')
     })
 
     test('lets each backer refund their own pledge after the first refund', () => {
       const contract = createCampaign()
-      const backerA = ctx.defaultSender
-      const backerB = ctx.any.account()
+      const backerA = backerAccount()
+      const backerB = backerAccount()
       const appAddress = ctx.ledger.getApplicationForContract(contract).address
 
-      contract.pledge(ctx.any.txn.payment({ sender: backerA, receiver: appAddress, amount: 60_000 }))
-      ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: contract, sender: backerB })]).execute(() => {
-        contract.pledge(ctx.any.txn.payment({ sender: backerB, receiver: appAddress, amount: 40_000 }))
-      })
+      pledgeAs(contract, backerA, 60_000)
+      pledgeAs(contract, backerB, 40_000)
 
       ctx.ledger.patchAccountData(appAddress, { account: { balance: 100_000 + MIN_BALANCE } })
       ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
 
       // First backer materialises the Failed status.
-      contract.refund()
+      refundAs(contract, backerA)
       expect(contract.status.value).toEqual(1)
 
       // Second backer can still reclaim their own pledge.
-      ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: contract, sender: backerB })]).execute(() => {
-        contract.refund()
-      })
+      refundAs(contract, backerB)
 
       expect(contract.pledges(backerA).exists).toEqual(false)
       expect(contract.pledges(backerB).exists).toEqual(false)
