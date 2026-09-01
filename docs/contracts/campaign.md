@@ -131,7 +131,7 @@ stateDiagram-v2
 ## Known edge cases
 
 The cases below drive implementation decisions for the proposed methods; they are
-tracked in `docs/roadmap.md` → "Known edge cases & open questions".
+referenced from the contract items in [`roadmap.md`](../roadmap.md).
 
 1. **Zero-pledge campaign stays `Open`.** `refund()` materialises `Failed` **and**
    requires the caller's box to exist in the same atomic call, so a campaign nobody
@@ -157,7 +157,7 @@ tracked in `docs/roadmap.md` → "Known edge cases & open questions".
 8. **Overflow is impossible in practice.** `raised` and box values are `uint64`; an
    overflow would need more ALGO than the total supply. No guard needed.
 
-## Frontend integration (Phase 2)
+## Frontend integration
 
 The generated client (`CampaignClient.ts`) exposes each method with typed args. The
 `pledge` call must be built as a transaction group: a payment from the backer to

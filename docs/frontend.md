@@ -1,4 +1,4 @@
-# Frontend design (Phase 2)
+# Frontend design
 
 How the AlgorArt dApp is planned and structured. The contract is the source of
 truth; the frontend is a **read model + signer**: it reads campaign state from
@@ -24,7 +24,7 @@ It never holds keys, never holds funds, and never decides a campaign outcome.
 
 ## Current state
 
-The Phase 2 frontend is implemented. The AlgoKit starter's `Home` hero and
+The core frontend is implemented. The AlgoKit starter's `Home` hero and
 "send 1 ALGO" demo (`Transact`) are replaced by the campaign feature set
 below. The wallet plumbing (`WalletManager` + `WalletProvider` +
 Pera/Defly/Exodus/KMD) is unchanged.
@@ -56,7 +56,7 @@ projects/frontend/src/
 
 ## Pages & routing
 
-No router dependency is required for Phase 2; a lightweight state-based
+No router dependency is required for the current scope; a lightweight state-based
 navigation (selected campaign id) is enough. Add `react-router` later if the
 route structure grows.
 
@@ -114,7 +114,7 @@ off-chain JSON (ARC-3-style: description, image, category). The hybrid approach:
 `title` is fixed at create. The frontend `CampaignViewModel` exposes both
 `title` and `metadataUri`: browse cards render `title` directly; the detail view
 shows the `metadataUri` (fetching and rendering the off-chain JSON remains a
-Phase 4 nicety). `title` and `metadataUri` are ABI `byte[]` arguments to
+later nicety). `title` and `metadataUri` are ABI `byte[]` arguments to
 `create`, encoded on-chain as `bytes`, each capped at 128 bytes (the AVM limit
 for a bytes global-state value) — enforced both on-chain and in the create form.
 
@@ -320,9 +320,9 @@ the generated `src/contracts/**` clients are excluded), with thresholds of
 Component tests mock `@txnlab/use-wallet-react` (wallet context) and the
 indexer/client services via `vi.mock`.
 
-## Out of scope for Phase 2
+## Out of scope for now
 
-- Campaign metadata — implemented (hybrid, see [Campaign metadata](#campaign-metadata-implemented)); rich media/IPFS rendering remains Phase 4.
-- Cancel-before-deadline — Phase 4 (needs a contract change).
-- TestNet deployment — Phase 3.
+- Campaign metadata — implemented (hybrid, see [Campaign metadata](#campaign-metadata-implemented)); rich media/IPFS rendering is on the roadmap.
+- Cancel-before-deadline — on the roadmap (needs a contract change).
+- TestNet deployment — on the roadmap.
 - Backend / database — never; the indexer is the read model.

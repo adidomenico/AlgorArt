@@ -10,9 +10,9 @@ creator can claim the funds; if not, every backer can reclaim their pledge.
 
 > Technical details live in [`docs/`](docs/): contract internals, on-chain state,
 > and design decisions in [the contract docs](docs/contracts/campaign.md), the
-> [frontend design](docs/frontend.md), [the CI plan](docs/ci.md), and the full
-> [roadmap](docs/roadmap.md) (phases, proposed contract changes, edge cases, and
-> the later product plan).
+> [frontend design](docs/frontend.md), [the CI plan](docs/ci.md), the
+> [roadmap](docs/roadmap.md) (what's left to do), and
+> [product design & open questions](docs/design.md).
 
 ## The idea
 
@@ -110,19 +110,15 @@ AlgorArt/
 
 ## Roadmap
 
-The full plan — phases, proposed contract changes, known edge cases, and the later
-product plan (identity, backend, notifications, UI) — lives in
-[`docs/roadmap.md`](docs/roadmap.md). This is the single source of truth; the short
-version:
+Two docs carry the plan:
 
-| Phase | Scope | Status |
-| --- | --- | --- |
-| 0 — Setup | AlgoKit workspace, toolchain, sandbox, lint/format/type-check | ✅ done |
-| 1 — Smart contract | `create`/`pledge`/`claim`/`refund` + full behavioral tests | ✅ done |
-| 2 — Frontend | Wallet connect, browse, create, pledge, claim/refund UI | ✅ done |
-| 3 — TestNet | Deploy + end-to-end demo | ⬜ next |
-| 4 — Polish | Refund UX, cancel/batch, metadata rendering, CI | ⬜ planned |
-| A/B/C — Product | Content & UI, profiles & notifications, polish | ⬜ design only |
+- [`docs/roadmap.md`](docs/roadmap.md) — a living checklist of what's left, organized by area.
+- [`docs/design.md`](docs/design.md) — product design & open questions (identity, backend, notifications, UI).
+
+Done so far: setup; the core contract (`create`/`pledge`/`claim`/`refund` with full
+tests); and the core frontend (wallet connect, browse, create, pledge, claim/refund).
+Next up: a TestNet smoke test, the contract-shape decisions (`updateMetadata`,
+cancel/batch refunds), then styling and the later product features.
 
 > **CI.** One consolidated [`build-and-test`](.github/workflows/build-and-test.yml) workflow with four
 > jobs (`build` → lint/format/type-check, unit-test, integration-test), plus a
@@ -205,7 +201,7 @@ plain Node projects and run without Docker.
 
 For end users, nothing runs locally at all: once the contract is deployed and the
 frontend is served from a static host, the dApp is just a URL in a browser. Packaging
-the frontend as a container image is a possible Phase 4 nicety, not a requirement.
+the frontend as a container image is a possible later nicety, not a requirement.
 
 ## License
 

@@ -15,7 +15,7 @@ Two complementary layers:
    bytecode behaves as the unit tests expect.
 
 > The offline tests are not a substitute for the on-chain run — they're the fast
-> feedback loop. Both are required before Phase 1 is "done".
+> feedback loop. Both are required before the contract is considered done.
 
 ## Tooling
 
@@ -123,7 +123,7 @@ class as it does not extend Contract or BaseContract".
   fails against the package's ESM-only exports map.
 - `package.json` test script uses `--no-color` to keep AlgoKit's command output clean.
 
-## Roadmap
+## Milestones (done)
 
 - [x] **M0 — Harness.** Install tooling; `vitest.config.mts` + `vitest.setup.ts`;
       `npm run test` runs.

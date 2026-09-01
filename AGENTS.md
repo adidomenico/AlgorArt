@@ -14,7 +14,10 @@ workspace: an Algorand TypeScript smart contract plus a React + Vite frontend.
     (`create`, `pledge`, `claim`, `refund`)
   - `smart_contracts/artifacts/` — **generated** (compiled TEAL, ARC-32/56 specs, clients)
 - `projects/frontend/` — React + Vite + TypeScript dApp
-- [`docs/`](docs/) — human-readable technical docs (contract internals, design decisions)
+- [`docs/`](docs/) — technical docs: [`contracts/campaign.md`](docs/contracts/campaign.md)
+  (internals), [`contracts/testing.md`](docs/contracts/testing.md),
+  [`frontend.md`](docs/frontend.md), [`ci.md`](docs/ci.md),
+  [`roadmap.md`](docs/roadmap.md) (checklist), [`design.md`](docs/design.md) (product plan)
 - [`README.md`](README.md) — the project specification (contract design, roadmap, testing strategy)
 
 ## Commands
@@ -166,7 +169,7 @@ Fix everything until green — don't skip a step because the change "looks small
 
 ## Roadmap
 
-Phase 0 (setup) done → Phase 1 (contract + tests + localnet) → Phase 2 (frontend) →
-Phase 3 (TestNet demo) → Phase 4 (polish), then the later product phases
-(A/B/C). The full plan lives in `docs/roadmap.md`; `README.md` carries only the
-short status table.
+Work left to do is tracked as a checklist in [`docs/roadmap.md`](docs/roadmap.md),
+organized by area (contract, frontend UX, content, TestNet, CI). Product design and
+open questions live in [`docs/design.md`](docs/design.md). `README.md` carries only
+the short status summary.
