@@ -68,11 +68,6 @@
     "format": "prettier --check .",
     "format:fix": "prettier --write ."
   },
-  "eslintConfig": {
-    "extends": [
-      "react-app"
-    ]
-  },
   "browserslist": {
     "production": [
       ">0.2%",
