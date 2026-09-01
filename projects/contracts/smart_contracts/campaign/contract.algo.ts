@@ -4,15 +4,11 @@ import { Contract, abimethod, assert, GlobalState, BoxMap, Global, Txn, itxn } f
 /**
  * Campaign — a non-custodial crowdfunding escrow.
  *
- * One stateful application per campaign. Pledged ALGO is held at the app's
- * escrow address and released by the contract itself, based purely on the
- * on-chain state and the transaction group presented by the caller.
+ * One stateful application per campaign. Pledged ALGO is held at the app's escrow address and released by the contract itself, based purely
+ * on the on-chain state and the transaction group presented by the caller.
  *
- * State machine:
- *   Open -> Funded   (deadline passed & raised >= goal)
- *   Open -> Failed   (deadline passed & raised <  goal)
- *   Funded -> Claimed (creator claims escrow balance)
- *   Failed -> Refunded (each backer reclaims their pledge)
+ * State machine: Open -> Funded (deadline passed & raised >= goal) Open -> Failed (deadline passed & raised < goal) Funded -> Claimed
+ * (creator claims escrow balance) Failed -> Refunded (each backer reclaims their pledge)
  */
 
 // Status is stored in global state as a uint64.
@@ -45,9 +41,11 @@ export class Campaign extends Contract {
   /**
    * Deploy the campaign.
    *
-   * Called as part of the app-create transaction, so this must run with
-   * `Txn.applicationId == 0`. `goal` must be greater than zero and the
+   * Called as part of the app-create transaction, so this must run with `Txn.applicationId == 0`. `goal` must be greater than zero and the
    * `deadline` must be in the future.
+   *
+   * @param goal Funding target in microAlgos.
+   * @param deadline UNIX timestamp (seconds) after which pledging closes.
    */
   @abimethod({ onCreate: 'require' })
   create(goal: uint64, deadline: uint64): void {
@@ -65,9 +63,10 @@ export class Campaign extends Contract {
   /**
    * Pledge ALGO to the campaign.
    *
-   * The caller submits this app call in a group with a payment transaction
-   * from their own account to the app's escrow address. The contract verifies
-   * the payment is valid and records the amount in the backer's box.
+   * The caller submits this app call in a group with a payment transaction from their own account to the app's escrow address. The contract
+   * verifies the payment is valid and records the amount in the backer's box.
+   *
+   * @param payment Payment from the caller to the campaign escrow.
    */
   @abimethod()
   pledge(payment: gtxn.PaymentTxn): void {
@@ -87,9 +86,8 @@ export class Campaign extends Contract {
   /**
    * Release the escrow balance to the creator.
    *
-   * Only the creator may call, only once the deadline has passed and only if
-   * the goal was reached. The outcome is first materialised into global state
-   * so the indexer can observe it, then the balance is paid out.
+   * Only the creator may call, only once the deadline has passed and only if the goal was reached. The outcome is first materialised into
+   * global state so the indexer can observe it, then the balance is paid out.
    */
   @abimethod()
   claim(): void {
@@ -111,9 +109,8 @@ export class Campaign extends Contract {
   /**
    * Return a backer's pledge.
    *
-   * Only available after the deadline has passed and the goal was NOT reached.
-   * Each backer can reclaim their own pledge, once; a second attempt fails
-   * because their box no longer exists.
+   * Only available after the deadline has passed and the goal was NOT reached. Each backer can reclaim their own pledge, once; a second
+   * attempt fails because their box no longer exists.
    */
   @abimethod()
   refund(): void {

@@ -4,8 +4,7 @@ import { CampaignClient, CampaignFactory } from '../contracts/Campaign'
 import { algorand } from './algorand'
 
 /**
- * Write path: assembles + signs transactions through the generated
- * `CampaignClient`. Each helper takes the wallet's signer/address so the
+ * Write path: assembles + signs transactions through the generated `CampaignClient`. Each helper takes the wallet's signer/address so the
  * wallet — never the app — holds the keys.
  */
 
@@ -23,7 +22,14 @@ function clientFor(appId: bigint, session: WalletSession): CampaignClient {
   })
 }
 
-/** Deploy a new campaign. Returns the new app id and escrow address. */
+/**
+ * Deploy a new campaign. Returns the new app id and escrow address.
+ *
+ * @param session Wallet session holding the signer and address.
+ * @param goalMicroAlgos Funding target in microAlgos.
+ * @param deadlineSeconds Deadline as a UNIX timestamp (seconds).
+ * @returns The new app id and escrow address.
+ */
 export async function createCampaign(
   session: WalletSession,
   goalMicroAlgos: bigint,
@@ -42,7 +48,13 @@ export async function createCampaign(
   return { appId: result.appId, appAddress: result.appAddress.toString() }
 }
 
-/** Pledge ALGO: a payment to the escrow + the app call, in one atomic group. */
+/**
+ * Pledge ALGO: a payment to the escrow + the app call, in one atomic group.
+ *
+ * @param appId Campaign application id.
+ * @param session Wallet session holding the signer and address.
+ * @param amountMicroAlgos Pledge amount in microAlgos.
+ */
 export async function pledge(appId: bigint, session: WalletSession, amountMicroAlgos: bigint): Promise<void> {
   const client = clientFor(appId, session)
 
@@ -58,13 +70,23 @@ export async function pledge(appId: bigint, session: WalletSession, amountMicroA
   })
 }
 
-/** Claim the escrow balance (creator only, after deadline, goal reached). */
+/**
+ * Claim the escrow balance (creator only, after deadline, goal reached).
+ *
+ * @param appId Campaign application id.
+ * @param session Wallet session holding the signer and address.
+ */
 export async function claim(appId: bigint, session: WalletSession): Promise<void> {
   const client = clientFor(appId, session)
   await client.send.claim({ args: [], coverAppCallInnerTransactionFees: true })
 }
 
-/** Refund the caller's pledge (backer, after deadline, goal not reached). */
+/**
+ * Refund the caller's pledge (backer, after deadline, goal not reached).
+ *
+ * @param appId Campaign application id.
+ * @param session Wallet session holding the signer and address.
+ */
 export async function refund(appId: bigint, session: WalletSession): Promise<void> {
   const client = clientFor(appId, session)
   await client.send.refund({ args: [], coverAppCallInnerTransactionFees: true })

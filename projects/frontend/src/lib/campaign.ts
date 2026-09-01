@@ -2,13 +2,13 @@ import algosdk, { decodeAddress, encodeAddress } from 'algosdk'
 import { indexer } from './algorand'
 
 /**
- * Read model: maps indexer responses into a `CampaignViewModel` the UI can
- * render. The contract is the source of truth — everything here is derived
- * from the same public state the contract reads and writes.
+ * Read model: maps indexer responses into a `CampaignViewModel` the UI can render. The contract is the source of truth — everything here is
+ * derived from the same public state the contract reads and writes.
  *
  * See docs/frontend.md and docs/contracts/campaign.md for the on-chain model:
- *   - global state: `creator` (bytes), `goal`/`deadline`/`raised`/`status` (uint)
- *   - backer pledges: boxes named by `p` prefix + address bytes
+ *
+ * - Global state: `creator` (bytes), `goal`/`deadline`/`raised`/`status` (uint)
+ * - Backer pledges: boxes named by `p` prefix + address bytes
  */
 
 export type CampaignStatus = 'open' | 'funded' | 'failed' | 'claimed'
@@ -37,11 +37,16 @@ const STATUS_UINT_TO_LABEL: Record<number, CampaignStatus> = {
 }
 
 /**
- * Derive the display status. `funded` and `failed` are recomputed from
- * deadline/raised/goal — exactly the rule the contract evaluates — because
- * neither is materialised into global state until someone acts. The stored
- * `status` uint only ever holds `0` (Open), `1` (Failed, after a refund) or
- * `2` (Claimed), and is authoritative for `failed`/`claimed` once set.
+ * Derive the display status. `funded` and `failed` are recomputed from deadline/raised/goal — exactly the rule the contract evaluates —
+ * because neither is materialised into global state until someone acts. The stored `status` uint only ever holds `0` (Open), `1` (Failed,
+ * after a refund) or `2` (Claimed), and is authoritative for `failed`/`claimed` once set.
+ *
+ * @param goal Funding target in microAlgos.
+ * @param raised Total pledged so far in microAlgos.
+ * @param deadlineSeconds Deadline as a UNIX timestamp (seconds).
+ * @param statusUint Stored status uint (0 open, 1 failed, 2 claimed).
+ * @param nowSeconds Current UNIX timestamp (seconds).
+ * @returns The derived display status.
  */
 export function deriveStatus(
   goal: bigint,
@@ -66,8 +71,11 @@ function decodeKey(keyBytes: Uint8Array): string {
 }
 
 /**
- * Extract the contract's global state from an indexer `Application` into a
- * plain object. Unknown keys are ignored so other apps are safely filtered out.
+ * Extract the contract's global state from an indexer `Application` into a plain object. Unknown keys are ignored so other apps are safely
+ * filtered out.
+ *
+ * @param app Indexer application with the campaign's global state.
+ * @returns Decoded global-state values.
  */
 export function decodeGlobalState(app: algosdk.indexerModels.Application): {
   creator?: string
@@ -104,13 +112,25 @@ export function decodeGlobalState(app: algosdk.indexerModels.Application): {
   return result
 }
 
-/** True when an indexer `Application` looks like a `Campaign` (has our global-state keys). */
+/**
+ * True when an indexer `Application` looks like a `Campaign` (has our global-state keys).
+ *
+ * @param app Indexer application to check.
+ * @returns True when the app exposes all known campaign global-state keys.
+ */
 export function isCampaignApp(app: algosdk.indexerModels.Application): boolean {
   const keys = new Set((app.params.globalState ?? []).map((kv) => decodeKey(kv.key)))
   return (KNOWN_KEYS as readonly string[]).every((key) => keys.has(key))
 }
 
-/** Map an indexer `Application` to a `CampaignViewModel`. */
+/**
+ * Map an indexer `Application` to a `CampaignViewModel`.
+ *
+ * @param app Indexer application to map.
+ * @param nowSeconds Current UNIX timestamp (seconds).
+ * @param myPledgeMicroAlgos Viewer's pledge, if already fetched.
+ * @returns The campaign view model.
+ */
 export function toCampaignViewModel(
   app: algosdk.indexerModels.Application,
   nowSeconds: bigint,
@@ -132,7 +152,12 @@ export function toCampaignViewModel(
   }
 }
 
-/** Build the box name for a backer's pledge: `p` prefix + address bytes. */
+/**
+ * Build the box name for a backer's pledge: `p` prefix + address bytes.
+ *
+ * @param address Backer's Algorand address.
+ * @returns Box name bytes.
+ */
 export function pledgeBoxName(address: string): Uint8Array {
   const prefix = new TextEncoder().encode('p')
   const addressBytes = decodeAddress(address).publicKey
@@ -142,14 +167,22 @@ export function pledgeBoxName(address: string): Uint8Array {
   return name
 }
 
-/** Decode a pledge box value (8-byte big-endian uint64) into microAlgos. */
+/**
+ * Decode a pledge box value (8-byte big-endian uint64) into microAlgos.
+ *
+ * @param value Raw box value bytes.
+ * @returns Pledged amount in microAlgos.
+ */
 export function decodePledgeBoxValue(value: Uint8Array): bigint {
   return algosdk.bytesToBigInt(value)
 }
 
 /**
- * Fetch the connected wallet's pledge for a campaign, or `undefined` if the
- * box is absent (never pledged, or already refunded).
+ * Fetch the connected wallet's pledge for a campaign, or `undefined` if the box is absent (never pledged, or already refunded).
+ *
+ * @param appId Campaign application id.
+ * @param address Viewer's Algorand address.
+ * @returns Pledge in microAlgos, or undefined if there is no pledge box.
  */
 export async function fetchMyPledge(appId: bigint, address: string): Promise<bigint | undefined> {
   try {
@@ -161,9 +194,12 @@ export async function fetchMyPledge(appId: bigint, address: string): Promise<big
 }
 
 /**
- * List all campaigns by scanning indexed applications for our global-state keys.
- * There is no app-name filter on the indexer, so presence of the known keys is
- * the discriminator (docs/frontend.md).
+ * List all campaigns by scanning indexed applications for our global-state keys. There is no app-name filter on the indexer, so presence of
+ * the known keys is the discriminator (docs/frontend.md).
+ *
+ * @param nowSeconds Current UNIX timestamp (seconds).
+ * @param viewerAddress Connected wallet address, if any.
+ * @returns All campaigns found in the indexer.
  */
 export async function listCampaigns(nowSeconds: bigint, viewerAddress?: string): Promise<CampaignViewModel[]> {
   const response = await indexer.searchForApplications().limit(100).do()
@@ -180,7 +216,14 @@ export async function listCampaigns(nowSeconds: bigint, viewerAddress?: string):
   return campaigns
 }
 
-/** Fetch a single campaign by app id. */
+/**
+ * Fetch a single campaign by app id.
+ *
+ * @param appId Campaign application id.
+ * @param nowSeconds Current UNIX timestamp (seconds).
+ * @param viewerAddress Connected wallet address, if any.
+ * @returns The campaign, or undefined if not found or not a campaign app.
+ */
 export async function getCampaign(appId: bigint, nowSeconds: bigint, viewerAddress?: string): Promise<CampaignViewModel | undefined> {
   const response = await indexer.lookupApplications(appId).do()
   const app = response.application

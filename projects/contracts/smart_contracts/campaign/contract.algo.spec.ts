@@ -3,11 +3,9 @@ import { beforeEach, describe, expect, test } from 'vitest'
 import { Campaign } from './contract.algo'
 
 /**
- * Behavioral tests for the Campaign escrow contract, run against the offline
- * AVM emulation provided by `algorand-typescript-testing`.
+ * Behavioral tests for the Campaign escrow contract, run against the offline AVM emulation provided by `algorand-typescript-testing`.
  *
- * Coverage target (README + docs/contracts/testing.md): every method × every
- * branch. This file grows incrementally — see the roadmap in
+ * Coverage target (README + docs/contracts/testing.md): every method × every branch. This file grows incrementally — see the roadmap in
  * docs/contracts/testing.md.
  */
 
@@ -28,7 +26,12 @@ describe('Campaign', () => {
     ctx.ledger.patchGlobalData({ latestTimestamp: CREATION_TIME })
   })
 
-  /** Create a campaign as the default sender (the creator). */
+  /**
+   * Create a campaign as the default sender (the creator).
+   *
+   * @param goal Funding target in microAlgos.
+   * @param deadline UNIX timestamp (seconds) for the funding deadline.
+   */
   function createCampaign(goal = GOAL, deadline = DEADLINE) {
     const contract = ctx.contract.create(Campaign)
     contract.create(goal, deadline)

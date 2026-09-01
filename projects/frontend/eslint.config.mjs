@@ -1,6 +1,7 @@
 import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
 import prettier from 'eslint-config-prettier'
+import jsdoc from 'eslint-plugin-jsdoc'
 import react from 'eslint-plugin-react'
 import reactHooks from 'eslint-plugin-react-hooks'
 import globals from 'globals'
@@ -44,6 +45,20 @@ export default tseslint.config(
       'react/react-in-jsx-scope': 'off', // not needed with the new JSX transform
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/consistent-type-imports': 'error',
+    },
+  },
+  // JSDoc rules, scoped to exported/public declarations so we don't have to
+  // document every internal helper.
+  {
+    files: ['**/*.{js,mjs,cjs,ts,tsx}'],
+    plugins: { jsdoc },
+    rules: {
+      ...jsdoc.configs['flat/recommended-typescript-error'].rules,
+      'jsdoc/require-jsdoc': ['error', { publicOnly: true }],
+      'jsdoc/require-returns': ['error', { publicOnly: true }],
+      // Match prettier-plugin-jsdoc, which puts one blank line between the
+      // description and the first tag.
+      'jsdoc/tag-lines': ['error', 'never', { startLines: 1 }],
     },
   },
   // Test files get Vitest globals.

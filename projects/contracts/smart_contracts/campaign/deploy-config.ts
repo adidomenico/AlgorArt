@@ -7,10 +7,11 @@ import type { Arc56Contract } from '@algorandfoundation/algokit-utils/types/app-
 /**
  * Deploys a single `Campaign` application instance.
  *
- * This is an example deployer: it loads the compiled ARC-56 spec and deploys
- * one campaign. A real dApp would create campaigns from a frontend (Phase 2),
- * so this script is primarily an M4 milestone — proof that the compiled TEAL
- * deploys and runs on a live network (LocalNet / TestNet).
+ * This is an example deployer: it loads the compiled ARC-56 spec and deploys one campaign. A real dApp would create campaigns from a
+ * frontend (Phase 2), so this script is primarily an M4 milestone — proof that the compiled TEAL deploys and runs on a live network
+ * (LocalNet / TestNet).
+ *
+ * @returns The deployed campaign's app id.
  */
 export async function deploy() {
   const algorand = AlgorandClient.fromEnvironment()

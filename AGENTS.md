@@ -61,9 +61,19 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
 - **Generated files are gitignored.** `smart_contracts/artifacts/` (compiled TEAL, specs,
   `*Client.ts`) and the frontend's linked clients are build outputs — never edit or commit
   them. Rebuild instead.
-- **Lint & format are required.** ESLint (flat config, `typescript-eslint`) and Prettier
-  run per project via `npm run lint` / `npm run format`. Keep sources lint- and
-  format-clean; configs are shared from the repo-root `.prettierrc.json`.
+- **Lint & format are required.** ESLint (flat config, `typescript-eslint`,
+  `eslint-plugin-jsdoc`) and Prettier run per project via `npm run lint` /
+  `npm run format`. Keep sources lint- and format-clean; configs are shared from the
+  repo-root `.prettierrc.json`.
+- **JSDoc is required on public/exported declarations.** The jsdoc plugin runs the
+  `flat/recommended-typescript-error` preset (all rules at `error` severity), with
+  `require-jsdoc` and `require-returns` scoped via `publicOnly` so internal helpers are
+  exempt. Document exported functions, classes, and interfaces; keep `@param`/`@returns`
+  descriptions in the same style as the surrounding code.
+- **JSDoc is formatted by Prettier.** `prettier-plugin-jsdoc` is enabled in the shared
+  repo-root `.prettierrc.json`. It inserts one blank line between the description and
+  the first tag, which `jsdoc/tag-lines` is configured to match (`startLines: 1`), so
+  `npm run format` and `npm run lint` agree.
 - **Markdown is linted too.** Run `npx --yes markdownlint-cli2@0.23.2` (from the repo
   root) to lint every `*.md` file; add `--fix` to autofix. Rules, globs, and ignores
   all live in a single `.markdownlint-cli2.jsonc`, shared with the VS Code extension.

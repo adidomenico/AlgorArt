@@ -27,6 +27,11 @@ if (import.meta.env.VITE_ALGOD_NETWORK === 'localnet') {
   ]
 }
 
+/**
+ * Root component: wraps the app in wallet and snackbar providers.
+ *
+ * @returns The app element tree.
+ */
 export default function App() {
   const algodConfig = getAlgodConfigFromViteEnvironment()
 

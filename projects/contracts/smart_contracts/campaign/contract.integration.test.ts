@@ -7,13 +7,10 @@ import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 
 /**
- * LocalNet integration tests: deploy the compiled Campaign TEAL to a live
- * algod and exercise the full lifecycle (create → pledge → claim, and
- * create → pledge → refund). These are the M4 milestone — proof that the
- * compiled bytecode behaves as the offline AVM tests expect.
+ * LocalNet integration tests: deploy the compiled Campaign TEAL to a live algod and exercise the full lifecycle (create → pledge → claim,
+ * and create → pledge → refund). These are the M4 milestone — proof that the compiled bytecode behaves as the offline AVM tests expect.
  *
- * Requires `algokit localnet start` and a build (`npm run build`) so the
- * ARC-56 artifact exists.
+ * Requires `algokit localnet start` and a build (`npm run build`) so the ARC-56 artifact exists.
  */
 describe('Campaign (localnet)', () => {
   const fixture = algorandFixture()
@@ -35,7 +32,11 @@ describe('Campaign (localnet)', () => {
       .catch(() => undefined)
   })
 
-  /** Advance the dev-mode block timestamp by `seconds` and confirm a new block. */
+  /**
+   * Advance the dev-mode block timestamp by `seconds` and confirm a new block.
+   *
+   * @param seconds Offset to add to the current block timestamp.
+   */
   async function advanceTime(seconds: number) {
     const algod = algorand.client.algod
     try {

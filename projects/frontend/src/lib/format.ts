@@ -1,13 +1,18 @@
 /**
  * Formatting helpers for amounts and deadlines.
  *
- * On-chain values are always microAlgos (`bigint`) and deadlines are UNIX
- * seconds (`bigint`). These helpers keep that conversion in one place.
+ * On-chain values are always microAlgos (`bigint`) and deadlines are UNIX seconds (`bigint`). These helpers keep that conversion in one
+ * place.
  */
 
 const MICRO_ALGOS_PER_ALGO = 1_000_000n
 
-/** Convert a microAlgo amount (bigint or number) to a display-ready ALGO string, e.g. `"12.5"`. */
+/**
+ * Convert a microAlgo amount (bigint or number) to a display-ready ALGO string, e.g. `"12.5"`.
+ *
+ * @param microAlgos Amount in microAlgos.
+ * @returns Display-ready ALGO string.
+ */
 export function formatAlgo(microAlgos: bigint | number): string {
   const micro = BigInt(microAlgos)
   const whole = micro / MICRO_ALGOS_PER_ALGO
@@ -17,7 +22,12 @@ export function formatAlgo(microAlgos: bigint | number): string {
   return `${wholeStr}.${fraction.toString().padStart(6, '0').replace(/0+$/, '')}`
 }
 
-/** Parse an ALGO amount entered by a user into microAlgos (bigint). Throws on invalid input. */
+/**
+ * Parse an ALGO amount entered by a user into microAlgos (bigint). Throws on invalid input.
+ *
+ * @param value User-entered ALGO amount.
+ * @returns Equivalent amount in microAlgos.
+ */
 export function parseAlgoToMicroAlgos(value: string): bigint {
   const trimmed = value.trim()
   if (!/^\d+(\.\d+)?$/.test(trimmed)) {
@@ -29,7 +39,12 @@ export function parseAlgoToMicroAlgos(value: string): bigint {
   return wholeMicro + fractionMicro
 }
 
-/** Format a UNIX-seconds deadline (bigint) as a local date string. */
+/**
+ * Format a UNIX-seconds deadline (bigint) as a local date string.
+ *
+ * @param deadlineSeconds Deadline as a UNIX timestamp (seconds).
+ * @returns Local date/time string.
+ */
 export function formatDeadline(deadlineSeconds: bigint): string {
   return new Date(Number(deadlineSeconds) * 1000).toLocaleString(undefined, {
     dateStyle: 'medium',
@@ -37,7 +52,13 @@ export function formatDeadline(deadlineSeconds: bigint): string {
   })
 }
 
-/** Human-readable countdown to a UNIX-seconds deadline, e.g. `"2d 3h"` or `"closed"`. */
+/**
+ * Human-readable countdown to a UNIX-seconds deadline, e.g. `"2d 3h"` or `"closed"`.
+ *
+ * @param deadlineSeconds Deadline as a UNIX timestamp (seconds).
+ * @param nowSeconds Current UNIX timestamp (seconds).
+ * @returns Countdown string.
+ */
 export function formatCountdown(deadlineSeconds: bigint, nowSeconds: bigint): string {
   const diff = Number(deadlineSeconds - nowSeconds)
   if (diff <= 0) return 'closed'

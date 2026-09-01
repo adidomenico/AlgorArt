@@ -1,5 +1,10 @@
 import type { AlgoViteClientConfig, AlgoViteKMDConfig } from '../../interfaces/network'
 
+/**
+ * Read the algod client config from the Vite environment.
+ *
+ * @returns Algod client config.
+ */
 export function getAlgodConfigFromViteEnvironment(): AlgoViteClientConfig {
   if (!import.meta.env.VITE_ALGOD_SERVER) {
     throw new Error('Attempt to get default algod configuration without specifying VITE_ALGOD_SERVER in the environment variables')
@@ -13,6 +18,11 @@ export function getAlgodConfigFromViteEnvironment(): AlgoViteClientConfig {
   }
 }
 
+/**
+ * Read the indexer client config from the Vite environment.
+ *
+ * @returns Indexer client config.
+ */
 export function getIndexerConfigFromViteEnvironment(): AlgoViteClientConfig {
   if (!import.meta.env.VITE_INDEXER_SERVER) {
     throw new Error('Attempt to get default algod configuration without specifying VITE_INDEXER_SERVER in the environment variables')
@@ -26,6 +36,11 @@ export function getIndexerConfigFromViteEnvironment(): AlgoViteClientConfig {
   }
 }
 
+/**
+ * Read the KMD client config from the Vite environment.
+ *
+ * @returns KMD client config.
+ */
 export function getKmdConfigFromViteEnvironment(): AlgoViteKMDConfig {
   if (!import.meta.env.VITE_KMD_SERVER) {
     throw new Error('Attempt to get default kmd configuration without specifying VITE_KMD_SERVER in the environment variables')
