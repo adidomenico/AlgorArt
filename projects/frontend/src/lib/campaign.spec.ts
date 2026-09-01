@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
 import algosdk from 'algosdk'
+import { describe, expect, it } from 'vitest'
 import { decodeGlobalState, decodePledgeBoxValue, deriveStatus, isCampaignApp, pledgeBoxName, toCampaignViewModel } from './campaign'
 
 const ZERO_ADDRESS = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ'

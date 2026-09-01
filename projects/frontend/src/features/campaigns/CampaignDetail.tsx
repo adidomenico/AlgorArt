@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
 import { useWallet } from '@txnlab/use-wallet-react'
+import { useCallback, useEffect, useState } from 'react'
 import type { CampaignViewModel } from '../../lib/campaign'
 import { getCampaign } from '../../lib/campaign'
 import { formatAlgo, formatCountdown, formatDeadline } from '../../lib/format'

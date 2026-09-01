@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import Nav from './features/app/Nav'
-import CampaignList from './features/campaigns/CampaignList'
 import CampaignDetail from './features/campaigns/CampaignDetail'
+import CampaignList from './features/campaigns/CampaignList'
 import CreateCampaignForm from './features/campaigns/CreateCampaignForm'
 
 type View = { kind: 'list' } | { kind: 'detail'; appId: bigint } | { kind: 'create' }

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
 import { useWallet } from '@txnlab/use-wallet-react'
+import { useEffect, useState } from 'react'
 import type { CampaignViewModel } from '../../lib/campaign'
 import { listCampaigns } from '../../lib/campaign'
 import CampaignCard from './CampaignCard'

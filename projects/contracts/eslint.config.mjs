@@ -1,8 +1,9 @@
 import js from '@eslint/js'
-import tseslint from 'typescript-eslint'
 import prettier from 'eslint-config-prettier'
+import importPlugin from 'eslint-plugin-import'
 import jsdoc from 'eslint-plugin-jsdoc'
 import globals from 'globals'
+import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
   {
@@ -33,6 +34,26 @@ export default tseslint.config(
       // Match prettier-plugin-jsdoc, which puts one blank line between the
       // description and the first tag.
       'jsdoc/tag-lines': ['error', 'never', { startLines: 1 }],
+    },
+  },
+  // Import rules: duplicates + import ordering.
+  {
+    files: ['**/*.{js,mjs,cjs,ts}'],
+    plugins: { import: importPlugin },
+    rules: {
+      // Resolution-based rules (no-unresolved, named, namespace, default,
+      // export) are skipped: `tsc --noEmit` already validates module
+      // resolution, and the default `eslint-import-resolver-node` cannot
+      // read `exports`-only packages (e.g. typescript-eslint).
+      'import/no-duplicates': 'error',
+      'import/no-named-as-default': 'error',
+      'import/no-named-as-default-member': 'error',
+      'import/order': [
+        'error',
+        {
+          alphabetize: { order: 'asc', caseInsensitive: true },
+        },
+      ],
     },
   },
   // Test files (simulator + integration) get Vitest globals.

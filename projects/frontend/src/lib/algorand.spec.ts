@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
 import algosdk from 'algosdk'
+import { describe, expect, it, vi } from 'vitest'
 import { algorand, indexer } from './algorand'
 
 vi.mock('../utils/network/getAlgoClientConfigs', () => {

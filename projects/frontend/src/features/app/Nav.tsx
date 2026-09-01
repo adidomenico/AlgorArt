@@ -1,7 +1,7 @@
-import { useState } from 'react'
 import { useWallet } from '@txnlab/use-wallet-react'
-import { ellipseAddress } from '../../utils/ellipseAddress'
+import { useState } from 'react'
 import ConnectWallet from '../../components/ConnectWallet'
+import { ellipseAddress } from '../../utils/ellipseAddress'
 
 interface NavProps {
   onNavigateHome: () => void

@@ -1,8 +1,8 @@
-import { AlgorandClient } from '@algorandfoundation/algokit-utils'
 import fs from 'node:fs'
 import path from 'node:path'
-import { AppFactory } from '@algorandfoundation/algokit-utils/types/app-factory'
+import { AlgorandClient } from '@algorandfoundation/algokit-utils'
 import type { Arc56Contract } from '@algorandfoundation/algokit-utils/types/app-arc56'
+import { AppFactory } from '@algorandfoundation/algokit-utils/types/app-factory'
 
 /**
  * Deploys a single `Campaign` application instance.

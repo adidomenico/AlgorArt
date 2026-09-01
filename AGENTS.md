@@ -62,9 +62,15 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
   `*Client.ts`) and the frontend's linked clients are build outputs — never edit or commit
   them. Rebuild instead.
 - **Lint & format are required.** ESLint (flat config, `typescript-eslint`,
-  `eslint-plugin-jsdoc`) and Prettier run per project via `npm run lint` /
-  `npm run format`. Keep sources lint- and format-clean; configs are shared from the
-  repo-root `.prettierrc.json`.
+  `eslint-plugin-jsdoc`, `eslint-plugin-import`) and Prettier run per project via
+  `npm run lint` / `npm run format`. Keep sources lint- and format-clean; configs are
+  shared from the repo-root `.prettierrc.json`.
+- **Imports are checked.** `eslint-plugin-import` enforces `import/order` (alphabetised,
+  case-insensitive) plus `no-duplicates`, `no-named-as-default`, and
+  `no-named-as-default-member`, all at `error` severity. Resolution-based rules
+  (`no-unresolved` etc.) are intentionally off — `tsc --noEmit` already validates
+  module resolution, and the default `eslint-import-resolver-node` cannot read
+  `exports`-only packages.
 - **JSDoc is required on public/exported declarations.** The jsdoc plugin runs the
   `flat/recommended-typescript-error` preset (all rules at `error` severity), with
   `require-jsdoc` and `require-returns` scoped via `publicOnly` so internal helpers are

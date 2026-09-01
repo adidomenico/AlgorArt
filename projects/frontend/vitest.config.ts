@@ -1,6 +1,6 @@
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vitest/config'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
+import { defineConfig } from 'vitest/config'
 
 // https://vitest.dev/config/
 export default defineConfig({
