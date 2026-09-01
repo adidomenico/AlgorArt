@@ -35,7 +35,7 @@ const nowSeconds = BigInt(Math.floor(Date.now() / 1000))
 
 function viewModel(
   status: string,
-  overrides: { creator?: string; myPledgeMicroAlgos?: bigint; goalMicroAlgos?: bigint; raisedMicroAlgos?: bigint } = {},
+  overrides: { creator?: string; myPledgeMicroAlgos?: bigint | undefined; goalMicroAlgos?: bigint; raisedMicroAlgos?: bigint } = {},
 ) {
   return {
     id: 42n,

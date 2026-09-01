@@ -61,7 +61,6 @@ describe('decodeGlobalState', () => {
       params: new algosdk.indexerModels.ApplicationParams({
         approvalProgram: new Uint8Array(),
         clearStateProgram: new Uint8Array(),
-        globalState: undefined,
       }),
     })
     expect(decodeGlobalState(app)).toEqual({})
@@ -87,7 +86,6 @@ describe('isCampaignApp', () => {
       params: new algosdk.indexerModels.ApplicationParams({
         approvalProgram: new Uint8Array(),
         clearStateProgram: new Uint8Array(),
-        globalState: undefined,
       }),
     })
     expect(isCampaignApp(app)).toBe(false)

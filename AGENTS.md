@@ -90,6 +90,9 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
 - **`noUncheckedIndexedAccess` is on.** `tsconfig.json` in both projects enables it,
   so `arr[i]` and record access yield `T | undefined` and require explicit guards,
   defaults, or optional chaining before use.
+- **`exactOptionalPropertyTypes` is on.** `tsconfig.json` in both projects enables
+  it, so an optional property means "may be absent" rather than "`T | undefined`".
+  Fields that can genuinely be `undefined` are declared `T | undefined` explicitly.
 - **Imports are checked.** `eslint-plugin-import` enforces `no-duplicates`,
   `no-named-as-default`, and `no-named-as-default-member` at `error` severity.
   Resolution-based rules (`no-unresolved` etc.) are intentionally off — `tsc --noEmit`

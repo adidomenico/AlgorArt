@@ -27,7 +27,7 @@ export interface CampaignViewModel {
   /** Derived display status. `funded` is computed, never stored on-chain. */
   status: CampaignStatus
   /** The connected wallet's pledge (microAlgos), or undefined if it hasn't pledged. */
-  myPledgeMicroAlgos?: bigint
+  myPledgeMicroAlgos?: bigint | undefined
 }
 
 const STATUS_UINT_TO_LABEL = {
