@@ -74,6 +74,9 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
 - **Cheap safety rails.** `eqeqeq` (always use `===`/`!==`) and
   `@typescript-eslint/no-non-null-assertion` (no `!` assertions) are both at `error`
   severity.
+- **`noImplicitOverride` is on.** `tsconfig.json` in both projects enables
+  `noImplicitOverride`, so any member that overrides a base-class member must be marked
+  with the `override` keyword (e.g. `override render()` in `ErrorBoundary`).
 - **Imports are checked.** `eslint-plugin-import` enforces `no-duplicates`,
   `no-named-as-default`, and `no-named-as-default-member` at `error` severity.
   Resolution-based rules (`no-unresolved` etc.) are intentionally off — `tsc --noEmit`
