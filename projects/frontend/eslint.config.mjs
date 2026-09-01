@@ -53,6 +53,8 @@ export default defineConfig(
       'react/react-in-jsx-scope': 'off', // not needed with the new JSX transform
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/consistent-type-imports': 'error',
+      eqeqeq: 'error',
+      '@typescript-eslint/no-non-null-assertion': 'error',
     },
   },
   // JSDoc rules, scoped to exported/public declarations so we don't have to

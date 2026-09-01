@@ -71,6 +71,9 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
   with full type information. The `no-unsafe-*` rules are relaxed in test files (Vitest
   mocks return `any`). Config files outside any `tsconfig.json` are listed in
   `allowDefaultProject`.
+- **Cheap safety rails.** `eqeqeq` (always use `===`/`!==`) and
+  `@typescript-eslint/no-non-null-assertion` (no `!` assertions) are both at `error`
+  severity.
 - **Imports are checked.** `eslint-plugin-import` enforces `no-duplicates`,
   `no-named-as-default`, and `no-named-as-default-member` at `error` severity.
   Resolution-based rules (`no-unresolved` etc.) are intentionally off — `tsc --noEmit`

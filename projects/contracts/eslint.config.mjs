@@ -27,6 +27,8 @@ export default defineConfig(
     rules: {
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/consistent-type-imports': 'error',
+      eqeqeq: 'error',
+      '@typescript-eslint/no-non-null-assertion': 'error',
     },
   },
   // JSDoc rules, scoped to exported/public declarations so we don't have to
