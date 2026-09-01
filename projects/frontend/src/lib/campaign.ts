@@ -30,11 +30,11 @@ export interface CampaignViewModel {
   myPledgeMicroAlgos?: bigint
 }
 
-const STATUS_UINT_TO_LABEL: Record<number, CampaignStatus> = {
+const STATUS_UINT_TO_LABEL = {
   0: 'open',
   1: 'failed',
   2: 'claimed',
-}
+} as const
 
 /**
  * Derive the display status. `funded` and `failed` are recomputed from deadline/raised/goal — exactly the rule the contract evaluates —

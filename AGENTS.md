@@ -87,6 +87,9 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
   type-only imports must be written `import type` and the compiler no longer elides
   type-only imports silently. This supersedes
   `@typescript-eslint/consistent-type-imports` at the compiler level.
+- **`noUncheckedIndexedAccess` is on.** `tsconfig.json` in both projects enables it,
+  so `arr[i]` and record access yield `T | undefined` and require explicit guards,
+  defaults, or optional chaining before use.
 - **Imports are checked.** `eslint-plugin-import` enforces `no-duplicates`,
   `no-named-as-default`, and `no-named-as-default-member` at `error` severity.
   Resolution-based rules (`no-unresolved` etc.) are intentionally off — `tsc --noEmit`

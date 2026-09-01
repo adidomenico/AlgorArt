@@ -33,7 +33,7 @@ export function parseAlgoToMicroAlgos(value: string): bigint {
   if (!/^\d+(\.\d+)?$/.test(trimmed)) {
     throw new Error('Invalid ALGO amount')
   }
-  const [whole, fraction = ''] = trimmed.split('.')
+  const [whole = '', fraction = ''] = trimmed.split('.')
   const wholeMicro = BigInt(whole) * MICRO_ALGOS_PER_ALGO
   const fractionMicro = BigInt((fraction + '000000').slice(0, 6))
   return wholeMicro + fractionMicro

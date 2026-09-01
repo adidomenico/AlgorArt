@@ -34,7 +34,7 @@ describe('ConnectWallet', () => {
     render(<ConnectWallet openModal closeModal={() => {}} />)
 
     await user.click(screen.getByText('Pera Wallet'))
-    expect(wallets[0].connect).toHaveBeenCalled()
+    expect(wallets[0]?.connect).toHaveBeenCalled()
   })
 
   it('renders the account view and logout when connected', () => {

@@ -77,7 +77,7 @@ describe('indexer-backed helpers', () => {
 
     const result = await listCampaigns(1_000n)
     expect(result).toHaveLength(1)
-    expect(result[0].id).toBe(1n)
+    expect(result[0]?.id).toBe(1n)
   })
 
   it('listCampaigns fetches the viewer pledge when an address is provided', async () => {
@@ -85,7 +85,7 @@ describe('indexer-backed helpers', () => {
     searchAppsDoMock.mockResolvedValue({ applications: [campaignApp(1n)] })
 
     const result = await listCampaigns(1_000n, ZERO_ADDRESS)
-    expect(result[0].myPledgeMicroAlgos).toBe(256n)
+    expect(result[0]?.myPledgeMicroAlgos).toBe(256n)
   })
 
   it('getCampaign returns a campaign by id', async () => {
