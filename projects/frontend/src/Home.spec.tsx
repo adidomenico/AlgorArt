@@ -60,8 +60,6 @@ vi.mock('./features/campaigns/CreateCampaignForm', () => ({
   ),
 }))
 
-const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {})
-
 describe('Home', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -87,7 +85,7 @@ describe('Home', () => {
     expect(screen.getByText('DETAIL_42')).toBeInTheDocument()
   })
 
-  it('uses the browser back button to return to the list', async () => {
+  it('returns to the list from the detail back button', async () => {
     const user = userEvent.setup()
     render(<Home />)
 
@@ -95,7 +93,7 @@ describe('Home', () => {
     expect(screen.getByText('DETAIL_42')).toBeInTheDocument()
 
     await user.click(screen.getByText('BACK'))
-    expect(backSpy).toHaveBeenCalled()
+    expect(screen.getByText('Campaigns')).toBeInTheDocument()
   })
 
   it('restores the list when a popstate has no state', () => {

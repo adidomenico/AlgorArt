@@ -64,7 +64,7 @@ const Home = () => {
           <CampaignDetail
             appId={view.appId}
             onBack={() => {
-              goBack()
+              navigate({ kind: 'list' })
             }}
           />
         )}
