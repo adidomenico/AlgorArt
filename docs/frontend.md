@@ -5,7 +5,7 @@ truth; the frontend is a **read model + signer**: it reads campaign state from
 the indexer, and it assembles + signs transaction groups for the user's wallet.
 It never holds keys, never holds funds, and never decides a campaign outcome.
 
-> Contract internals: [`contracts/campaign.md`](contracts/campaign.md).
+> Contract internals: [`campaign.md`](campaign.md).
 > The on-chain rules enforced by the contract are **not** re-implemented in the
 > frontend — the UI only *surfaces* state and *triggers* signed transactions.
 
@@ -101,22 +101,15 @@ materialised, and `failed` only becomes a stored `status` after the first
 `refund()` call. Deriving `failed` client-side is what lets a backer start the
 first refund from the UI.
 
-## Campaign metadata (implemented)
+## Campaign metadata
 
-The contract stores a short `title` (on-chain) plus a `metadataUri` pointer to
-off-chain JSON (ARC-3-style: description, image, category). The hybrid approach:
+The contract stores a short `title` on-chain plus a `metadataUri` pointer to
+off-chain JSON (see [`campaign.md`](campaign.md) for the contract-side rules).
 
-- **On-chain:** `title` (string) in global state, passed to `create()`.
-  Cheap, readable straight from the indexer — no IPFS lookup needed for lists.
-- **Off-chain:** `metadataUri` (string) in global state pointing to a JSON
-  blob on IPFS with the long description, image, and category.
-
-`title` is fixed at create. The frontend `CampaignViewModel` exposes both
-`title` and `metadataUri`: browse cards render `title` directly; the detail view
-shows the `metadataUri` (fetching and rendering the off-chain JSON remains a
-later nicety). `title` and `metadataUri` are ABI `byte[]` arguments to
-`create`, encoded on-chain as `bytes`, each capped at 128 bytes (the AVM limit
-for a bytes global-state value) — enforced both on-chain and in the create form.
+The frontend `CampaignViewModel` exposes both: browse cards render `title`
+directly; the detail view shows the `metadataUri` (fetching and rendering the
+off-chain JSON remains a later nicety). The 128-byte cap on both fields is
+enforced on-chain and re-checked in the create form.
 
 ## Reads (indexer)
 
@@ -257,7 +250,7 @@ of a cent to reclaim a pledge of any size.
 ## Edge cases & gotchas
 
 The UI-level cases that matter once cancel/batch refunds land; the contract-level
-ones live in `docs/contracts/campaign.md` → "Known edge cases".
+ones live in [`campaign.md`](campaign.md) → "Known edge cases".
 
 - **Indexer lag.** After a write (create/pledge/claim/refund), the indexer may lag a
   round or two. The detail view's `load()` refetch can show stale data — prefer
@@ -322,7 +315,7 @@ indexer/client services via `vi.mock`.
 
 ## Out of scope for now
 
-- Campaign metadata — implemented (hybrid, see [Campaign metadata](#campaign-metadata-implemented)); rich media/IPFS rendering is on the roadmap.
+- Campaign metadata — implemented (hybrid, see [Campaign metadata](#campaign-metadata)); rich media/IPFS rendering is on the roadmap.
 - Cancel-before-deadline — on the roadmap (needs a contract change).
 - TestNet deployment — on the roadmap.
 - Backend / database — never; the indexer is the read model.

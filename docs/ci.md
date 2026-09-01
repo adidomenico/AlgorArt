@@ -106,7 +106,7 @@ The two projects have *different* test shapes:
 
 1. **Contract offline AVM tests** — full behavioral coverage (every method ×
    every branch), run under Node; no Docker. Coverage gate: 100%
-   lines/branches/functions (see `docs/contracts/testing.md`).
+   lines/branches/functions (see `docs/testing.md`).
 2. **Frontend unit/component tests** — Vitest over components and utils,
    coverage ≥ 90% across components and utils (see `vitest.config.ts`).
 

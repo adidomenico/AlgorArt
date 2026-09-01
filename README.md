@@ -9,7 +9,7 @@ server — holds the funds and enforces the rules: if the goal is met by the dea
 creator can claim the funds; if not, every backer can reclaim their pledge.
 
 > Technical details live in [`docs/`](docs/): contract internals, on-chain state,
-> and design decisions in [the contract docs](docs/contracts/campaign.md), the
+> and design decisions in [the contract docs](docs/campaign.md), the
 > [frontend design](docs/frontend.md), [the CI plan](docs/ci.md), the
 > [roadmap](docs/roadmap.md) (what's left to do), and
 > [product design & open questions](docs/design.md).

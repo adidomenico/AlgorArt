@@ -4,10 +4,10 @@ A living checklist of what's left to do. Work already done is collapsed into a
 short summary at the top; the rest is organized by **area**, not by phase. Each
 item links to the doc that has the details.
 
-> Contract internals: [`contracts/campaign.md`](contracts/campaign.md). Frontend
+> Contract internals: [`campaign.md`](campaign.md). Frontend
 > design: [`frontend.md`](frontend.md). Product design & open questions:
 > [`design.md`](design.md). CI: [`ci.md`](ci.md). Testing:
-> [`contracts/testing.md`](contracts/testing.md).
+> [`testing.md`](testing.md).
 
 ## Done
 
@@ -18,12 +18,12 @@ item links to the doc that has the details.
 ## Contract
 
 - [ ] **Decide `updateMetadata()` before any "final" deploy** — without it, `title`
-      and `metadataUri` are immutable forever (see [`campaign.md`](contracts/campaign.md)).
+      and `metadataUri` are immutable forever (see [`campaign.md`](campaign.md)).
 - [ ] **`cancelPledge()`** — backer withdraws while the campaign is `Open` (needs a contract change).
 - [ ] **`refundBatch()`** — refund up to 8 backers in one permissionless call; loop until drained.
 - [ ] **Decide on `settle()`** — closes the zero-pledge-campaign gap (cosmetic; the UI already derives "failed").
 - [ ] **Verify `refundBatch` fits the opcode budget** — drop to 6–7 backers if it doesn't compile.
-- [ ] **Tests** for cancel/batch/re-pledge flows once the methods exist (see [`testing.md`](contracts/testing.md)).
+- [ ] **Tests** for cancel/batch/re-pledge flows once the methods exist (see [`testing.md`](testing.md)).
 
 ## Frontend UX
 
@@ -57,5 +57,6 @@ item links to the doc that has the details.
 These are plans, not code — see [`design.md`](design.md):
 
 - [ ] Profiles & notifications (minimal backend, chain watcher, email).
-- [ ] Content & UI polish, IPFS pinning, PWA + web push, trust & safety.
+- [ ] Content & UI polish, IPFS pinning, PWA + web push.
+- [ ] Backers list, creator page, category filters, analytics, trust & safety.
 - [ ] Resolve the open product questions (email provider, fees, backend hosting, KYC).

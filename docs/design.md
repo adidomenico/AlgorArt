@@ -5,7 +5,7 @@ profiles, notifications, the backend question, content, UI work, and contract
 versioning. This is a **plan**, not code — nothing here is implemented unless
 noted.
 
-> Contract internals: [`contracts/campaign.md`](contracts/campaign.md). Frontend
+> Contract internals: [`campaign.md`](campaign.md). Frontend
 > design: [`frontend.md`](frontend.md). CI: [`ci.md`](ci.md). Roadmap:
 > [`roadmap.md`](roadmap.md).
 
@@ -54,11 +54,11 @@ indexer queries filtered by the connected address — no new storage.
 
 ## Campaign content (title, description, images)
 
-The hybrid approach is **implemented** (see [`frontend.md`](frontend.md)): short
-`title` on-chain, `metadataUri` pointing to an IPFS JSON blob with
-description/image/category. `title` is immutable; re-pointing `metadataUri` needs
-an `updateMetadata()` method (contract change — see
-[Contract versioning](#contract-versioning-and-migration)).
+Content is hybrid and already implemented (see [`frontend.md`](frontend.md)): a
+short on-chain `title`, with the long description/image/category off-chain behind
+`metadataUri`. `title` is immutable; re-pointing `metadataUri` needs an
+`updateMetadata()` method — a contract change that must land **before** any
+"final" deploy (see [Contract versioning](#contract-versioning-and-migration)).
 
 ## UI / design work
 
@@ -104,13 +104,6 @@ Short answer: **not for the core product, yes for a few features.**
 Stay **serverless/static** as long as possible; when notifications and profiles land,
 introduce a **minimal backend** (a small API + a database) that holds only profile +
 notification data. It never holds keys, funds, or outcome decisions.
-
-## Later product features
-
-- [ ] Image pinning to IPFS (service or self-hosted node).
-- [ ] Backers list, creator page, category filters, analytics.
-- [ ] PWA + web push notifications.
-- [ ] Trust & safety (report/block).
 
 ## Contract versioning and migration
 

@@ -14,8 +14,8 @@ workspace: an Algorand TypeScript smart contract plus a React + Vite frontend.
     (`create`, `pledge`, `claim`, `refund`)
   - `smart_contracts/artifacts/` — **generated** (compiled TEAL, ARC-32/56 specs, clients)
 - `projects/frontend/` — React + Vite + TypeScript dApp
-- [`docs/`](docs/) — technical docs: [`contracts/campaign.md`](docs/contracts/campaign.md)
-  (internals), [`contracts/testing.md`](docs/contracts/testing.md),
+- [`docs/`](docs/) — technical docs: [`campaign.md`](docs/campaign.md)
+  (internals), [`testing.md`](docs/testing.md),
   [`frontend.md`](docs/frontend.md), [`ci.md`](docs/ci.md),
   [`roadmap.md`](docs/roadmap.md) (checklist), [`design.md`](docs/design.md) (product plan)
 - [`README.md`](README.md) — the project specification (contract design, roadmap, testing strategy)
