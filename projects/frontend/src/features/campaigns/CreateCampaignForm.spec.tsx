@@ -27,12 +27,20 @@ describe('CreateCampaignForm', () => {
     const user = userEvent.setup()
     render(<CreateCampaignForm onCreated={onCreated} onCancel={() => {}} />)
 
+    await user.type(screen.getByLabelText(/Title/), 'My first novel')
+    await user.type(screen.getByLabelText(/Metadata URI/), 'ipfs://QmExample')
     await user.type(screen.getByPlaceholderText('e.g. 100'), '10')
     await user.clear(screen.getByLabelText(/Duration/))
     await user.type(screen.getByLabelText(/Duration/), '7')
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
-    expect(createCampaignMock).toHaveBeenCalled()
+    expect(createCampaignMock).toHaveBeenCalledWith(
+      { address: 'ADDRESS', signer: {} },
+      'My first novel',
+      'ipfs://QmExample',
+      expect.anything(),
+      expect.anything(),
+    )
     expect(onCreated).toHaveBeenCalledWith(99n)
   })
 
@@ -40,16 +48,41 @@ describe('CreateCampaignForm', () => {
     const user = userEvent.setup()
     render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
 
+    await user.type(screen.getByLabelText(/Title/), 'My first novel')
     await user.type(screen.getByPlaceholderText('e.g. 100'), '0')
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
     expect(await screen.findByText(/Goal must be greater than zero/)).toBeInTheDocument()
   })
 
+  it('shows an error for a title longer than 128 bytes', async () => {
+    const user = userEvent.setup()
+    render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
+
+    await user.type(screen.getByLabelText(/Title/), 'x'.repeat(129))
+    await user.type(screen.getByPlaceholderText('e.g. 100'), '10')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(await screen.findByText(/Title must be 128 bytes or fewer/)).toBeInTheDocument()
+  })
+
+  it('shows an error for a metadata uri longer than 128 bytes', async () => {
+    const user = userEvent.setup()
+    render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
+
+    await user.type(screen.getByLabelText(/Title/), 'My first novel')
+    await user.type(screen.getByLabelText(/Metadata URI/), 'x'.repeat(129))
+    await user.type(screen.getByPlaceholderText('e.g. 100'), '10')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(await screen.findByText(/Metadata URI must be 128 bytes or fewer/)).toBeInTheDocument()
+  })
+
   it('shows an error for an invalid duration', async () => {
     const user = userEvent.setup()
     render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
 
+    await user.type(screen.getByLabelText(/Title/), 'My first novel')
     await user.type(screen.getByPlaceholderText('e.g. 100'), '10')
     await user.clear(screen.getByLabelText(/Duration/))
     await user.type(screen.getByLabelText(/Duration/), '0')
@@ -63,6 +96,7 @@ describe('CreateCampaignForm', () => {
     const user = userEvent.setup()
     render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
 
+    await user.type(screen.getByLabelText(/Title/), 'My first novel')
     await user.type(screen.getByPlaceholderText('e.g. 100'), '10')
     await user.click(screen.getByRole('button', { name: 'Create' }))
 

@@ -51,9 +51,16 @@ describe('transaction helpers', () => {
   it('createCampaign deploys via the factory and returns appId/appAddress', async () => {
     sendCreateMock.mockResolvedValue({ result: { appId: 9n, appAddress: { toString: () => 'ESCROW' } } })
 
-    const result = await createCampaign(session, 5_000_000n, 1_000n)
+    const result = await createCampaign(session, 'My campaign', 'ipfs://meta', 5_000_000n, 1_000n)
 
-    expect(sendCreateMock).toHaveBeenCalledWith({ args: { goal: 5_000_000n, deadline: 1_000n } })
+    expect(sendCreateMock).toHaveBeenCalledWith({
+      args: {
+        title: new TextEncoder().encode('My campaign'),
+        metadataUri: new TextEncoder().encode('ipfs://meta'),
+        goal: 5_000_000n,
+        deadline: 1_000n,
+      },
+    })
     expect(result).toEqual({ appId: 9n, appAddress: 'ESCROW' })
     expect(waitForIndexerCatchUpMock).toHaveBeenCalled()
   })

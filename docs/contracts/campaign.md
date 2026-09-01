@@ -13,6 +13,8 @@ and enforces the campaign rules.
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `creator` | `Account` | Campaign creator; the only account allowed to `claim()` |
+| `title` | `bytes` | Short campaign title, fixed at `create()` |
+| `metadataUri` | `bytes` | URI of off-chain campaign metadata (ARC-3-style JSON blob) |
 | `goal` | `uint64` | Funding target, in microAlgos |
 | `deadline` | `uint64` | UNIX timestamp (seconds) after which the outcome is decided |
 | `raised` | `uint64` | Total microAlgos pledged so far |
@@ -38,11 +40,14 @@ stateDiagram-v2
 
 ## Methods & guards
 
-### `create(goal, deadline)`
+### `create(title, metadataUri, goal, deadline)`
 
 - `@abimethod({ onCreate: 'require' })` — only runs in the app-create transaction.
-- Guards: must be app-create (`applicationId == 0`), `goal > 0`, deadline in the future.
-- Sets `creator`, `goal`, `deadline`, `raised = 0`, `status = Open`.
+- Guards: must be app-create (`applicationId == 0`), `title` non-empty, `title` and
+  `metadataUri` at most 128 bytes each (the AVM cap for a bytes global-state value),
+  `goal > 0`, deadline in the future.
+- Sets `creator`, `title`, `metadataUri`, `goal`, `deadline`, `raised = 0`, `status = Open`.
+- `title` is immutable; `metadataUri` is an off-chain pointer (description/image/category).
 
 ### `pledge(payment)`
 
@@ -107,6 +112,8 @@ whose `params.global-state` is a list of `{ key, value }` pairs:
 | Contract key | Global-state `value.type` | Decode as |
 | --- | --- | --- |
 | `creator` | `1` (bytes) | 32-byte address |
+| `title` | `1` (bytes) | UTF-8 string |
+| `metadataUri` | `1` (bytes) | UTF-8 string |
 | `goal` | `2` (uint) | microAlgos |
 | `deadline` | `2` (uint) | UNIX seconds |
 | `raised` | `2` (uint) | microAlgos |
@@ -141,7 +148,14 @@ address bytes; a missing box means the backer has not pledged (or already refund
 
 ```ts
 // create — deploy a new campaign (app-create txn)
-factory.send.create.create({ args: { goal: goalMicroAlgos, deadline: deadlineUnixSeconds } })
+factory.send.create.create({
+  args: {
+    title: new TextEncoder().encode(title),
+    metadataUri: new TextEncoder().encode(metadataUri),
+    goal: goalMicroAlgos,
+    deadline: deadlineUnixSeconds,
+  },
+})
 
 // pledge — the ABI `pay` arg must be a payment txn in the SAME group
 client.send.pledge({

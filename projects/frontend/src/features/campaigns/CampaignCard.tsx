@@ -23,6 +23,8 @@ const CampaignCard = ({ campaign, onSelect }: CampaignCardProps) => {
         <span className={`campaign-card__badge campaign-card__badge--${campaign.status}`}>{campaign.status}</span>
       </div>
 
+      <h3 className="campaign-card__title">{campaign.title}</h3>
+
       <div className="campaign-card__progress">
         <div className="campaign-card__progress-fill" style={{ width: `${String(Math.min(percent, 100))}%` }} />
       </div>

@@ -11,12 +11,17 @@ interface CreateCampaignFormProps {
 
 const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) => {
   const { activeAddress, transactionSigner } = useWallet()
+  const [title, setTitle] = useState('')
+  const [metadataUri, setMetadataUri] = useState('')
   const [goal, setGoal] = useState('')
   const [days, setDays] = useState('30')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
-  const canSubmit = goal.trim() !== '' && !busy && Boolean(activeAddress && transactionSigner)
+  // A single bytes global-state value is capped at 128 bytes on the AVM.
+  const MAX_BYTES = 128
+
+  const canSubmit = title.trim() !== '' && goal.trim() !== '' && !busy && Boolean(activeAddress && transactionSigner)
 
   const handleSubmit = async () => {
     if (!activeAddress) return
@@ -24,6 +29,14 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
     setBusy(true)
     setMessage(null)
     try {
+      if (new TextEncoder().encode(title).length > MAX_BYTES) {
+        setMessage('Title must be 128 bytes or fewer.')
+        return
+      }
+      if (new TextEncoder().encode(metadataUri).length > MAX_BYTES) {
+        setMessage('Metadata URI must be 128 bytes or fewer.')
+        return
+      }
       const goalMicroAlgos = parseAlgoToMicroAlgos(goal)
       if (goalMicroAlgos <= 0n) {
         setMessage('Goal must be greater than zero.')
@@ -36,7 +49,13 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
       }
       const deadlineSeconds = BigInt(Math.floor(Date.now() / 1000) + daysNumber * 86_400)
 
-      const { appId } = await createCampaign({ address: activeAddress, signer: transactionSigner }, goalMicroAlgos, deadlineSeconds)
+      const { appId } = await createCampaign(
+        { address: activeAddress, signer: transactionSigner },
+        title.trim(),
+        metadataUri.trim(),
+        goalMicroAlgos,
+        deadlineSeconds,
+      )
       onCreated(appId)
     } catch {
       setMessage('Failed to create campaign. Please try again.')
@@ -48,6 +67,28 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
   return (
     <div className="create">
       <h3 className="create__title">Create a campaign</h3>
+      <label className="create__field">
+        Title
+        <input
+          type="text"
+          placeholder="e.g. My first novel"
+          value={title}
+          onChange={(e) => {
+            setTitle(e.target.value)
+          }}
+        />
+      </label>
+      <label className="create__field">
+        Metadata URI (optional)
+        <input
+          type="text"
+          placeholder="ipfs://…"
+          value={metadataUri}
+          onChange={(e) => {
+            setMetadataUri(e.target.value)
+          }}
+        />
+      </label>
       <label className="create__field">
         Goal (ALGO)
         <input

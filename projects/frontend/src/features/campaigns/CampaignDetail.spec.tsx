@@ -35,11 +35,20 @@ const nowSeconds = BigInt(Math.floor(Date.now() / 1000))
 
 function viewModel(
   status: string,
-  overrides: { creator?: string; myPledgeMicroAlgos?: bigint | undefined; goalMicroAlgos?: bigint; raisedMicroAlgos?: bigint } = {},
+  overrides: {
+    creator?: string
+    title?: string
+    metadataUri?: string
+    myPledgeMicroAlgos?: bigint | undefined
+    goalMicroAlgos?: bigint
+    raisedMicroAlgos?: bigint
+  } = {},
 ) {
   return {
     id: 42n,
     creator: overrides.creator ?? 'CREATOR',
+    title: overrides.title ?? '',
+    metadataUri: overrides.metadataUri ?? '',
     goalMicroAlgos: overrides.goalMicroAlgos ?? 10_000_000n,
     raisedMicroAlgos: overrides.raisedMicroAlgos ?? 10_000_000n,
     deadlineSeconds: nowSeconds + 86_400n,
@@ -65,6 +74,14 @@ describe('CampaignDetail', () => {
     render(<CampaignDetail appId={42n} onBack={() => {}} />)
 
     expect(await screen.findByText('Campaign #42')).toBeInTheDocument()
+  })
+
+  it('renders the title when present and the metadata uri when set', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('open', { title: 'My first novel', metadataUri: 'ipfs://QmExample' }))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    expect(await screen.findByText('My first novel')).toBeInTheDocument()
+    expect(screen.getByText(/ipfs:\/\/QmExample/)).toBeInTheDocument()
   })
 
   it('shows the pledge form when open and connected', async () => {

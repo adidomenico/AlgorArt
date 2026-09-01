@@ -1,4 +1,4 @@
-import type { Account, gtxn, uint64 } from '@algorandfoundation/algorand-typescript'
+import type { Account, bytes, gtxn, uint64 } from '@algorandfoundation/algorand-typescript'
 import { BoxMap, Contract, Global, GlobalState, Txn, abimethod, assert, itxn } from '@algorandfoundation/algorand-typescript'
 
 /**
@@ -19,9 +19,18 @@ const STATUS_OPEN = 0
 const STATUS_FAILED = 1
 const STATUS_CLAIMED = 2
 
+// A single bytes global-state value is capped at 128 bytes on the AVM.
+const MAX_BYTES_PER_STATE_KEY = 128
+
 export class Campaign extends Contract {
   /** Address of the creator — the only account allowed to claim. */
   creator = GlobalState<Account>()
+
+  /** Campaign title, e.g. "My first novel". */
+  title = GlobalState<bytes>()
+
+  /** URI pointing to off-chain campaign metadata (ARC-3-style JSON blob, e.g. on IPFS). */
+  metadataUri = GlobalState<bytes>()
 
   /** Funding target, in microAlgos. */
   goal = GlobalState<uint64>()
@@ -42,18 +51,26 @@ export class Campaign extends Contract {
    * Deploy the campaign.
    *
    * Called as part of the app-create transaction, so this must run with `Txn.applicationId == 0`. `goal` must be greater than zero and the
-   * `deadline` must be in the future.
+   * `deadline` must be in the future. `title` is stored on-chain for cheap list rendering; `metadataUri` points to the off-chain metadata
+   * (description, image, category).
    *
+   * @param title Short campaign title (on-chain).
+   * @param metadataUri URI of the off-chain campaign metadata (ARC-3-style JSON blob).
    * @param goal Funding target in microAlgos.
    * @param deadline UNIX timestamp (seconds) after which pledging closes.
    */
   @abimethod({ onCreate: 'require' })
-  create(goal: uint64, deadline: uint64): void {
+  create(title: bytes, metadataUri: bytes, goal: uint64, deadline: uint64): void {
     assert(Txn.applicationId.id === 0, 'must be called on app creation')
+    assert(title.length > 0, 'title must not be empty')
+    assert(title.length <= MAX_BYTES_PER_STATE_KEY, 'title too long')
+    assert(metadataUri.length <= MAX_BYTES_PER_STATE_KEY, 'metadata uri too long')
     assert(goal > 0, 'goal must be greater than zero')
     assert(deadline > Global.latestTimestamp, 'deadline must be in the future')
 
     this.creator.value = Txn.sender
+    this.title.value = title
+    this.metadataUri.value = metadataUri
     this.goal.value = goal
     this.deadline.value = deadline
     this.raised.value = 0

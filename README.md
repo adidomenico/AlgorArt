@@ -9,8 +9,10 @@ server — holds the funds and enforces the rules: if the goal is met by the dea
 creator can claim the funds; if not, every backer can reclaim their pledge.
 
 > Technical details live in [`docs/`](docs/): contract internals, on-chain state,
-> design decisions, the [frontend design](docs/frontend.md), and
-> [the CI plan](docs/ci.md).
+> design decisions, the [frontend design](docs/frontend.md),
+> [the CI plan](docs/ci.md), and the
+> [production roadmap](docs/production-roadmap.md) (identity, backend,
+> notifications, UI).
 
 ## The idea
 
@@ -58,14 +60,14 @@ stateDiagram-v2
 
 | Method | Caller | Conditions | Effect |
 | --- | --- | --- | --- |
-| `create(goal, deadline)` | creator | — | Deploys the app, sets global state |
+| `create(title, metadataUri, goal, deadline)` | creator | — | Deploys the app, sets global state |
 | `pledge()` | backer | before deadline | Payment tx into escrow; records backer's amount in a box; bumps `raised` |
 | `claim()` | creator | after deadline **and** `raised >= goal` | Sends escrow balance to the creator |
 | `refund()` | backer | after deadline **and** `raised < goal` | Returns the backer's pledge from escrow |
 
 ### Key on-chain state
 
-- **Global:** `creator`, `goal`, `deadline`, `raised`, `status` (`Open` / `Funded` / `Failed` / `Claimed`).
+- **Global:** `creator`, `title`, `metadataUri`, `goal`, `deadline`, `raised`, `status` (`Open` / `Funded` / `Failed` / `Claimed`).
 - **Per-backer (boxes):** `amount` pledged.
 
 ## Tech stack
@@ -119,6 +121,7 @@ AlgorArt/
 ### Phase 1 — Smart contract (core)
 
 - [x] `campaign/contract.algo.ts`: `create`, `pledge`, `claim`, `refund`
+- [x] Campaign metadata: on-chain `title` + `metadataUri` (off-chain pointer) on `create()`
 - [x] Contract tests: **100% behavioral coverage** — every method × every branch (pledge before/after deadline, claim gating by caller/deadline/goal/double-claim, refund gating by deadline/outcome/backer/double-refund). Offline AVM tests in `contract.algo.spec.ts`; matrix in [`docs/contracts/testing.md`](docs/contracts/testing.md).
 - [x] Deploy to localnet, exercise the flow (create → pledge → claim, and → refund) via integration tests in `contract.integration.test.ts`
 
@@ -143,7 +146,7 @@ The full UI plan — pages, data flow, and the exact `create`/`pledge`/`claim`/
 
 ### Phase 4 — Polish (nice-to-have)
 
-- [ ] Campaign metadata — **decided, not yet implemented** (see [docs/frontend.md](docs/frontend.md)): hybrid approach — on-chain `title` + `metadata_uri` pointing to an off-chain JSON blob (IPFS) for description/image/category
+- [ ] Campaign metadata — **on-chain `title` + `metadataUri` implemented**; rich off-chain rendering (IPFS image/description/category) remains Phase 4
 - [ ] Cancel-before-deadline option for creators
 - [ ] CI: contract simulator tests + frontend build + **coverage gate** + lint/format/type-check gate + markdown lint + frontend image build
   - *In progress*: the consolidated `ci` workflow (build → lint/format/type-check, unit-test, and LocalNet integration) is done; frontend image build remains.

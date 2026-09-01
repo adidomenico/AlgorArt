@@ -19,6 +19,8 @@ const campaigns: CampaignViewModel[] = [
   {
     id: 1n,
     creator: 'CREATOR1',
+    title: 'First campaign',
+    metadataUri: '',
     goalMicroAlgos: 10_000_000n,
     raisedMicroAlgos: 5_000_000n,
     deadlineSeconds: nowSeconds + 86_400n,
@@ -27,6 +29,8 @@ const campaigns: CampaignViewModel[] = [
   {
     id: 2n,
     creator: 'CREATOR2',
+    title: 'Second campaign',
+    metadataUri: 'ipfs://QmSecond',
     goalMicroAlgos: 20_000_000n,
     raisedMicroAlgos: 20_000_000n,
     deadlineSeconds: nowSeconds - 1n,

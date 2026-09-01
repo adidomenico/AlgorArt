@@ -1,3 +1,4 @@
+import { Bytes } from '@algorandfoundation/algorand-typescript'
 import { TestExecutionContext } from '@algorandfoundation/algorand-typescript-testing'
 import { beforeEach, describe, expect, test } from 'vitest'
 import { Campaign } from './contract.algo'
@@ -13,6 +14,8 @@ const GOAL = 1_000_000 // microAlgos
 const CREATION_TIME = 1_000 // patched latestTimestamp at campaign creation
 const DEADLINE = 2_000 // must be strictly after CREATION_TIME
 const MIN_BALANCE = 100_000 // default app account min balance in the test runtime
+const TITLE = Bytes('My first novel')
+const METADATA_URI = Bytes('ipfs://QmExample')
 
 describe('Campaign', () => {
   // A single context is reused; `reset()` in `beforeEach` gives per-test isolation.
@@ -34,7 +37,7 @@ describe('Campaign', () => {
    */
   function createCampaign(goal = GOAL, deadline = DEADLINE) {
     const contract = ctx.contract.create(Campaign)
-    contract.create(goal, deadline)
+    contract.create(TITLE, METADATA_URI, goal, deadline)
     return contract
   }
 
@@ -75,20 +78,43 @@ describe('Campaign', () => {
   }
 
   describe('create', () => {
-    test('sets creator, goal, deadline, raised and status', () => {
+    test('sets creator, title, metadata uri, goal, deadline, raised and status', () => {
       const contract = createCampaign()
 
       expect(contract.creator.value).toEqual(ctx.defaultSender)
+      expect(contract.title.value).toEqual(TITLE)
+      expect(contract.metadataUri.value).toEqual(METADATA_URI)
       expect(contract.goal.value).toEqual(GOAL)
       expect(contract.deadline.value).toEqual(DEADLINE)
       expect(contract.raised.value).toEqual(0)
       expect(contract.status.value).toEqual(0)
     })
 
+    test('rejects an empty title', () => {
+      const contract = ctx.contract.create(Campaign)
+      expect(() => {
+        contract.create(Bytes(''), METADATA_URI, GOAL, DEADLINE)
+      }).toThrow('title must not be empty')
+    })
+
+    test('rejects a title longer than 128 bytes', () => {
+      const contract = ctx.contract.create(Campaign)
+      expect(() => {
+        contract.create(Bytes('x'.repeat(129)), METADATA_URI, GOAL, DEADLINE)
+      }).toThrow('title too long')
+    })
+
+    test('rejects a metadata uri longer than 128 bytes', () => {
+      const contract = ctx.contract.create(Campaign)
+      expect(() => {
+        contract.create(TITLE, Bytes('x'.repeat(129)), GOAL, DEADLINE)
+      }).toThrow('metadata uri too long')
+    })
+
     test('rejects a goal of zero', () => {
       const contract = ctx.contract.create(Campaign)
       expect(() => {
-        contract.create(0, DEADLINE)
+        contract.create(TITLE, METADATA_URI, 0, DEADLINE)
       }).toThrow('goal must be greater than zero')
     })
 
@@ -96,7 +122,7 @@ describe('Campaign', () => {
       const contract = ctx.contract.create(Campaign)
       // latestTimestamp is pinned to CREATION_TIME, so a deadline equal to it is not in the future.
       expect(() => {
-        contract.create(GOAL, CREATION_TIME)
+        contract.create(TITLE, METADATA_URI, GOAL, CREATION_TIME)
       }).toThrow('deadline must be in the future')
     })
 
@@ -104,7 +130,7 @@ describe('Campaign', () => {
       const contract = createCampaign()
       // `onCreate: 'require'` means create only runs in the app-create transaction.
       expect(() => {
-        contract.create(GOAL, DEADLINE)
+        contract.create(TITLE, METADATA_URI, GOAL, DEADLINE)
       }).toThrow('method can only be called while creating')
     })
   })

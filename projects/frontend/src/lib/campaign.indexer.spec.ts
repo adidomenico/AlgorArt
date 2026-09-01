@@ -39,6 +39,8 @@ function appParams(globalState: algosdk.indexerModels.TealKeyValue[]): algosdk.i
 function campaignApp(id: bigint): algosdk.indexerModels.Application {
   const globalState = [
     kv('creator', tealBytes(algosdk.decodeAddress(ZERO_ADDRESS).publicKey)),
+    kv('title', tealBytes(new TextEncoder().encode('My first novel'))),
+    kv('metadataUri', tealBytes(new TextEncoder().encode('ipfs://QmExample'))),
     kv('goal', tealUint(10_000_000n)),
     kv('deadline', tealUint(2_000n)),
     kv('raised', tealUint(5_000_000n)),

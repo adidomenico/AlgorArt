@@ -33,8 +33,8 @@ export async function deploy() {
   const deadline = BigInt(Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60)
 
   const { result } = await factory.send.create({
-    method: 'create(uint64,uint64)void',
-    args: [goal, deadline],
+    method: 'create(byte[],byte[],uint64,uint64)void',
+    args: [new TextEncoder().encode('Demo campaign'), new TextEncoder().encode('ipfs://demo'), goal, deadline],
     sender: deployer.addr,
   })
 

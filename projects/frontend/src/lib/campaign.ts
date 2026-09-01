@@ -7,7 +7,7 @@ import { indexer } from './algorand'
  *
  * See docs/frontend.md and docs/contracts/campaign.md for the on-chain model:
  *
- * - Global state: `creator` (bytes), `goal`/`deadline`/`raised`/`status` (uint)
+ * - Global state: `creator` (bytes), `title` (bytes), `metadataUri` (bytes), `goal`/`deadline`/`raised`/`status` (uint)
  * - Backer pledges: boxes named by `p` prefix + address bytes
  */
 
@@ -18,6 +18,10 @@ export interface CampaignViewModel {
   id: bigint
   /** Campaign creator address. */
   creator: string
+  /** Short campaign title, stored on-chain. */
+  title: string
+  /** URI pointing to the off-chain campaign metadata (description, image, category). */
+  metadataUri: string
   /** Funding target, in microAlgos. */
   goalMicroAlgos: bigint
   /** Total pledged so far, in microAlgos. */
@@ -64,7 +68,7 @@ export function deriveStatus(
 }
 
 /** The global-state key names this contract materialises. */
-const KNOWN_KEYS = ['creator', 'goal', 'deadline', 'raised', 'status'] as const
+const KNOWN_KEYS = ['creator', 'title', 'metadataUri', 'goal', 'deadline', 'raised', 'status'] as const
 
 function decodeKey(keyBytes: Uint8Array): string {
   return Buffer.from(keyBytes).toString('utf8')
@@ -79,6 +83,8 @@ function decodeKey(keyBytes: Uint8Array): string {
  */
 export function decodeGlobalState(app: algosdk.indexerModels.Application): {
   creator?: string
+  title?: string
+  metadataUri?: string
   goal?: bigint
   deadline?: bigint
   raised?: bigint
@@ -86,6 +92,8 @@ export function decodeGlobalState(app: algosdk.indexerModels.Application): {
 } {
   const result: {
     creator?: string
+    title?: string
+    metadataUri?: string
     goal?: bigint
     deadline?: bigint
     raised?: bigint
@@ -98,6 +106,10 @@ export function decodeGlobalState(app: algosdk.indexerModels.Application): {
 
     if (key === 'creator') {
       result.creator = encodeAddress(kv.value.bytes)
+    } else if (key === 'title') {
+      result.title = Buffer.from(kv.value.bytes).toString('utf8')
+    } else if (key === 'metadataUri') {
+      result.metadataUri = Buffer.from(kv.value.bytes).toString('utf8')
     } else if (key === 'goal') {
       result.goal = kv.value.uint
     } else if (key === 'deadline') {
@@ -144,6 +156,8 @@ export function toCampaignViewModel(
   return {
     id: app.id,
     creator: state.creator ?? '',
+    title: state.title ?? '',
+    metadataUri: state.metadataUri ?? '',
     goalMicroAlgos: goal,
     raisedMicroAlgos: raised,
     deadlineSeconds: deadline,

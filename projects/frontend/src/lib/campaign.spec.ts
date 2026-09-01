@@ -27,6 +27,8 @@ function appParams(globalState: algosdk.indexerModels.TealKeyValue[]): algosdk.i
 function campaignApp(overrides: { status?: bigint; raised?: bigint } = {}): algosdk.indexerModels.Application {
   const globalState = [
     kv('creator', tealBytes(algosdk.decodeAddress(ZERO_ADDRESS).publicKey)),
+    kv('title', tealBytes(new TextEncoder().encode('My first novel'))),
+    kv('metadataUri', tealBytes(new TextEncoder().encode('ipfs://QmExample'))),
     kv('goal', tealUint(10_000_000n)),
     kv('deadline', tealUint(2_000n)),
     kv('raised', tealUint(overrides.raised ?? 5_000_000n)),
@@ -36,10 +38,12 @@ function campaignApp(overrides: { status?: bigint; raised?: bigint } = {}): algo
 }
 
 describe('decodeGlobalState', () => {
-  it('decodes creator, goal, deadline, raised, and status', () => {
+  it('decodes creator, title, metadata uri, goal, deadline, raised, and status', () => {
     const app = campaignApp()
     const state = decodeGlobalState(app)
     expect(state.creator).toBe(ZERO_ADDRESS)
+    expect(state.title).toBe('My first novel')
+    expect(state.metadataUri).toBe('ipfs://QmExample')
     expect(state.goal).toBe(10_000_000n)
     expect(state.deadline).toBe(2_000n)
     expect(state.raised).toBe(5_000_000n)
@@ -139,6 +143,8 @@ describe('toCampaignViewModel', () => {
     const vm = toCampaignViewModel(campaignApp({ raised: 10_000_000n }), 3_000n, 250_000n)
     expect(vm.id).toBe(42n)
     expect(vm.creator).toBe(ZERO_ADDRESS)
+    expect(vm.title).toBe('My first novel')
+    expect(vm.metadataUri).toBe('ipfs://QmExample')
     expect(vm.goalMicroAlgos).toBe(10_000_000n)
     expect(vm.raisedMicroAlgos).toBe(10_000_000n)
     expect(vm.deadlineSeconds).toBe(2_000n)
@@ -166,5 +172,15 @@ describe('toCampaignViewModel', () => {
     expect(vm.creator).toBe('')
     // deadline (0) <= now (1000) and raised < goal -> failed
     expect(vm.status).toBe('failed')
+  })
+
+  it('defaults missing title and metadata uri to empty string', () => {
+    const app = new algosdk.indexerModels.Application({
+      id: 7n,
+      params: appParams([kv('goal', tealUint(10n)), kv('raised', tealUint(5n))]),
+    })
+    const vm = toCampaignViewModel(app, 1_000n)
+    expect(vm.title).toBe('')
+    expect(vm.metadataUri).toBe('')
   })
 })

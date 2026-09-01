@@ -7,6 +7,8 @@ import CampaignCard from './CampaignCard'
 const campaign: CampaignViewModel = {
   id: 42n,
   creator: 'CREATORADDRESS',
+  title: 'My first novel',
+  metadataUri: 'ipfs://QmExample',
   goalMicroAlgos: 10_000_000n,
   raisedMicroAlgos: 5_000_000n,
   deadlineSeconds: BigInt(Math.floor(Date.now() / 1000) + 86_400),
@@ -15,9 +17,10 @@ const campaign: CampaignViewModel = {
 }
 
 describe('CampaignCard', () => {
-  it('renders campaign id, status, raised, goal, and pledge', () => {
+  it('renders campaign id, title, status, raised, goal, and pledge', () => {
     render(<CampaignCard campaign={campaign} onSelect={() => {}} />)
     expect(screen.getByText('#42')).toBeInTheDocument()
+    expect(screen.getByText('My first novel')).toBeInTheDocument()
     expect(screen.getByText('open')).toBeInTheDocument()
     expect(screen.getByText('5 ALGO')).toBeInTheDocument()
     expect(screen.getByText('10 ALGO')).toBeInTheDocument()

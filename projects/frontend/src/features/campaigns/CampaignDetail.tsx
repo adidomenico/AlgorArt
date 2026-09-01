@@ -85,11 +85,14 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
 
       <div className="detail__card">
         <div className="detail__header">
-          <h2 className="detail__title">Campaign #{campaign.id.toString()}</h2>
+          <h2 className="detail__title">{campaign.title || `Campaign #${campaign.id.toString()}`}</h2>
           <span className={`campaign-card__badge campaign-card__badge--${campaign.status}`}>{campaign.status}</span>
         </div>
 
-        <div className="detail__creator">Created by {campaign.creator}</div>
+        <div className="detail__creator">
+          Created by {campaign.creator}
+          {campaign.metadataUri !== '' && <span className="detail__metadata-uri"> · {campaign.metadataUri}</span>}
+        </div>
 
         <div className="detail__progress">
           <div className="detail__progress-fill" style={{ width: `${String(Math.min(percent, 100))}%` }} />

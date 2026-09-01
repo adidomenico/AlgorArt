@@ -40,30 +40,29 @@ void (async () => {
     const deadline = BigInt(Math.floor(Date.now() / 1000) + c.days * DAY)
 
     const { result } = await factory.send.create({
-      method: 'create(uint64,uint64)void',
-      args: [goal, deadline],
+      method: 'create(byte[],byte[],uint64,uint64)void',
+      args: [new TextEncoder().encode(`${c.creator}'s campaign`), new TextEncoder().encode(`ipfs://seed/${c.creator}`), goal, deadline],
       sender: creator.addr,
     })
 
     let pledged = '—'
     if (c.pledgeAlgo > 0) {
       const client = factory.getAppClientById({ appId: result.appId })
-      const amount = BigInt(c.pledgeAlgo) * 1_000_000n
       const payment = await algorand.createTransaction.payment({
         sender: backer.addr,
         receiver: client.appAddress,
-        amount: (c.pledgeAlgo).algo(),
+        amount: c.pledgeAlgo.algo(),
       })
       await client.send.call({
         method: 'pledge(pay)void',
         args: [payment],
         sender: backer.addr,
       })
-      pledged = `${c.pledgeAlgo} ALGO`
+      pledged = `${String(c.pledgeAlgo)} ALGO`
     }
 
     console.log(
-      `#${result.appId.toString()} creator=${c.creator} (${creator.addr}) goal=${c.goalAlgo} ALGO deadline=${new Date(Number(deadline) * 1000).toISOString()} pledged=${pledged}`,
+      `#${result.appId.toString()} creator=${c.creator} (${creator.addr.toString()}) goal=${String(c.goalAlgo)} ALGO deadline=${new Date(Number(deadline) * 1000).toISOString()} pledged=${pledged}`,
     )
   }
 })()

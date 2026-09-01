@@ -64,7 +64,7 @@ route structure grows.
 | --- | --- | --- | --- |
 | **Browse** | Grid of campaign cards, filtered by status | indexer list | — |
 | **Detail** | Full campaign state, progress bar, action buttons | indexer detail + boxes | claim / refund |
-| **Create** | Goal (ALGO) + deadline form | — | `create()` |
+| **Create** | Title + metadata URI + goal (ALGO) + deadline form | — | `create()` |
 | **Pledge** | Amount input on the detail page | — | `pledge()` |
 
 ## Data model
@@ -82,6 +82,8 @@ type CampaignStatus = 'open' | 'funded' | 'failed' | 'claimed'
 interface CampaignViewModel {
   id: bigint
   creator: string
+  title: string
+  metadataUri: string
   goalMicroAlgos: bigint
   raisedMicroAlgos: bigint
   deadline: Date
@@ -99,24 +101,22 @@ materialised, and `failed` only becomes a stored `status` after the first
 `refund()` call. Deriving `failed` client-side is what lets a backer start the
 first refund from the UI.
 
-## Campaign metadata (decided)
+## Campaign metadata (implemented)
 
-The contract currently stores only *state* — `creator`, `goal`, `deadline`,
-`raised`, `status` — nothing a Browse card or Detail page could show as an
-identity (title, description, image). **Decision (2026-08-31): add campaign
-metadata to the contract using the hybrid approach** — not yet implemented.
+The contract stores a short `title` (on-chain) plus a `metadataUri` pointer to
+off-chain JSON (ARC-3-style: description, image, category). The hybrid approach:
 
-- **On-chain:** a short `title` (string) in global state, passed to `create()`.
-  Cheap, readable straight from the indexer, no IPFS lookup needed for lists.
-- **Off-chain:** a `metadata_uri` (string) in global state pointing to a JSON
-  blob (ARC-3-style schema) on IPFS with the long description, image, and
-  category. Only fetched for the detail view.
+- **On-chain:** `title` (string) in global state, passed to `create()`.
+  Cheap, readable straight from the indexer — no IPFS lookup needed for lists.
+- **Off-chain:** `metadataUri` (string) in global state pointing to a JSON
+  blob on IPFS with the long description, image, and category.
 
-Rationale: there is no official ARC for stateful-app metadata (ARC-3/ARC-69 are
-ASA/NFT conventions), so this is a pragmatic default — instant card titles plus
-rich content off-chain. `title` is fixed at create; `metadata_uri` can be
-re-pointed later. The frontend `CampaignViewModel` will gain `title` and
-`metadataUri` fields when this lands.
+`title` is fixed at create. The frontend `CampaignViewModel` exposes both
+`title` and `metadataUri`: browse cards render `title` directly; the detail view
+shows the `metadataUri` (fetching and rendering the off-chain JSON remains a
+Phase 4 nicety). `title` and `metadataUri` are ABI `byte[]` arguments to
+`create`, encoded on-chain as `bytes`, each capped at 128 bytes (the AVM limit
+for a bytes global-state value) — enforced both on-chain and in the create form.
 
 ## Reads (indexer)
 
@@ -159,7 +159,7 @@ const client = new CampaignClient({ algorand, appId, defaultSender: activeAddres
 ```ts
 const factory = new CampaignFactory({ algorand, defaultSender: activeAddress, defaultSigner: transactionSigner })
 const { appClient, result } = await factory.send.create.create({
-  args: { goal: goalMicroAlgos, deadline: deadlineUnixSeconds },
+  args: { title: new TextEncoder().encode(title), metadataUri: new TextEncoder().encode(metadataUri), goal: goalMicroAlgos, deadline: deadlineUnixSeconds },
 })
 // result.appId / result.appAddress identify the new campaign
 ```
@@ -236,7 +236,7 @@ indexer/client services via `vi.mock`.
 
 ## Out of scope for Phase 2
 
-- Campaign metadata — decided (hybrid, see [Campaign metadata](#campaign-metadata-decided)); implementation pending. Rich media/IPFS pinning remains Phase 4.
+- Campaign metadata — implemented (hybrid, see [Campaign metadata](#campaign-metadata-implemented)); rich media/IPFS rendering remains Phase 4.
 - Cancel-before-deadline — Phase 4 (needs a contract change).
 - TestNet deployment — Phase 3.
 - Backend / database — never; the indexer is the read model.

@@ -26,12 +26,16 @@ function clientFor(appId: bigint, session: WalletSession): CampaignClient {
  * Deploy a new campaign. Returns the new app id and escrow address.
  *
  * @param session Wallet session holding the signer and address.
+ * @param title Short campaign title (stored on-chain).
+ * @param metadataUri URI of the off-chain campaign metadata.
  * @param goalMicroAlgos Funding target in microAlgos.
  * @param deadlineSeconds Deadline as a UNIX timestamp (seconds).
  * @returns The new app id and escrow address.
  */
 export async function createCampaign(
   session: WalletSession,
+  title: string,
+  metadataUri: string,
   goalMicroAlgos: bigint,
   deadlineSeconds: bigint,
 ): Promise<{ appId: bigint; appAddress: string }> {
@@ -42,7 +46,12 @@ export async function createCampaign(
   })
 
   const sendResult = await factory.send.create.create({
-    args: { goal: goalMicroAlgos, deadline: deadlineSeconds },
+    args: {
+      title: new TextEncoder().encode(title),
+      metadataUri: new TextEncoder().encode(metadataUri),
+      goal: goalMicroAlgos,
+      deadline: deadlineSeconds,
+    },
   })
 
   // The generated create result doesn't expose the confirmation round, so wait for the indexer to catch up to algod's current tip.

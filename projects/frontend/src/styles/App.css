@@ -172,6 +172,13 @@ body {
   margin-bottom: 0.75rem;
 }
 
+.campaign-card__title {
+  margin: 0 0 0.75rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
 .campaign-card__status {
   font-weight: 600;
   color: var(--muted);
@@ -280,6 +287,11 @@ body {
   color: var(--muted);
   font-size: 0.875rem;
   margin-bottom: 1rem;
+  word-break: break-all;
+}
+
+.detail__metadata-uri {
+  color: var(--teal-dark);
   word-break: break-all;
 }
 

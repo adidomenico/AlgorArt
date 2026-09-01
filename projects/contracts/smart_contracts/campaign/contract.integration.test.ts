@@ -70,8 +70,8 @@ describe('Campaign (localnet)', () => {
 
     const factory = new AppFactory({ appSpec, algorand, defaultSender: creator.addr })
     const { appClient } = await factory.send.create({
-      method: 'create(uint64,uint64)void',
-      args: [goal, deadline],
+      method: 'create(byte[],byte[],uint64,uint64)void',
+      args: [new TextEncoder().encode('Funded campaign'), new TextEncoder().encode('ipfs://funded'), goal, deadline],
       sender: creator.addr,
       suppressLog: true,
     })
@@ -120,8 +120,8 @@ describe('Campaign (localnet)', () => {
 
     const factory = new AppFactory({ appSpec, algorand, defaultSender: creator.addr })
     const { appClient } = await factory.send.create({
-      method: 'create(uint64,uint64)void',
-      args: [goal, deadline],
+      method: 'create(byte[],byte[],uint64,uint64)void',
+      args: [new TextEncoder().encode('Failed campaign'), new TextEncoder().encode('ipfs://failed'), goal, deadline],
       sender: creator.addr,
       suppressLog: true,
     })
