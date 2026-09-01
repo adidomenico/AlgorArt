@@ -167,4 +167,6 @@ Fix everything until green — don't skip a step because the change "looks small
 ## Roadmap
 
 Phase 0 (setup) done → Phase 1 (contract + tests + localnet) → Phase 2 (frontend) →
-Phase 3 (TestNet demo) → Phase 4 (polish). See `README.md`.
+Phase 3 (TestNet demo) → Phase 4 (polish), then the later product phases
+(A/B/C). The full plan lives in `docs/roadmap.md`; `README.md` carries only the
+short status table.

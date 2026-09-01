@@ -75,6 +75,34 @@ stateDiagram-v2
 - Guard: the caller's pledge box must exist (prevents refunding twice or refunding non-backers).
 - Deletes the box and pays the box amount back to the caller.
 
+### `cancelPledge()`
+
+> **Proposed** — documented for design alignment; not yet implemented.
+
+- Backer only (`Txn.sender` must have a pledge box), **before** the deadline, while
+  the campaign is still `Open`.
+- Deletes the caller's pledge box, pays the box amount back to the caller, and
+  decrements `raised` by that amount.
+- The box delete makes a second cancel impossible (same pattern as `refund`); the
+  backer pays ≈ 0.002 ALGO (app call + one inner payment).
+- **Trade-off:** while `Open`, `raised` becomes a live, revocable number. A large
+  backer can pledge to make a campaign look near-funded, then withdraw just before
+  the deadline. This mirrors the creator self-pledge concern (design decision 7)
+  but from the backer side, and the deadline remains the sole arbiter of the
+  outcome — accepted for a non-custodial demo.
+
+### `refundBatch(backers...)`
+
+> **Proposed** — documented for design alignment; not yet implemented.
+
+- Refunds up to 8 backers in a single call (the AVM box-reference limit), one
+  inner payment per backer, deleting each pledge box.
+- **Callable by anyone** after the deadline when `raised < goal` — the sweep is
+  permissionless, so closure does not depend on the creator returning.
+- The outer app-call fee must cover the app call plus one minimum fee per inner
+  payment: ≈ 0.009 ALGO for a full batch of 8. Refund amounts are never reduced
+  by fees; the caller pays.
+
 ## Design decisions
 
 1. **`Funded` is a derived state.** There is no separate `settle()` call, so
@@ -92,6 +120,42 @@ stateDiagram-v2
 7. **Creators cannot self-pledge.** `pledge()` rejects `Txn.sender == creator`. A self-pledge is not a direct
    funds leak (the creator would only move their own ALGO in and out), but it lets a creator fabricate the
    `raised` number to make a campaign look funded — undermining the trust story the contract exists to provide.
+8. **Refund sweep is permissionless (proposed).** `refundBatch` is callable by any account, not just the
+   creator, so a failed campaign can be fully drained even if the creator never returns. Whoever calls pays the
+   batch fee; refund amounts are never reduced.
+9. **Pledges are cancellable before the deadline (proposed).** `cancelPledge` lets a backer withdraw while the
+   campaign is still `Open`, mirroring Kickstarter's "not charged until the deadline" model. It reintroduces the
+   revocable-`raised` concern the self-pledge ban guards against, but the deadline remains the sole arbiter of the
+   outcome — accepted for a non-custodial demo.
+
+## Known edge cases
+
+The cases below drive implementation decisions for the proposed methods; they are
+tracked in `docs/roadmap.md` → "Known edge cases & open questions".
+
+1. **Zero-pledge campaign stays `Open`.** `refund()` materialises `Failed` **and**
+   requires the caller's box to exist in the same atomic call, so a campaign nobody
+   pledged to can never record `Failed` on-chain. The UI still derives "failed", so it
+   is cosmetic — but a permissionless `settle()` (proposed) would close the gap.
+2. **Stray ALGO sent directly to the escrow.** A plain payment to the app address
+   bypasses `pledge()`. On success `claim()` pays `balance − minBalance`, so stray ALGO
+   goes to the creator for free; on failure it is in no box and is stranded after all
+   refunds. Documented and accepted.
+3. **`refundBatch` poisoning.** A single bad or duplicate address in a batch fails that
+   backer's inner payment and reverts the whole batch. The frontend must dedupe and pass
+   only live box addresses from the indexer.
+4. **Opcode budget.** 8 inner payments + 8 box references approach the app-call budget;
+   verify the batch actually compiles and reduce to 6–7 backers if not.
+5. **Re-pledge → cancel → re-pledge.** Cancelling deletes the box and decrements
+   `raised`; a later pledge must recreate the box with the fresh amount and re-increment
+   `raised` correctly (needs an explicit test once `cancelPledge` exists).
+6. **Deadline boundary.** Pledging/cancelling use `latestTimestamp < deadline` while
+   claim/refund use `>=`, so at the exact `==` block pledging is closed and settlement is
+   open. Test the `==` boundary explicitly.
+7. **Claim leaves pledge boxes behind.** `claim()` does not delete backer boxes; they are
+   harmless dead data, but the UI must not show "your pledge" on a `claimed` campaign.
+8. **Overflow is impossible in practice.** `raised` and box values are `uint64`; an
+   overflow would need more ALGO than the total supply. No guard needed.
 
 ## Frontend integration (Phase 2)
 

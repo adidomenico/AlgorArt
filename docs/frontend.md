@@ -196,6 +196,92 @@ Both issue inner payments (to the creator / the backer), so the app call fee
 must cover the inner transaction: pass `coverAppCallInnerTransactionFees: true`
 (or add `extraFee`) in the send params.
 
+## Refund UX & fee disclaimers (planned)
+
+A failed campaign leaves funds at the escrow until backers reclaim them, and a
+refund is itself a transaction that some account must sign and pay for. The
+refund UX gives backers two paths — self-service for the individual, a batch
+sweep for closure — and states the estimated network fee beside every action so
+the cost is never a surprise.
+
+### Backer banner
+
+On a failed campaign, a connected backer with an outstanding pledge sees a
+prominent banner in the detail view:
+
+> **This campaign failed to reach its goal.** You're owed **X.XXXX ALGO**.
+> **Refund my pledge** (network fee ≈ 0.002 ALGO)
+
+The banner is derived from the derived `failed` status and
+`myPledgeMicroAlgos`; no extra on-chain read is needed.
+
+### Cancel pledge (while open)
+
+A connected backer on a still-open campaign sees a **Cancel pledge** action next
+to their pledge amount, with a fee disclaimer:
+
+> **Cancel pledge** (network fee ≈ 0.002 ALGO)
+
+Cancelling calls the proposed `cancelPledge()` method: it returns the pledge and
+removes the backer's box, before the deadline. It is only shown while the
+campaign status is `open` and `myPledgeMicroAlgos > 0`; after the deadline the
+outcome is locked and only `claim`/`refund` apply.
+
+### Refund all (batch sweep)
+
+A failed campaign also exposes a **Refund all backers** action. It drives the
+contract's `refundBatch` method in a loop: read the outstanding backer boxes
+from the indexer, refund them in batches of up to 8, and repeat until the
+escrow is drained. The action is available to anyone — creator, backers, or a
+volunteer — because the sweep is permissionless (see the contract docs).
+
+### Fee disclaimers
+
+The estimated fees, shown beside the buttons:
+
+| Action | Transactions | Estimated network fee |
+| --- | --- | --- |
+| `cancelPledge()` — one backer, before deadline | 1 app call + 1 inner payment | ≈ 0.002 ALGO |
+| `refund()` — one backer | 1 app call + 1 inner payment | ≈ 0.002 ALGO |
+| `refundBatch()` — up to 8 backers | 1 app call + 8 inner payments | ≈ 0.009 ALGO |
+
+Each Algorand transaction fee is 1,000 µA (0.001 ALGO); the outer app call must
+also cover one minimum fee per inner payment. Refund **amounts** are never
+reduced by fees — the fee is paid by whoever signs the transaction (the backer
+for an individual refund, the sweep caller for a batch).
+
+This is the price of finality: the blockchain cannot make a refund "free", only
+decide *whose* wallet pays it. The fee is fixed, tiny, and public — a fraction
+of a cent to reclaim a pledge of any size.
+
+## Edge cases & gotchas
+
+The UI-level cases that matter once cancel/batch refunds land; the contract-level
+ones live in `docs/contracts/campaign.md` → "Known edge cases".
+
+- **Indexer lag.** After a write (create/pledge/claim/refund), the indexer may lag a
+  round or two. The detail view's `load()` refetch can show stale data — prefer
+  re-reading from algod or a short poll/refresh after a mutation.
+- **Client clock drift.** The deadline is computed from `Date.now()/1000`. A skewed
+  clock can produce a deadline in the past (contract rejects) or absurdly far out;
+  clamp the duration to a sane range in the create form.
+- **Bytes vs. characters.** `title`/`metadataUri` are capped at 128 **bytes**, not
+  characters. The form already validates via `TextEncoder`, so emoji pass the UI
+  `maxLength` but are rejected by byte count — keep the `TextEncoder` check.
+- **Pledge > wallet balance.** Validate against the connected account's ALGO balance
+  before opening the wallet; otherwise the wallet errors after the fact.
+- **Approval race.** The user signs a pledge/cancel, but the deadline passes before
+  submission — the transaction just fails; handle the failure message gracefully.
+- **Wallet/network mismatch.** Wallet on TestNet while the app targets MainNet (or
+  vice versa); check the wallet's active network against `VITE_ALGOD_NETWORK`.
+- **Fractional ALGO rounding.** `parseAlgoToMicroAlgos` should reject or round
+  sub-microAlgo inputs (6+ decimal places) predictably.
+- **Batch sweep correctness.** "Refund all" must fetch live box addresses from the
+  indexer, dedupe, and never pass an address twice — a bad entry reverts the whole
+  `refundBatch` call.
+- **Suppress pledge readout on `claimed`.** `claim()` leaves pledge boxes behind, so
+  the detail view must not show "Your pledge: X ALGO" once the campaign is `claimed`.
+
 ## Wallet integration
 
 Already present and unchanged: `App.tsx` builds a `WalletManager`

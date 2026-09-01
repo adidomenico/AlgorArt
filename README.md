@@ -9,10 +9,10 @@ server — holds the funds and enforces the rules: if the goal is met by the dea
 creator can claim the funds; if not, every backer can reclaim their pledge.
 
 > Technical details live in [`docs/`](docs/): contract internals, on-chain state,
-> design decisions, the [frontend design](docs/frontend.md),
-> [the CI plan](docs/ci.md), and the
-> [production roadmap](docs/production-roadmap.md) (identity, backend,
-> notifications, UI).
+> and design decisions in [the contract docs](docs/contracts/campaign.md), the
+> [frontend design](docs/frontend.md), [the CI plan](docs/ci.md), and the full
+> [roadmap](docs/roadmap.md) (phases, proposed contract changes, edge cases, and
+> the later product plan).
 
 ## The idea
 
@@ -110,48 +110,19 @@ AlgorArt/
 
 ## Roadmap
 
-### Phase 0 — Setup
+The full plan — phases, proposed contract changes, known edge cases, and the later
+product plan (identity, backend, notifications, UI) — lives in
+[`docs/roadmap.md`](docs/roadmap.md). This is the single source of truth; the short
+version:
 
-- [x] `algokit init` — AlgoKit workspace (contracts + frontend projects)
-- [x] Toolchain: Node.js, Docker Desktop, AlgoKit CLI
-- [x] README = this spec
-- [x] Local sandbox (algod + indexer in Docker) up and verified
-- [x] Lint, format, and type-check tooling wired up (ESLint + Prettier + tsc)
-
-### Phase 1 — Smart contract (core)
-
-- [x] `campaign/contract.algo.ts`: `create`, `pledge`, `claim`, `refund`
-- [x] Campaign metadata: on-chain `title` + `metadataUri` (off-chain pointer) on `create()`
-- [x] Contract tests: **100% behavioral coverage** — every method × every branch (pledge before/after deadline, claim gating by caller/deadline/goal/double-claim, refund gating by deadline/outcome/backer/double-refund). Offline AVM tests in `contract.algo.spec.ts`; matrix in [`docs/contracts/testing.md`](docs/contracts/testing.md).
-- [x] Deploy to localnet, exercise the flow (create → pledge → claim, and → refund) via integration tests in `contract.integration.test.ts`
-
-### Phase 2 — Frontend
-
-The full UI plan — pages, data flow, and the exact `create`/`pledge`/`claim`/
-`refund` call patterns — is designed in [`docs/frontend.md`](docs/frontend.md).
-
-- [x] Wallet connect (Pera / Defly) via `use-wallet` (from the AlgoKit starter)
-- [x] Campaign list & detail — read global state + boxes via indexer
-- [x] Create campaign form → `create()` ABI call
-- [x] Pledge flow → `pledge()` ABI call (payment + app call in one group)
-- [x] Claim & refund buttons → `claim()` / `refund()` ABI calls
-- [x] Unit tests (Vitest) with line coverage ≥ 90% on components & utils
-
-### Phase 3 — TestNet demo
-
-- [ ] Deploy contracts to **TestNet**
-- [ ] Deploy the frontend to a static host (any CDN / static file server)
-- [ ] Fund a wallet via the TestNet dispenser
-- [ ] End-to-end demo: create → pledge → claim (success case) and → refund (failure case)
-
-### Phase 4 — Polish (nice-to-have)
-
-- [ ] Campaign metadata — **on-chain `title` + `metadataUri` implemented**; rich off-chain rendering (IPFS image/description/category) remains Phase 4
-- [ ] Cancel-before-deadline option for creators
-- [ ] CI: contract simulator tests + frontend build + **coverage gate** + lint/format/type-check gate + markdown lint + frontend image build
-  - *In progress*: the consolidated `ci` workflow (build → lint/format/type-check, unit-test, and LocalNet integration) is done; frontend image build remains.
-- [ ] Package the frontend as a container image for portable hosting
-- [ ] ARC-32/56 spec published for the contract
+| Phase | Scope | Status |
+| --- | --- | --- |
+| 0 — Setup | AlgoKit workspace, toolchain, sandbox, lint/format/type-check | ✅ done |
+| 1 — Smart contract | `create`/`pledge`/`claim`/`refund` + full behavioral tests | ✅ done |
+| 2 — Frontend | Wallet connect, browse, create, pledge, claim/refund UI | ✅ done |
+| 3 — TestNet | Deploy + end-to-end demo | ⬜ next |
+| 4 — Polish | Refund UX, cancel/batch, metadata rendering, CI | ⬜ planned |
+| A/B/C — Product | Content & UI, profiles & notifications, polish | ⬜ design only |
 
 > **CI.** One consolidated [`build-and-test`](.github/workflows/build-and-test.yml) workflow with four
 > jobs (`build` → lint/format/type-check, unit-test, integration-test), plus a
