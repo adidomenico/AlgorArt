@@ -27,7 +27,7 @@ export default defineConfig(
       },
       parserOptions: {
         projectService: {
-          allowDefaultProject: ['eslint.config.mjs', 'vitest.config.ts'],
+          allowDefaultProject: ['eslint.config.mjs', 'vitest.config.ts', 'scripts/ts-nocheck-generated.mjs'],
         },
         tsconfigRootDir: import.meta.dirname,
       },

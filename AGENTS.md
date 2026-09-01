@@ -77,6 +77,12 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
 - **`noImplicitOverride` is on.** `tsconfig.json` in both projects enables
   `noImplicitOverride`, so any member that overrides a base-class member must be marked
   with the `override` keyword (e.g. `override render()` in `ErrorBoundary`).
+- **`noUnusedLocals`/`noUnusedParameters` are on.** `tsconfig.json` in both projects
+  enables them, so unused variables/parameters are caught by `tsc --noEmit`, not just
+  ESLint. Generated client files are exempt: contracts exclude
+  `smart_contracts/artifacts` from `tsc`, and the frontend prepends `// @ts-nocheck` to
+  the linked `src/contracts/*.ts` files via `scripts/ts-nocheck-generated.mjs` (wired
+  into `generate:app-clients` and the CI link step).
 - **Imports are checked.** `eslint-plugin-import` enforces `no-duplicates`,
   `no-named-as-default`, and `no-named-as-default-member` at `error` severity.
   Resolution-based rules (`no-unresolved` etc.) are intentionally off — `tsc --noEmit`

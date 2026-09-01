@@ -60,6 +60,12 @@ jobs:
         run: algokit project link --all
         working-directory: projects/frontend
 
+      # Generated clients contain unused imports that trip noUnusedLocals; tag
+      # them so tsc skips them (they must not be edited by hand).
+      - name: Tag generated clients with ts-nocheck
+        run: node scripts/ts-nocheck-generated.mjs
+        working-directory: projects/frontend
+
       - name: Build frontend bundle (Vite)
         run: npx vite build
         working-directory: projects/frontend

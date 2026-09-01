@@ -7,6 +7,8 @@
     "strict": true,
     "noImplicitReturns": true,
     "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -22,7 +24,7 @@
     "types": ["node"]
   },
   "include": ["smart_contracts/**/*.ts"],
-  "exclude": ["node_modules", "dist", "coverage"],
+  "exclude": ["node_modules", "dist", "coverage", "smart_contracts/artifacts"],
   "ts-node": {
     "compilerOptions": {
       "module": "CommonJS"

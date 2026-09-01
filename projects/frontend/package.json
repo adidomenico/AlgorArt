@@ -55,7 +55,7 @@
     "tslib": "^2.6.2"
   },
   "scripts": {
-    "generate:app-clients": "algokit project link --all",
+    "generate:app-clients": "algokit project link --all && node scripts/ts-nocheck-generated.mjs",
     "dev": "npm run generate:app-clients && vite",
     "build": "npm run generate:app-clients && tsc && vite build",
     "preview": "vite preview",
