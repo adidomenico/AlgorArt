@@ -83,10 +83,12 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
   `smart_contracts/artifacts` from `tsc`, and the frontend prepends `// @ts-nocheck` to
   the linked `src/contracts/*.ts` files via `scripts/ts-nocheck-generated.mjs` (wired
   into `generate:app-clients` and the CI link step).
-- **`verbatimModuleSyntax` is on.** `tsconfig.json` in both projects enables it, so
-  type-only imports must be written `import type` and the compiler no longer elides
-  type-only imports silently. This supersedes
-  `@typescript-eslint/consistent-type-imports` at the compiler level.
+- **`verbatimModuleSyntax` is on (contracts).** The contracts `tsconfig.json` enables
+  it, so type-only imports must be written `import type` and the compiler no longer
+  elides them silently. The frontend omits it — Vite (rolldown) does not elide
+  type-only imports in the generated client, which imports them as value imports and
+  would fail the bundle step. The frontend instead relies on
+  `@typescript-eslint/consistent-type-imports`.
 - **`noUncheckedIndexedAccess` is on.** `tsconfig.json` in both projects enables it,
   so `arr[i]` and record access yield `T | undefined` and require explicit guards,
   defaults, or optional chaining before use.

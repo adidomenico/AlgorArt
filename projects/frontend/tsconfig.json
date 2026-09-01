@@ -21,7 +21,6 @@
     "allowJs": false,
     "allowSyntheticDefaultImports": true,
     "moduleResolution": "bundler",
-    "verbatimModuleSyntax": true /* Import elision disabled: type-only imports must be written `import type`. */,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
