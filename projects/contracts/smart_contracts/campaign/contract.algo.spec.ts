@@ -51,19 +51,25 @@ describe('Campaign', () => {
 
     test('rejects a goal of zero', () => {
       const contract = ctx.contract.create(Campaign)
-      expect(() => contract.create(0, DEADLINE)).toThrowError('goal must be greater than zero')
+      expect(() => {
+        contract.create(0, DEADLINE)
+      }).toThrow('goal must be greater than zero')
     })
 
     test('rejects a deadline in the past', () => {
       const contract = ctx.contract.create(Campaign)
       // latestTimestamp is pinned to CREATION_TIME, so a deadline equal to it is not in the future.
-      expect(() => contract.create(GOAL, CREATION_TIME)).toThrowError('deadline must be in the future')
+      expect(() => {
+        contract.create(GOAL, CREATION_TIME)
+      }).toThrow('deadline must be in the future')
     })
 
     test('can only be called once, at app creation', () => {
       const contract = createCampaign()
       // `onCreate: 'require'` means create only runs in the app-create transaction.
-      expect(() => contract.create(GOAL, DEADLINE)).toThrowError('method can only be called while creating')
+      expect(() => {
+        contract.create(GOAL, DEADLINE)
+      }).toThrow('method can only be called while creating')
     })
   })
 
@@ -103,7 +109,9 @@ describe('Campaign', () => {
         amount: 0,
       })
 
-      expect(() => contract.pledge(payment)).toThrowError('pledge must be greater than zero')
+      expect(() => {
+        contract.pledge(payment)
+      }).toThrow('pledge must be greater than zero')
     })
 
     test('rejects a payment to the wrong receiver', () => {
@@ -114,7 +122,9 @@ describe('Campaign', () => {
         amount: 100_000,
       })
 
-      expect(() => contract.pledge(payment)).toThrowError('payment must be made to the campaign escrow')
+      expect(() => {
+        contract.pledge(payment)
+      }).toThrow('payment must be made to the campaign escrow')
     })
 
     test('rejects a payment from someone other than the caller', () => {
@@ -125,7 +135,9 @@ describe('Campaign', () => {
         amount: 100_000,
       })
 
-      expect(() => contract.pledge(payment)).toThrowError('payment must come from the caller')
+      expect(() => {
+        contract.pledge(payment)
+      }).toThrow('payment must come from the caller')
     })
 
     test('rejects pledging after the deadline', () => {
@@ -139,7 +151,9 @@ describe('Campaign', () => {
         amount: 100_000,
       })
 
-      expect(() => contract.pledge(payment)).toThrowError('pledging is closed')
+      expect(() => {
+        contract.pledge(payment)
+      }).toThrow('pledging is closed')
     })
   })
 
@@ -166,20 +180,26 @@ describe('Campaign', () => {
       ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
 
       const other = ctx.any.account()
-      ctx.txn
-        .createScope([ctx.any.txn.applicationCall({ appId: contract, sender: other })])
-        .execute(() => expect(() => contract.claim()).toThrowError('only the creator can claim'))
+      ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: contract, sender: other })]).execute(() => {
+        expect(() => {
+          contract.claim()
+        }).toThrow('only the creator can claim')
+      })
     })
 
     test('rejects claiming before the deadline', () => {
       const contract = createCampaign()
-      expect(() => contract.claim()).toThrowError('deadline has not passed')
+      expect(() => {
+        contract.claim()
+      }).toThrow('deadline has not passed')
     })
 
     test('rejects claiming when the goal was not reached', () => {
       const contract = createCampaign()
       ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
-      expect(() => contract.claim()).toThrowError('goal not reached')
+      expect(() => {
+        contract.claim()
+      }).toThrow('goal not reached')
     })
 
     test('rejects a second claim after funds are claimed', () => {
@@ -192,7 +212,9 @@ describe('Campaign', () => {
       ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
       contract.claim()
 
-      expect(() => contract.claim()).toThrowError('already claimed')
+      expect(() => {
+        contract.claim()
+      }).toThrow('already claimed')
     })
   })
 
@@ -217,7 +239,9 @@ describe('Campaign', () => {
 
     test('rejects refunding before the deadline', () => {
       const contract = createCampaign()
-      expect(() => contract.refund()).toThrowError('deadline has not passed')
+      expect(() => {
+        contract.refund()
+      }).toThrow('deadline has not passed')
     })
 
     test('rejects refunding when the goal was reached', () => {
@@ -228,13 +252,17 @@ describe('Campaign', () => {
       )
 
       ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
-      expect(() => contract.refund()).toThrowError('goal was reached, no refunds')
+      expect(() => {
+        contract.refund()
+      }).toThrow('goal was reached, no refunds')
     })
 
     test('rejects a caller with nothing to refund', () => {
       const contract = createCampaign()
       ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
-      expect(() => contract.refund()).toThrowError('nothing to refund')
+      expect(() => {
+        contract.refund()
+      }).toThrow('nothing to refund')
     })
 
     test('rejects a second refund from the same backer', () => {
@@ -248,7 +276,9 @@ describe('Campaign', () => {
       ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
       contract.refund()
 
-      expect(() => contract.refund()).toThrowError('nothing to refund')
+      expect(() => {
+        contract.refund()
+      }).toThrow('nothing to refund')
     })
 
     test('lets each backer refund their own pledge after the first refund', () => {
@@ -258,9 +288,9 @@ describe('Campaign', () => {
       const appAddress = ctx.ledger.getApplicationForContract(contract).address
 
       contract.pledge(ctx.any.txn.payment({ sender: backerA, receiver: appAddress, amount: 60_000 }))
-      ctx.txn
-        .createScope([ctx.any.txn.applicationCall({ appId: contract, sender: backerB })])
-        .execute(() => contract.pledge(ctx.any.txn.payment({ sender: backerB, receiver: appAddress, amount: 40_000 })))
+      ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: contract, sender: backerB })]).execute(() => {
+        contract.pledge(ctx.any.txn.payment({ sender: backerB, receiver: appAddress, amount: 40_000 }))
+      })
 
       ctx.ledger.patchAccountData(appAddress, { account: { balance: 100_000 + MIN_BALANCE } })
       ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
@@ -270,7 +300,9 @@ describe('Campaign', () => {
       expect(contract.status.value).toEqual(1)
 
       // Second backer can still reclaim their own pledge.
-      ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: contract, sender: backerB })]).execute(() => contract.refund())
+      ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: contract, sender: backerB })]).execute(() => {
+        contract.refund()
+      })
 
       expect(contract.pledges(backerA).exists).toEqual(false)
       expect(contract.pledges(backerB).exists).toEqual(false)

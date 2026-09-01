@@ -19,7 +19,7 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
   const canSubmit = goal.trim() !== '' && !busy && Boolean(activeAddress && transactionSigner)
 
   const handleSubmit = async () => {
-    if (!activeAddress || !transactionSigner) return
+    if (!activeAddress) return
 
     setBusy(true)
     setMessage(null)
@@ -50,11 +50,26 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
       <h3 className="create__title">Create a campaign</h3>
       <label className="create__field">
         Goal (ALGO)
-        <input type="text" inputMode="decimal" placeholder="e.g. 100" value={goal} onChange={(e) => setGoal(e.target.value)} />
+        <input
+          type="text"
+          inputMode="decimal"
+          placeholder="e.g. 100"
+          value={goal}
+          onChange={(e) => {
+            setGoal(e.target.value)
+          }}
+        />
       </label>
       <label className="create__field">
         Duration (days)
-        <input type="number" min="1" value={days} onChange={(e) => setDays(e.target.value)} />
+        <input
+          type="number"
+          min="1"
+          value={days}
+          onChange={(e) => {
+            setDays(e.target.value)
+          }}
+        />
       </label>
       <div className="create__actions">
         <button type="button" className="btn" onClick={onCancel}>

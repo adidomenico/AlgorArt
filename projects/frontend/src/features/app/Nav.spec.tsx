@@ -12,7 +12,7 @@ vi.mock('@txnlab/use-wallet-react', () => ({
 describe('Nav', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    useWalletMock.mockReturnValue({ activeAddress: null })
+    useWalletMock.mockReturnValue({ activeAddress: null, wallets: [] })
   })
 
   it('renders the brand and connect button when disconnected', () => {
@@ -44,7 +44,7 @@ describe('Nav', () => {
   })
 
   it('closes the wallet modal via the modal Close button', async () => {
-    useWalletMock.mockReturnValue({ activeAddress: null })
+    useWalletMock.mockReturnValue({ activeAddress: null, wallets: [] })
     const user = userEvent.setup()
     render(<Nav onNavigateHome={() => {}} />)
     await user.click(screen.getByText('Connect wallet'))

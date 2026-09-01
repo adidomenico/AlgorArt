@@ -67,7 +67,7 @@ export function formatCountdown(deadlineSeconds: bigint, nowSeconds: bigint): st
   const hours = Math.floor((diff % 86_400) / 3_600)
   const minutes = Math.floor((diff % 3_600) / 60)
 
-  if (days > 0) return `${days}d ${hours}h`
-  if (hours > 0) return `${hours}h ${minutes}m`
-  return `${minutes}m`
+  if (days > 0) return `${String(days)}d ${String(hours)}h`
+  if (hours > 0) return `${String(hours)}h ${String(minutes)}m`
+  return `${String(minutes)}m`
 }

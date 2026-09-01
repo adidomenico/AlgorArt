@@ -11,14 +11,20 @@ const CampaignCard = ({ campaign, onSelect }: CampaignCardProps) => {
   const percent = campaign.goalMicroAlgos > 0n ? Number((campaign.raisedMicroAlgos * 100n) / campaign.goalMicroAlgos) : 0
 
   return (
-    <button type="button" className="campaign-card" onClick={() => onSelect(campaign.id)}>
+    <button
+      type="button"
+      className="campaign-card"
+      onClick={() => {
+        onSelect(campaign.id)
+      }}
+    >
       <div className="campaign-card__header">
         <span className="campaign-card__status">#{campaign.id.toString()}</span>
         <span className={`campaign-card__badge campaign-card__badge--${campaign.status}`}>{campaign.status}</span>
       </div>
 
       <div className="campaign-card__progress">
-        <div className="campaign-card__progress-fill" style={{ width: `${Math.min(percent, 100)}%` }} />
+        <div className="campaign-card__progress-fill" style={{ width: `${String(Math.min(percent, 100))}%` }} />
       </div>
 
       <dl className="campaign-card__stats">

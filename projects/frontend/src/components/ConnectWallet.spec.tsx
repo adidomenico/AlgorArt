@@ -64,6 +64,7 @@ describe('ConnectWallet', () => {
     const reloadSpy = vi.fn()
     Object.defineProperty(window, 'location', {
       configurable: true,
+      // eslint-disable-next-line @typescript-eslint/no-misused-spread -- jsdom `Location` is replaced with a plain mock object
       value: { ...window.location, reload: reloadSpy },
     })
     const user = userEvent.setup()

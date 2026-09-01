@@ -19,12 +19,23 @@ const Nav = ({ onNavigateHome }: NavProps) => {
 
       <div className="nav__actions">
         {activeAddress && <span className="nav__address">{ellipseAddress(activeAddress)}</span>}
-        <button type="button" className="btn" onClick={() => setWalletOpen(true)}>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            setWalletOpen(true)
+          }}
+        >
           {activeAddress ? 'Account' : 'Connect wallet'}
         </button>
       </div>
 
-      <ConnectWallet openModal={walletOpen} closeModal={() => setWalletOpen(false)} />
+      <ConnectWallet
+        openModal={walletOpen}
+        closeModal={() => {
+          setWalletOpen(false)
+        }}
+      />
     </nav>
   )
 }

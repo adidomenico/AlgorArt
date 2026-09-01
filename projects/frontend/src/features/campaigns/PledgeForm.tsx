@@ -18,7 +18,7 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
   const canSubmit = amount.trim() !== '' && !busy && Boolean(activeAddress && transactionSigner)
 
   const handleSubmit = async () => {
-    if (!activeAddress || !transactionSigner) return
+    if (!activeAddress) return
 
     setBusy(true)
     setMessage(null)
@@ -43,7 +43,9 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
         inputMode="decimal"
         placeholder="Amount in ALGO"
         value={amount}
-        onChange={(e) => setAmount(e.target.value)}
+        onChange={(e) => {
+          setAmount(e.target.value)
+        }}
         className="pledge__input"
       />
       <button type="button" className="btn btn--primary" disabled={!canSubmit} onClick={() => void handleSubmit()}>

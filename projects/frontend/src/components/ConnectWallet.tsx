@@ -30,7 +30,7 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
           )}
 
           {!activeAddress &&
-            wallets?.map((wallet) => (
+            wallets.map((wallet) => (
               <button
                 type="button"
                 data-test-id={`${wallet.id}-connect`}
@@ -70,17 +70,15 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
               data-test-id="logout"
               onClick={() => {
                 void (async () => {
-                  if (wallets) {
-                    const activeWallet = wallets.find((w) => w.isActive)
-                    if (activeWallet) {
-                      await activeWallet.disconnect()
-                    } else {
-                      // Required for logout/cleanup of inactive providers
-                      // For instance, when you login to localnet wallet and switch network
-                      // to testnet/mainnet or vice verse.
-                      localStorage.removeItem('@txnlab/use-wallet:v3')
-                      window.location.reload()
-                    }
+                  const activeWallet = wallets.find((w) => w.isActive)
+                  if (activeWallet) {
+                    await activeWallet.disconnect()
+                  } else {
+                    // Required for logout/cleanup of inactive providers
+                    // For instance, when you login to localnet wallet and switch network
+                    // to testnet/mainnet or vice verse.
+                    localStorage.removeItem('@txnlab/use-wallet:v3')
+                    window.location.reload()
                   }
                 })()
               }}

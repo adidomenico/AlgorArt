@@ -68,12 +68,12 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   }
 
   const handleClaim = () => {
-    if (!activeAddress || !transactionSigner) return
+    if (!activeAddress) return
     void runAction(() => claim(appId, { address: activeAddress, signer: transactionSigner }), 'Claim submitted!')
   }
 
   const handleRefund = () => {
-    if (!activeAddress || !transactionSigner) return
+    if (!activeAddress) return
     void runAction(() => refund(appId, { address: activeAddress, signer: transactionSigner }), 'Refund submitted!')
   }
 
@@ -92,7 +92,7 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
         <div className="detail__creator">Created by {campaign.creator}</div>
 
         <div className="detail__progress">
-          <div className="detail__progress-fill" style={{ width: `${Math.min(percent, 100)}%` }} />
+          <div className="detail__progress-fill" style={{ width: `${String(Math.min(percent, 100))}%` }} />
         </div>
         <p className="detail__raised">
           {formatAlgo(campaign.raisedMicroAlgos)} ALGO raised of {formatAlgo(campaign.goalMicroAlgos)} ALGO goal
@@ -117,7 +117,14 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
 
         {canClaim && (
           <div className="detail__actions">
-            <button type="button" className="btn btn--primary" disabled={busy} onClick={() => void handleClaim()}>
+            <button
+              type="button"
+              className="btn btn--primary"
+              disabled={busy}
+              onClick={() => {
+                handleClaim()
+              }}
+            >
               {busy ? 'Claiming…' : 'Claim funds'}
             </button>
           </div>

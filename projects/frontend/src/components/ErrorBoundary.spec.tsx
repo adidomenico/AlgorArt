@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ErrorBoundary from './ErrorBoundary'
 
@@ -11,9 +12,13 @@ describe('ErrorBoundary', () => {
   let cleanup: () => void
 
   beforeEach(() => {
-    const handler = (event: ErrorEvent) => event.preventDefault()
+    const handler = (event: ErrorEvent) => {
+      event.preventDefault()
+    }
     window.addEventListener('error', handler)
-    cleanup = () => window.removeEventListener('error', handler)
+    cleanup = () => {
+      window.removeEventListener('error', handler)
+    }
   })
 
   afterEach(() => {
@@ -31,7 +36,7 @@ describe('ErrorBoundary', () => {
 
   it('renders a fallback and the config hint for algod config errors', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    function ConfigBomb(): JSX.Element {
+    function ConfigBomb(): ReactElement {
       throw new Error('Attempt to get default algod configuration without specifying VITE_ALGOD_SERVER')
     }
     render(
@@ -46,7 +51,7 @@ describe('ErrorBoundary', () => {
 
   it('renders the raw error message for other errors', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    function OtherBomb(): JSX.Element {
+    function OtherBomb(): ReactElement {
       throw new Error('custom failure')
     }
     render(

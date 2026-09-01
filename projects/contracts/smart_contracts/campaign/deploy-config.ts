@@ -38,6 +38,6 @@ export async function deploy() {
     sender: deployer.addr,
   })
 
-  console.log(`Deployed Campaign app ${result.appId} at ${result.appAddress.toString()}`)
+  console.log(`Deployed Campaign app ${result.appId.toString()} at ${result.appAddress.toString()}`)
   return result.appId
 }

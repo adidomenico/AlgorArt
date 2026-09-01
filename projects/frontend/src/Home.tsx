@@ -22,18 +22,42 @@ const Home = () => {
           <>
             <div className="app__toolbar">
               <h1 className="app__heading">Campaigns</h1>
-              <button type="button" className="btn btn--primary" onClick={() => setView({ kind: 'create' })}>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => {
+                  setView({ kind: 'create' })
+                }}
+              >
                 + New campaign
               </button>
             </div>
-            <CampaignList onSelectCampaign={(appId) => setView({ kind: 'detail', appId })} />
+            <CampaignList
+              onSelectCampaign={(appId) => {
+                setView({ kind: 'detail', appId })
+              }}
+            />
           </>
         )}
 
-        {view.kind === 'detail' && <CampaignDetail appId={view.appId} onBack={() => setView({ kind: 'list' })} />}
+        {view.kind === 'detail' && (
+          <CampaignDetail
+            appId={view.appId}
+            onBack={() => {
+              setView({ kind: 'list' })
+            }}
+          />
+        )}
 
         {view.kind === 'create' && (
-          <CreateCampaignForm onCreated={(appId) => setView({ kind: 'detail', appId })} onCancel={() => setView({ kind: 'list' })} />
+          <CreateCampaignForm
+            onCreated={(appId) => {
+              setView({ kind: 'detail', appId })
+            }}
+            onCancel={() => {
+              setView({ kind: 'list' })
+            }}
+          />
         )}
       </main>
     </div>
