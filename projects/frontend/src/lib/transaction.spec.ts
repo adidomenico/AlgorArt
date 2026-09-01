@@ -32,7 +32,7 @@ vi.mock('./algorand', () => ({
 
 const session = {
   address: 'ADDRESS',
-  signer: (async () => new Uint8Array()) as unknown as TransactionSigner,
+  signer: (() => new Uint8Array()) as unknown as TransactionSigner,
 }
 
 describe('transaction helpers', () => {

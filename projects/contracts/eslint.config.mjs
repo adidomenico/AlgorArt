@@ -11,10 +11,16 @@ export default tseslint.config(
   },
   {
     files: ['**/*.{js,mjs,cjs,ts}'],
-    extends: [js.configs.recommended, ...tseslint.configs.recommended],
+    extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       globals: {
         ...globals.node,
+      },
+      parserOptions: {
+        projectService: {
+          allowDefaultProject: ['eslint.config.mjs', 'vitest.config.mts', 'vitest.setup.ts'],
+        },
+        tsconfigRootDir: import.meta.dirname,
       },
     },
     rules: {
@@ -63,6 +69,15 @@ export default tseslint.config(
       globals: {
         ...globals.vitest,
       },
+    },
+    rules: {
+      // Vitest mocks return `any`; relaxing these here keeps test files from
+      // fighting the type-checker over mock factories.
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
     },
   },
   prettier,

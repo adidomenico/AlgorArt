@@ -65,6 +65,11 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
   `eslint-plugin-jsdoc`, `eslint-plugin-import`) and Prettier run per project via
   `npm run lint` / `npm run format`. Keep sources lint- and format-clean; configs are
   shared from the repo-root `.prettierrc.json`.
+- **Type-aware linting is on.** `typescript-eslint` uses the `recommendedTypeChecked`
+  preset via `projectService`, so rules like `no-floating-promises`,
+  `no-misused-promises`, and the `no-unsafe-*` family run with full type information.
+  The `no-unsafe-*` rules are relaxed in test files (Vitest mocks return `any`).
+  Config files outside any `tsconfig.json` are listed in `allowDefaultProject`.
 - **Imports are checked.** `eslint-plugin-import` enforces `import/order` (alphabetised,
   case-insensitive) plus `no-duplicates`, `no-named-as-default`, and
   `no-named-as-default-member`, all at `error` severity. Resolution-based rules

@@ -37,7 +37,7 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
                 className="btn border-teal-800 border-1  m-2"
                 key={`provider-${wallet.id}`}
                 onClick={() => {
-                  return wallet.connect()
+                  void wallet.connect()
                 }}
               >
                 {!isKmd(wallet) && (
@@ -68,19 +68,21 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
               type="button"
               className="btn btn-warning"
               data-test-id="logout"
-              onClick={async () => {
-                if (wallets) {
-                  const activeWallet = wallets.find((w) => w.isActive)
-                  if (activeWallet) {
-                    await activeWallet.disconnect()
-                  } else {
-                    // Required for logout/cleanup of inactive providers
-                    // For instance, when you login to localnet wallet and switch network
-                    // to testnet/mainnet or vice verse.
-                    localStorage.removeItem('@txnlab/use-wallet:v3')
-                    window.location.reload()
+              onClick={() => {
+                void (async () => {
+                  if (wallets) {
+                    const activeWallet = wallets.find((w) => w.isActive)
+                    if (activeWallet) {
+                      await activeWallet.disconnect()
+                    } else {
+                      // Required for logout/cleanup of inactive providers
+                      // For instance, when you login to localnet wallet and switch network
+                      // to testnet/mainnet or vice verse.
+                      localStorage.removeItem('@txnlab/use-wallet:v3')
+                      window.location.reload()
+                    }
                   }
-                }
+                })()
               }}
             >
               Logout

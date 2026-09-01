@@ -4,6 +4,11 @@ import { Config } from '@algorandfoundation/algokit-utils'
 import { consoleLogger } from '@algorandfoundation/algokit-utils/types/logging'
 import { registerDebugEventHandlers } from '@algorandfoundation/algokit-utils-debug'
 
+interface Deployer {
+  name: string
+  deploy: () => Promise<unknown>
+}
+
 // Uncomment the traceAll option to enable auto generation of AVM Debugger compliant sourceMap and simulation trace file for all AVM calls.
 // Learn more about using AlgoKit AVM Debugger to debug your TEAL source codes and inspect various kinds of Algorand transactions in atomic groups -> https://github.com/algorandfoundation/algokit-avm-vscode-Debugger
 
@@ -18,28 +23,28 @@ registerDebugEventHandlers()
 const baseDir = path.resolve(__dirname)
 
 // function to validate and dynamically import a module
-async function importDeployerIfExists(dir: string) {
+async function importDeployerIfExists(dir: string): Promise<Deployer | null> {
   const deployerPath = path.resolve(dir, 'deploy-config')
   if (fs.existsSync(deployerPath + '.ts') || fs.existsSync(deployerPath + '.js')) {
-    const deployer = await import(deployerPath)
-    return { ...deployer, name: path.basename(dir) }
+    const module = (await import(deployerPath)) as { deploy: Deployer['deploy'] }
+    return { deploy: module.deploy, name: path.basename(dir) }
   }
   return null
 }
 
 // get a list of all deployers from the subdirectories
-async function getDeployers() {
+async function getDeployers(): Promise<Deployer[]> {
   const directories = fs
     .readdirSync(baseDir, { withFileTypes: true })
     .filter((dirent) => dirent.isDirectory())
     .map((dirent) => path.resolve(baseDir, dirent.name))
 
   const deployers = await Promise.all(directories.map(importDeployerIfExists))
-  return deployers.filter((deployer) => deployer !== null) // Filter out null values
+  return deployers.filter((deployer): deployer is Deployer => deployer !== null)
 }
 
 // execute all the deployers
-;(async () => {
+void (async () => {
   const contractName = process.argv.length > 2 ? process.argv[2] : undefined
   const contractDeployers = await getDeployers()
 

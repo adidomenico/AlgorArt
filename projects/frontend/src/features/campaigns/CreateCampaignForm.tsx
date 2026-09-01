@@ -60,7 +60,7 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
         <button type="button" className="btn" onClick={onCancel}>
           Cancel
         </button>
-        <button type="button" className="btn btn--primary" disabled={!canSubmit} onClick={handleSubmit}>
+        <button type="button" className="btn btn--primary" disabled={!canSubmit} onClick={() => void handleSubmit()}>
           {busy ? 'Creating…' : 'Create'}
         </button>
       </div>

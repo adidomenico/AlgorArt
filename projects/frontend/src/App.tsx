@@ -12,7 +12,7 @@ if (import.meta.env.VITE_ALGOD_NETWORK === 'localnet') {
       id: WalletId.KMD,
       options: {
         baseServer: kmdConfig.server,
-        token: String(kmdConfig.token),
+        token: typeof kmdConfig.token === 'string' ? kmdConfig.token : JSON.stringify(kmdConfig.token),
         port: String(kmdConfig.port),
       },
     },
@@ -43,7 +43,7 @@ export default function App() {
         algod: {
           baseServer: algodConfig.server,
           port: algodConfig.port,
-          token: String(algodConfig.token),
+          token: typeof algodConfig.token === 'string' ? algodConfig.token : JSON.stringify(algodConfig.token),
         },
       },
     },

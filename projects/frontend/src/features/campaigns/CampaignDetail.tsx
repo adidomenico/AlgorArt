@@ -113,11 +113,11 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
           </div>
         </dl>
 
-        {canPledge && <PledgeForm appId={campaign.id} onPledged={load} />}
+        {canPledge && <PledgeForm appId={campaign.id} onPledged={() => void load()} />}
 
         {canClaim && (
           <div className="detail__actions">
-            <button type="button" className="btn btn--primary" disabled={busy} onClick={handleClaim}>
+            <button type="button" className="btn btn--primary" disabled={busy} onClick={() => void handleClaim()}>
               {busy ? 'Claiming…' : 'Claim funds'}
             </button>
           </div>

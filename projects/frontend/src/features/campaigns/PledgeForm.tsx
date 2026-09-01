@@ -46,7 +46,7 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
         onChange={(e) => setAmount(e.target.value)}
         className="pledge__input"
       />
-      <button type="button" className="btn btn--primary" disabled={!canSubmit} onClick={handleSubmit}>
+      <button type="button" className="btn btn--primary" disabled={!canSubmit} onClick={() => void handleSubmit()}>
         {busy ? 'Sending…' : 'Pledge'}
       </button>
       {message && <p className="pledge__message">{message}</p>}
