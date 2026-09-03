@@ -66,8 +66,9 @@ there is no cron, scheduler, or "at deadline, settle" event.
   call `refund()` to reclaim their pledge, or someone sweeps with `refundBatch()`
   until the escrow is drained. Until a refund is called, the pledge sits in the
   escrow indefinitely.
-- **Creator seed:** the ALGO seeded at `create()` is recovered only by deleting the
-  app — a method that does not exist yet.
+- **Creator seed:** the base minimum balance (0.1 ALGO + global-state bytes) is
+  recovered by deleting the app; each backer's box MBR is recovered only by
+  deleting that box. Neither is automatic, and no such method exists yet.
 
 Every movement of funds (claim, refund, sweep, delete) is therefore an explicit
 transaction submitted by a caller; none of it is automatic.
@@ -144,26 +145,31 @@ transaction submitted by a caller; none of it is automatic.
 > **Proposed** — documented for design alignment; not yet implemented.
 
 - **Callable by anyone** after `status == Claimed` — recovers the residue that
-  `claim()` leaves behind (the creator's seeded minimum balance plus every
-  backer's box MBR).
-- Submits an inner application-delete transaction with `CloseRemainderTo = creator`,
-  which deletes the app (and all its boxes) and sends the **entire remaining
-  balance** to the creator. The destination is fixed by the contract, so the sweep
-  is permissionless without letting anyone divert the funds.
-- **Claim and delete can be one step.** A delete already pays the full balance to
-  `CloseRemainderTo`, so `claim()` could skip the partial payout and submit only
-  the delete — recovering everything at once. The current design keeps them
-  separate solely to preserve the on-chain record.
-- **On a failed campaign, delete must be guarded.** After every backer has
-  refunded, only the creator's seed residue remains and deleting is safe. But the
-  contract cannot enumerate boxes, so it needs an explicit backer counter
-  (increment on first pledge, decrement on refund) and must require the counter to
-  be zero before deleting — otherwise a delete would sweep an un-refunded pledge
-  to the creator.
-- **Trade-off:** deleting the app removes the on-chain record (`status`, `title`,
-  pledge boxes), so the UI must treat a deleted campaign as "claimed, and settled".
-  It also means the creator recovers more than `claim()` alone would pay — the full
-  balance, not `balance − minBalance`.
+  `claim()` leaves behind.
+- **Two kinds of residue, two mechanisms.** The creator's seeded **base minimum
+  balance** (0.1 ALGO + global-state bytes) is released by deleting the
+  application. Each backer's **box MBR** (~0.0185 ALGO) is released only when
+  that box is deleted — deleting the app alone does **not** delete its boxes, and
+  a deleted app with outstanding boxes leaves their MBR permanently locked (AVM
+  box rules).
+- **Correct cleanup order.** The method must first delete pledge boxes (batched,
+  ≤ 8 per call, same box-reference limit as `refundBatch`) and only then submit
+  the application delete. Box names are read off-chain from the indexer, so the
+  sweep can be permissionless; the destination of recovered ALGO is fixed by the
+  contract, so no one can divert funds.
+- **Claim cannot be replaced by a bare delete.** Deleting the app pays out only
+  the base minimum balance — it does not sweep box MBR — so the current
+  `balance − minBalance` claim payout and a box sweep are complementary, not
+  alternatives.
+- **On a failed campaign, delete must be guarded.** The app can only be deleted
+  once every pledge box is gone (all refunds done); otherwise a delete would close
+  the app with un-refunded pledges still locked inside it. Because the contract
+  cannot enumerate boxes, this needs an explicit backer counter (increment on
+  first pledge, decrement on refund) that must read zero before deleting.
+- **Trade-off:** deleting the app freezes the on-chain record (`status`, `title`,
+  pledge boxes) as non-modifiable. The indexer still returns the app with a
+  `deleted` flag and its boxes remain queryable, but the UI must treat a deleted
+  campaign as "claimed, and settled".
 
 ## Boxes & minimum balance
 
@@ -222,8 +228,8 @@ exists. Consequences:
   the proposed `cancelPledge()`) rely on this.
 - The current contract has **no way to recover the residue after a successful
   claim**: `claim()` leaves the boxes behind (known edge case 7) and there is no
-  delete/close-out method, so the creator's seeded base balance and every box's
-  MBR are stranded on-chain. The proposed `delete()` method closes this gap.
+  cleanup method. Recovering it needs both a box sweep (delete each pledge box)
+  and an application delete; the proposed `delete()` method covers both.
 
 ## Design decisions
 
@@ -249,10 +255,10 @@ exists. Consequences:
    campaign is still `Open`, mirroring Kickstarter's "not charged until the deadline" model. It reintroduces the
    revocable-`raised` concern the self-pledge ban guards against, but the deadline remains the sole arbiter of the
    outcome — accepted for a non-custodial demo.
-10. **Claim residue is recoverable only by deleting the app (proposed).** `claim()` deliberately keeps the app
-    alive so the campaign record stays readable, but that strands the creator's seeded minimum balance and every
-    backer's box MBR on-chain. A permissionless `delete()` after `Claimed` would close the app and sweep the full
-    remaining balance to the creator — at the cost of the on-chain record.
+10. **Claim residue is recoverable only via box deletion + app delete (proposed).** `claim()` deliberately keeps
+    the app alive so the campaign record stays readable, but that strands the creator's seeded base minimum balance
+    and every backer's box MBR on-chain. A permissionless `delete()` after `Claimed` would sweep the boxes first and
+    then close the app — at the cost of freezing the on-chain record.
 
 ## Known edge cases
 
@@ -290,6 +296,9 @@ indexer. Pages, data flow, the indexer decoding model, the exact call patterns,
 and the client gotchas all live in [`frontend.md`](frontend.md). This doc only
 describes the on-chain behavior each method enforces.
 
+How ended campaigns stay browsable after the escrow is swept — and the role of
+the catalog backend — lives in [`architecture.md`](architecture.md).
+
 ## Testing
 
 A full behavioral matrix lives in `contract.algo.spec.ts` — every method × every
@@ -301,3 +310,21 @@ TEAL and exercises the full lifecycle (create → pledge → claim, and → refu
 
 See [`testing.md`](testing.md) for the tooling setup, API cheat sheet, coverage
 matrix, and integration notes.
+
+## References
+
+Official Algorand docs backing the claims in this file (verify against these
+when in doubt):
+
+- [Applications](https://dev.algorand.co/concepts/smart-contracts/apps/) — app
+  lifecycle and the `DeleteApplication` transaction.
+- [Box Storage](https://dev.algorand.co/concepts/smart-contracts/storage/box/) —
+  box MBR formula (`2500 + 400 × (key + value)`), box deletion, and the rule that
+  deleting an app does **not** delete its boxes (their MBR stays locked).
+- [Inner Transactions](https://dev.algorand.co/concepts/smart-contracts/inner-txn/) —
+  app-account payments and inner-transaction fees.
+- [Transaction Types](https://dev.algorand.co/concepts/transactions/types/) — the
+  payment `close` field and the application delete transaction.
+- [Indexer REST API](https://dev.algorand.co/reference/rest-api/indexer/) — the
+  `deleted` / `deleted-at-round` application fields and the `include-all` query
+  parameter.

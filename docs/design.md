@@ -7,7 +7,8 @@ noted.
 
 > Contract internals: [`campaign.md`](campaign.md). Frontend
 > design: [`frontend.md`](frontend.md). CI: [`ci.md`](ci.md). Roadmap:
-> [`roadmap.md`](roadmap.md).
+> [`roadmap.md`](roadmap.md). Backend/catalog & archival:
+> [`architecture.md`](architecture.md).
 
 ## Guiding principle
 

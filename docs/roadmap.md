@@ -7,7 +7,8 @@ item links to the doc that has the details.
 > Contract internals: [`campaign.md`](campaign.md). Frontend
 > design: [`frontend.md`](frontend.md). Product design & open questions:
 > [`design.md`](design.md). CI: [`ci.md`](ci.md). Testing:
-> [`testing.md`](testing.md).
+> [`testing.md`](testing.md). Backend/catalog & archival:
+> [`architecture.md`](architecture.md).
 
 ## Done
 
@@ -21,7 +22,7 @@ item links to the doc that has the details.
       and `metadataUri` are immutable forever (see [`campaign.md`](campaign.md)).
 - [ ] **`cancelPledge()`** — backer withdraws while the campaign is `Open` (needs a contract change).
 - [ ] **`refundBatch()`** — refund up to 8 backers in one permissionless call; loop until drained.
-- [ ] **`delete()`** — permissionless app close-out after `Claimed`, sweeping the stranded base balance + box MBR to the creator (see [`campaign.md`](campaign.md)).
+- [ ] **`delete()`** — permissionless cleanup after `Claimed`: delete pledge boxes (batched), then close the app, recovering the stranded base balance + box MBR (see [`campaign.md`](campaign.md)).
 - [ ] **Decide on `settle()`** — closes the zero-pledge-campaign gap (cosmetic; the UI already derives "failed").
 - [ ] **Verify `refundBatch` fits the opcode budget** — drop to 6–7 backers if it doesn't compile.
 - [ ] **Tests** for cancel/batch/re-pledge flows once the methods exist (see [`testing.md`](testing.md)).
@@ -46,6 +47,12 @@ item links to the doc that has the details.
       wallet + public-network integration and is independent of styling.
 - [ ] **Lock the contract shape** (decide `updateMetadata()` / `settle()`) before the first demo deploy.
 - [ ] Deploy the frontend to a **free static host** (GitHub Pages / Cloudflare Pages / Netlify).
+
+## Backend & archival
+
+- [ ] **Minimal catalog backend** — API + DB storing one row per campaign (app id, creator, title, metadata URI, goal, deadline, status, outcome, raised, backer count), serving browse/detail pages for ended campaigns — see [`architecture.md`](architecture.md).
+- [ ] **Chain watcher** — observes the indexer and finalizes campaign records (created/pledged/claimed/refunded/deleted) into the catalog.
+- [ ] **Archive snapshot at finalization** — snapshot the outcome while pledge boxes still exist, before any app delete.
 
 ## CI & packaging
 

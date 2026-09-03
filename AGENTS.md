@@ -56,6 +56,12 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
 - Don't create or switch branches or worktrees without explicit approval.
 - If it's unclear how to verify a change, ask.
 - The contract is the source of truth; the indexer is only a read model.
+- **Confirm assumptions against real documentation.** Algorand behavior (box MBR,
+  app lifecycle, indexer retention, transaction semantics, inner-txn fees) changes
+  over time and is easy to misremember. Do not assert how the chain works from
+  memory — check the official Algorand docs (see [References](#references)) before
+  writing docs or code that depends on a protocol detail, and cite the source in
+  the docs. When the docs are ambiguous, test on LocalNet rather than guessing.
 - When you edit any Markdown file, run `npx --yes markdownlint-cli2@0.23.2`
   (from the repo root) to lint it.
 
@@ -173,3 +179,21 @@ Work left to do is tracked as a checklist in [`docs/roadmap.md`](docs/roadmap.md
 organized by area (contract, frontend UX, content, TestNet, CI). Product design and
 open questions live in [`docs/design.md`](docs/design.md). `README.md` carries only
 the short status summary.
+
+## References
+
+Official Algorand docs — consult these (and cite them in `docs/`) instead of
+working from memory on protocol details:
+
+- [Applications](https://dev.algorand.co/concepts/smart-contracts/apps/) — app
+  lifecycle, `DeleteApplication`, inner transactions.
+- [Box Storage](https://dev.algorand.co/concepts/smart-contracts/storage/box/) —
+  box MBR, box deletion, app-deletion caveats.
+- [Inner Transactions](https://dev.algorand.co/concepts/smart-contracts/inner-txn/) —
+  app-account payments and inner-txn fees.
+- [Transaction Types](https://dev.algorand.co/concepts/transactions/types/) —
+  payment `close`, application call transaction kinds.
+- [Indexer REST API](https://dev.algorand.co/reference/rest-api/indexer/) —
+  application `deleted` / `deleted-at-round`, `include-all`, box lookup.
+- [Algorand TypeScript](https://dev.algorand.co/get-started/algokit/) — AlgoKit and
+  `algorand-typescript` entry points.
