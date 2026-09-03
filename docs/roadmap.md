@@ -21,6 +21,7 @@ item links to the doc that has the details.
       and `metadataUri` are immutable forever (see [`campaign.md`](campaign.md)).
 - [ ] **`cancelPledge()`** — backer withdraws while the campaign is `Open` (needs a contract change).
 - [ ] **`refundBatch()`** — refund up to 8 backers in one permissionless call; loop until drained.
+- [ ] **`delete()`** — permissionless app close-out after `Claimed`, sweeping the stranded base balance + box MBR to the creator (see [`campaign.md`](campaign.md)).
 - [ ] **Decide on `settle()`** — closes the zero-pledge-campaign gap (cosmetic; the UI already derives "failed").
 - [ ] **Verify `refundBatch` fits the opcode budget** — drop to 6–7 backers if it doesn't compile.
 - [ ] **Tests** for cancel/batch/re-pledge flows once the methods exist (see [`testing.md`](testing.md)).

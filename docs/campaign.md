@@ -6,6 +6,21 @@ AlgorArt: a non-custodial crowdfunding escrow. One stateful application per camp
 Source of truth is the Algorand chain. The contract — not a server — holds pledged ALGO
 and enforces the campaign rules.
 
+## Contract vs application
+
+**Contract** = the code: `contract.algo.ts`, compiled into TEAL approval/clear
+programs. **Application** = one deployed instance of that code, with an app ID,
+global state, boxes, and an associated **app account** (the escrow) that holds
+ALGO.
+
+Deployment is a single `create()` app-create transaction that uploads the TEAL and
+instantiates one campaign atomically — there is no separate "deploy the code" step,
+and the only applications that exist are campaigns. The compiled programs live in
+`smart_contracts/artifacts/campaign/` (`Campaign.approval.teal`,
+`Campaign.clear.teal`) and are embedded in the app-create transaction, so they end
+up stored and executed on-chain. The ARC-32/56 specs and the generated client are
+tooling-only and never go on-chain.
+
 ## State
 
 ### Global state
@@ -38,6 +53,25 @@ stateDiagram-v2
     Claimed --> [*]
 ```
 
+## Settlement is pull-based
+
+Nothing runs automatically on Algorand: smart contracts execute only when someone
+submits a transaction. The `deadline` is a timestamp **guard**, not a trigger —
+there is no cron, scheduler, or "at deadline, settle" event.
+
+- **Successful campaign:** the deadline passes and nothing happens. The creator (or
+  anyone, if `claim()` were made permissionless) must call `claim()` for the payout
+  to execute.
+- **Failed campaign:** the deadline passes and nothing happens. Each backer must
+  call `refund()` to reclaim their pledge, or someone sweeps with `refundBatch()`
+  until the escrow is drained. Until a refund is called, the pledge sits in the
+  escrow indefinitely.
+- **Creator seed:** the ALGO seeded at `create()` is recovered only by deleting the
+  app — a method that does not exist yet.
+
+Every movement of funds (claim, refund, sweep, delete) is therefore an explicit
+transaction submitted by a caller; none of it is automatic.
+
 ## Methods & guards
 
 ### `create(title, metadataUri, goal, deadline)`
@@ -66,14 +100,16 @@ stateDiagram-v2
 
 - Creator only (`Txn.sender == creator`), after the deadline, and `raised >= goal`.
 - Guards: `status == Open` (prevents double payout).
-- Sets `status = Claimed`, then pays the entire escrow balance to the creator.
+- Sets `status = Claimed`, then pays `balance − minBalance` (the spendable amount)
+  to the creator — the minimum balance stays in the escrow (see Boxes & minimum balance).
 
 ### `refund()`
 
 - Any backer, after the deadline, and `raised < goal`.
 - Materialises `status = Failed` on the first refund; subsequent calls require it.
 - Guard: the caller's pledge box must exist (prevents refunding twice or refunding non-backers).
-- Deletes the box and pays the box amount back to the caller.
+- Deletes the box and pays the box amount back to the caller. The backer pays the
+  fees (app call + one inner payment ≈ 0.002 ALGO); the refund amount is never reduced.
 
 ### `cancelPledge()`
 
@@ -103,6 +139,92 @@ stateDiagram-v2
   payment: ≈ 0.009 ALGO for a full batch of 8. Refund amounts are never reduced
   by fees; the caller pays.
 
+### `delete()`
+
+> **Proposed** — documented for design alignment; not yet implemented.
+
+- **Callable by anyone** after `status == Claimed` — recovers the residue that
+  `claim()` leaves behind (the creator's seeded minimum balance plus every
+  backer's box MBR).
+- Submits an inner application-delete transaction with `CloseRemainderTo = creator`,
+  which deletes the app (and all its boxes) and sends the **entire remaining
+  balance** to the creator. The destination is fixed by the contract, so the sweep
+  is permissionless without letting anyone divert the funds.
+- **Claim and delete can be one step.** A delete already pays the full balance to
+  `CloseRemainderTo`, so `claim()` could skip the partial payout and submit only
+  the delete — recovering everything at once. The current design keeps them
+  separate solely to preserve the on-chain record.
+- **On a failed campaign, delete must be guarded.** After every backer has
+  refunded, only the creator's seed residue remains and deleting is safe. But the
+  contract cannot enumerate boxes, so it needs an explicit backer counter
+  (increment on first pledge, decrement on refund) and must require the counter to
+  be zero before deleting — otherwise a delete would sweep an un-refunded pledge
+  to the creator.
+- **Trade-off:** deleting the app removes the on-chain record (`status`, `title`,
+  pledge boxes), so the UI must treat a deleted campaign as "claimed, and settled".
+  It also means the creator recovers more than `claim()` alone would pay — the full
+  balance, not `balance − minBalance`.
+
+## Boxes & minimum balance
+
+A **box** is named key–value storage attached to an application. Each backer gets
+one box — keyed by their address, holding their pledged microAlgos — the `pledges`
+map described above. Boxes differ from global state in two ways that matter here:
+
+- A box value can be up to 32 KB, versus the 128-byte cap on a global-state value,
+  so boxes hold per-backer data for an unbounded number of backers.
+- **Every box increases the app account's minimum balance requirement (MBR).**
+
+### Minimum balance
+
+Every Algorand account must keep a minimum balance or the network treats it as
+closed. For an app account the minimum is the network-wide base (0.1 ALGO) plus a
+storage cost that grows with what the app stores: its global-state bytes and every
+box it holds. The consensus formula for one pledge box (32-byte key + 8-byte
+value):
+
+$$ 2500 + 400 \times (\text{key bytes} + \text{value bytes}) = 18{,}500\ \mu\text{ALGO} \approx 0.0185\ \text{ALGO} $$
+
+A campaign with 500 backers therefore locks ≈ 9.25 ALGO of MBR just to hold the
+pledge boxes.
+
+### Who pays for it
+
+The creator seeds the escrow once at `create()`: the app-create transaction funds
+the base minimum balance plus the global-state bytes (roughly a few tenths of an
+ALGO). Future box MBR is **not** paid by the creator — each backer funds their own
+box atomically:
+
+1. A backer pledges ALGO to the escrow and creates their box in the **same
+   transaction group**.
+2. The box raises `minBalance` by ≈ 0.0185 ALGO at the same moment the balance
+   rises by the full pledge amount.
+
+So no upfront hoard is needed, but there is a **minimum first pledge**: a first
+pledge smaller than the box's MBR is rejected, because the account can't afford a
+box it just created. Re-pledges can be arbitrarily small, since they add to an
+existing box and don't change MBR.
+
+The protocol guarantees `balance >= minBalance` at all times by rejecting any
+transaction that would leave an account below its minimum — so an underfunded
+escrow is impossible; tiny pledges simply fail instead.
+
+### The cost is real, and currently unrecoverable
+
+Box MBR is not a fee — it is ALGO locked in the escrow for as long as the box
+exists. Consequences:
+
+- `claim()` pays `balance − minBalance`, so the creator receives roughly
+  **0.0185 ALGO per backer less** than the total pledged. With 100 backers
+  pledging 1 ALGO each, the creator gets ≈ 98 ALGO; the rest (box MBR ≈ 1.85 ALGO
+  plus the base minimum) stays locked.
+- Deleting a box frees its MBR back into the spendable balance — `refund()` (and
+  the proposed `cancelPledge()`) rely on this.
+- The current contract has **no way to recover the residue after a successful
+  claim**: `claim()` leaves the boxes behind (known edge case 7) and there is no
+  delete/close-out method, so the creator's seeded base balance and every box's
+  MBR are stranded on-chain. The proposed `delete()` method closes this gap.
+
 ## Design decisions
 
 1. **`Funded` is a derived state.** There is no separate `settle()` call, so
@@ -127,6 +249,10 @@ stateDiagram-v2
    campaign is still `Open`, mirroring Kickstarter's "not charged until the deadline" model. It reintroduces the
    revocable-`raised` concern the self-pledge ban guards against, but the deadline remains the sole arbiter of the
    outcome — accepted for a non-custodial demo.
+10. **Claim residue is recoverable only by deleting the app (proposed).** `claim()` deliberately keeps the app
+    alive so the campaign record stays readable, but that strands the creator's seeded minimum balance and every
+    backer's box MBR on-chain. A permissionless `delete()` after `Claimed` would close the app and sweep the full
+    remaining balance to the creator — at the cost of the on-chain record.
 
 ## Known edge cases
 
