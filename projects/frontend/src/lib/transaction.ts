@@ -95,7 +95,7 @@ export async function pledge(appId: bigint, session: WalletSession, amountMicroA
  */
 export async function claim(appId: bigint, session: WalletSession): Promise<void> {
   const client = clientFor(appId, session)
-  const result = await client.send.claim({ args: [], coverAppCallInnerTransactionFees: true })
+  const result = await client.send.claim({ args: [], extraFee: microAlgos(1000) })
 
   const confirmedRound = result.confirmation.confirmedRound
   if (confirmedRound !== undefined) {
@@ -111,7 +111,7 @@ export async function claim(appId: bigint, session: WalletSession): Promise<void
  */
 export async function refund(appId: bigint, session: WalletSession): Promise<void> {
   const client = clientFor(appId, session)
-  const result = await client.send.refund({ args: [], coverAppCallInnerTransactionFees: true })
+  const result = await client.send.refund({ args: [], extraFee: microAlgos(1000) })
 
   const confirmedRound = result.confirmation.confirmedRound
   if (confirmedRound !== undefined) {
@@ -127,7 +127,7 @@ export async function refund(appId: bigint, session: WalletSession): Promise<voi
  */
 export async function cancelPledge(appId: bigint, session: WalletSession): Promise<void> {
   const client = clientFor(appId, session)
-  const result = await client.send.cancelPledge({ args: [], coverAppCallInnerTransactionFees: true })
+  const result = await client.send.cancelPledge({ args: [], extraFee: microAlgos(1000) })
 
   const confirmedRound = result.confirmation.confirmedRound
   if (confirmedRound !== undefined) {

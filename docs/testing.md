@@ -14,6 +14,10 @@ Two complementary layers:
    TEAL to a live algod and exercise the flow end-to-end. Proves the compiled
    bytecode behaves as the unit tests expect.
 
+A third layer — **browser E2E / acceptance tests** — is planned but not yet
+implemented; it drives the real UI against LocalNet and is described at the end
+of this doc.
+
 > The offline tests are not a substitute for the on-chain run — they're the fast
 > feedback loop. Both are required before the contract is considered done.
 
@@ -136,6 +140,8 @@ class as it does not extend Contract or BaseContract".
       branch is now covered (see the matrix below).
 - [x] **M4 — LocalNet integration.** Deploy to the sandbox, exercise
       create → pledge → claim and → refund end-to-end.
+- [x] **M5 — `cancelPledge`.** Contract method + offline behavioral tests +
+      frontend wiring (helper, detail-page action, unit tests).
 
 ## Coverage matrix (every method × every branch)
 
@@ -162,3 +168,62 @@ class as it does not extend Contract or BaseContract".
 | `refund` | non-backer (no box) | ✅ |
 | `refund` | double refund (box deleted) | ✅ |
 | `refund` | second backer after first (status already `Failed`) | ✅ |
+| `cancelPledge` | success | ✅ |
+| `cancelPledge` | re-pledged box returns full accumulated amount | ✅ |
+| `cancelPledge` | only removes the caller's pledge | ✅ |
+| `cancelPledge` | after deadline | ✅ |
+| `cancelPledge` | non-backer (no box) | ✅ |
+| `cancelPledge` | double cancel (box deleted) | ✅ |
+
+## Browser E2E / acceptance tests
+
+**Status: planned, not yet implemented.**
+
+This layer drives the real UI in a browser against a running LocalNet, clicking
+buttons and checking observable results the way a user would: connect a wallet,
+browse, create a campaign, pledge, cancel a pledge, claim, and refund. It
+complements the two layers above rather than replacing them.
+
+### Why it's needed
+
+The existing layers share one blind spot: they do not exercise the **frontend
+send path** (`lib/transaction.ts`) against a live chain. The contract
+integration tests call the low-level client directly (with `extraFee`), so a bug
+in the frontend helpers — e.g. using `coverAppCallInnerTransactionFees: true`,
+which throws at send time because the typed client doesn't populate the required
+`maxFee` context — passes unit tests and integration tests but fails the moment a
+real user clicks a button. That exact bug shipped and was only caught manually.
+Browser E2E tests close this gap.
+
+### Scope
+
+- **Connect wallet** — via a test signer standing in for Pera/Defly (see below),
+  not a real wallet popup.
+- **Browse** — campaign list renders seeded campaigns.
+- **Create** — fill the form, submit, assert the new campaign appears.
+- **Pledge** — enter an amount, submit, assert `raised` and "Your pledge" update.
+- **Cancel pledge** — assert the button appears only while `open` with a pledge,
+  and that clicking it returns the pledge (raised drops back, box disappears).
+- **Claim / refund** — after fast-forwarding the deadline, assert the creator /
+  backer flows complete.
+
+### Wallet strategy (the main design decision)
+
+Automating real Pera/Defly wallet popups is brittle and out of scope for a
+first cut. The plan is to inject a **test signer** (a LocalNet-funded mnemonic)
+so the app signs transactions without a real wallet. This reuses the existing
+`WalletSession` shape (`{ address, signer }`) in `lib/transaction.ts`. The
+remaining questions to settle before implementing:
+
+- Whether to run against the `npm run dev` Vite server or a `vite build` preview
+  (preview is closer to prod, dev is faster to iterate).
+- Playwright vs. Vitest browser mode (Playwright is the natural fit for
+  click-driven flows; Vitest browser mode keeps it in the existing runner).
+- How to seed LocalNet campaigns idempotently before each run (the existing
+  `scripts/seed-demo.ts` is a starting point).
+
+### Where it lives
+
+TBD once the tooling is chosen, but expected under `projects/frontend/e2e/` (or a
+new top-level `e2e/`), with its own script wired into `package.json`. CI wiring
+comes later — see [`ci.md`](ci.md).

@@ -13,8 +13,8 @@ item links to the doc that has the details.
 ## Done
 
 - [x] **Setup** — AlgoKit workspace, toolchain, LocalNet sandbox, lint/format/type-check, CI.
-- [x] **Contract** — `create`/`pledge`/`claim`/`refund` with full behavioral + integration tests.
-- [x] **Frontend core** — wallet connect (Pera/Defly), browse, create, pledge, claim/refund.
+- [x] **Contract** — `create`/`pledge`/`claim`/`refund`/`cancelPledge` with full behavioral + integration tests.
+- [x] **Frontend core** — wallet connect (Pera/Defly), browse, create, pledge, claim/refund/cancel.
 
 ## Contract
 
@@ -25,7 +25,7 @@ item links to the doc that has the details.
 - [ ] **`delete()`** — permissionless cleanup after `Claimed`: delete pledge boxes (batched), then close the app, recovering the stranded base balance + box MBR (see [`campaign.md`](campaign.md)).
 - [ ] **Decide on `settle()`** — closes the zero-pledge-campaign gap (cosmetic; the UI already derives "failed").
 - [ ] **Verify `refundBatch` fits the opcode budget** — drop to 6–7 backers if it doesn't compile.
-- [ ] **Tests** for cancel/batch/re-pledge flows once the methods exist (see [`testing.md`](testing.md)).
+- [ ] **Tests** for batch/re-pledge flows once the methods exist (see [`testing.md`](testing.md)).
 
 ## Frontend UX
 
@@ -56,6 +56,13 @@ The catalog is a minimal backend (API + DB) — see
 - [ ] **Minimal catalog backend** — API + DB storing one row per campaign (app id, creator, title, metadata URI, goal, deadline, status, outcome, raised, backer count), serving browse/detail pages for ended campaigns — see [`architecture.md`](architecture.md).
 - [ ] **Chain watcher** — observes the indexer and finalizes campaign records (created/pledged/claimed/refunded/deleted) into the catalog.
 - [ ] **Archive snapshot at finalization** — snapshot the outcome while pledge boxes still exist, before any app delete.
+
+## Testing
+
+- [ ] **Browser E2E / acceptance tests** — drive the real UI against LocalNet
+      (click Pledge → confirm → Cancel pledge, browse, create, claim, refund) with a
+      test signer standing in for the wallet. See [`testing.md`](testing.md) →
+      "Browser E2E / acceptance tests".
 
 ## CI & packaging
 

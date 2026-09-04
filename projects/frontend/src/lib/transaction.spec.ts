@@ -93,21 +93,21 @@ describe('transaction helpers', () => {
   it('claim sends a bare claim call covering inner fees', async () => {
     sendClaimMock.mockResolvedValue({ confirmation: { confirmedRound: 8n } })
     await claim(42n, session)
-    expect(sendClaimMock).toHaveBeenCalledWith({ args: [], coverAppCallInnerTransactionFees: true })
+    expect(sendClaimMock).toHaveBeenCalledWith({ args: [], extraFee: expect.anything() })
     expect(waitForIndexerRoundMock).toHaveBeenCalledWith(8n)
   })
 
   it('refund sends a bare refund call covering inner fees', async () => {
     sendRefundMock.mockResolvedValue({ confirmation: { confirmedRound: 9n } })
     await refund(42n, session)
-    expect(sendRefundMock).toHaveBeenCalledWith({ args: [], coverAppCallInnerTransactionFees: true })
+    expect(sendRefundMock).toHaveBeenCalledWith({ args: [], extraFee: expect.anything() })
     expect(waitForIndexerRoundMock).toHaveBeenCalledWith(9n)
   })
 
   it('cancelPledge sends a bare cancelPledge call covering inner fees', async () => {
     sendCancelPledgeMock.mockResolvedValue({ confirmation: { confirmedRound: 10n } })
     await cancelPledge(42n, session)
-    expect(sendCancelPledgeMock).toHaveBeenCalledWith({ args: [], coverAppCallInnerTransactionFees: true })
+    expect(sendCancelPledgeMock).toHaveBeenCalledWith({ args: [], extraFee: expect.anything() })
     expect(waitForIndexerRoundMock).toHaveBeenCalledWith(10n)
   })
 

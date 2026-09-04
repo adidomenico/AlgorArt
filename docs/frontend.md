@@ -45,7 +45,7 @@ projects/frontend/src/
 ├── lib/                      # shared services
 │   ├── algorand.ts           # lazy AlgorandClient + IndexerClient singletons
 │   ├── campaign.ts           # indexer -> CampaignViewModel mapping
-│   ├── transaction.ts        # create/pledge/claim/refund send helpers
+│   ├── transaction.ts        # create/pledge/claim/refund/cancelPledge send helpers
 │   └── format.ts             # microAlgo / deadline formatting
 ├── contracts/                # generated typed clients (gitignored)
 │   └── CampaignClient.ts
@@ -63,7 +63,7 @@ route structure grows.
 | View | Content | Reads | Writes |
 | --- | --- | --- | --- |
 | **Browse** | Grid of campaign cards, filtered by status | indexer list | — |
-| **Detail** | Full campaign state, progress bar, action buttons | indexer detail + boxes | claim / refund |
+| **Detail** | Full campaign state, progress bar, action buttons | indexer detail + boxes | claim / refund / cancelPledge |
 | **Create** | Title + metadata URI + goal (ALGO) + deadline form | — | `create()` |
 | **Pledge** | Amount input on the detail page | — | `pledge()` |
 
@@ -178,16 +178,25 @@ The client adds the payment transaction to the group, assigns it as the ABI
 `pay` argument, and the wallet signs the whole group. The contract then checks
 `sender == caller`, `receiver == escrow`, and `amount > 0`.
 
-### claim / refund — bare no-arg calls
+### claim / refund / cancelPledge — bare no-arg calls
 
 ```ts
-await client.send.claim()
-await client.send.refund()
+await client.send.claim({ args: [], extraFee: microAlgos(1000) })
+await client.send.refund({ args: [], extraFee: microAlgos(1000) })
+await client.send.cancelPledge({ args: [], extraFee: microAlgos(1000) })
 ```
 
-Both issue inner payments (to the creator / the backer), so the app call fee
-must cover the inner transaction: pass `coverAppCallInnerTransactionFees: true`
-(or add `extraFee`) in the send params.
+Each issues an inner payment (to the creator / the backer / the backer), and the
+contract hard-codes the inner payment's own fee to `0` (see the compiled TEAL:
+`itxn_field Fee` → `0`). The caller therefore funds the inner transaction by fee
+pooling: the outer app call must carry one extra minimum fee (1,000 µA) per inner
+payment, which `extraFee: microAlgos(1000)` adds to the app call.
+
+> Do **not** use `coverAppCallInnerTransactionFees: true` on the generated client
+> send path — it requires a per-transaction `maxFee` + `additionalAtcContext` that
+> the typed client doesn't populate, so it throws `Please provide a maxFee for
+> each app call transaction...` at send time. `extraFee` is the supported path
+> (it is what the contract integration tests use).
 
 ## Refund UX & fee disclaimers (planned)
 
@@ -215,10 +224,10 @@ to their pledge amount, with a fee disclaimer:
 
 > **Cancel pledge** (network fee ≈ 0.002 ALGO)
 
-Cancelling calls the proposed `cancelPledge()` method: it returns the pledge and
-removes the backer's box, before the deadline. It is only shown while the
-campaign status is `open` and `myPledgeMicroAlgos > 0`; after the deadline the
-outcome is locked and only `claim`/`refund` apply.
+Cancelling calls `cancelPledge()`: it returns the pledge and removes the backer's
+box, before the deadline. It is only shown while the campaign status is `open`
+and `myPledgeMicroAlgos > 0`; after the deadline the outcome is locked and only
+`claim`/`refund` apply.
 
 ### Refund all (batch sweep)
 
