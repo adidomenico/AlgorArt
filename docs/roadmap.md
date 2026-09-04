@@ -32,7 +32,7 @@ item links to the doc that has the details.
 - [ ] Backer banner on failed campaigns ("You're owed X ALGO — Refund my pledge").
 - [ ] Fee disclaimers beside every money-moving button.
 - [ ] "Refund all" batch-sweep UI.
-- [ ] "Cancel pledge" action on open campaigns.
+- [x] "Cancel pledge" action on open campaigns.
 - [ ] Handle the known UI edge cases (indexer lag, clock drift, wallet/network mismatch) — see [`frontend.md`](frontend.md).
 
 ## Content & metadata

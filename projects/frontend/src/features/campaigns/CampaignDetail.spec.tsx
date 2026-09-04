@@ -15,10 +15,12 @@ vi.mock('../../lib/campaign', async () => {
 
 const claimMock = vi.fn()
 const refundMock = vi.fn()
+const cancelPledgeMock = vi.fn()
 
 vi.mock('../../lib/transaction', () => ({
   claim: (...args: unknown[]) => claimMock(...args),
   refund: (...args: unknown[]) => refundMock(...args),
+  cancelPledge: (...args: unknown[]) => cancelPledgeMock(...args),
 }))
 
 const useWalletMock = vi.fn()
@@ -129,6 +131,29 @@ describe('CampaignDetail', () => {
     expect(screen.queryByText('Refund my pledge')).not.toBeInTheDocument()
   })
 
+  it('shows a cancel pledge button when open and the viewer has pledged', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('open', { myPledgeMicroAlgos: 1_000_000n }))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    expect(await screen.findByText('Cancel my pledge')).toBeInTheDocument()
+  })
+
+  it('hides the cancel pledge button when the viewer has not pledged', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('open', { myPledgeMicroAlgos: undefined }))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await screen.findByText('Campaign #42')
+    expect(screen.queryByText('Cancel my pledge')).not.toBeInTheDocument()
+  })
+
+  it('hides the cancel pledge button when the campaign is not open', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('failed', { myPledgeMicroAlgos: 1_000_000n }))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await screen.findByText('Campaign #42')
+    expect(screen.queryByText('Cancel my pledge')).not.toBeInTheDocument()
+  })
+
   it('shows an error when the campaign is missing', async () => {
     getCampaignMock.mockResolvedValue(undefined)
     render(<CampaignDetail appId={42n} onBack={() => {}} />)
@@ -154,6 +179,16 @@ describe('CampaignDetail', () => {
 
     await user.click(await screen.findByText('Refund my pledge'))
     expect(refundMock).toHaveBeenCalledWith(42n, { address: 'ADDRESS', signer: {} })
+  })
+
+  it('calls cancelPledge when the cancel pledge button is clicked', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('open', { myPledgeMicroAlgos: 1_000_000n }))
+    cancelPledgeMock.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await user.click(await screen.findByText('Cancel my pledge'))
+    expect(cancelPledgeMock).toHaveBeenCalledWith(42n, { address: 'ADDRESS', signer: {} })
   })
 
   it('shows an error when claim fails', async () => {

@@ -118,3 +118,19 @@ export async function refund(appId: bigint, session: WalletSession): Promise<voi
     await waitForIndexerRound(confirmedRound)
   }
 }
+
+/**
+ * Withdraw the caller's pledge before the deadline (backer, while the campaign is still open).
+ *
+ * @param appId Campaign application id.
+ * @param session Wallet session holding the signer and address.
+ */
+export async function cancelPledge(appId: bigint, session: WalletSession): Promise<void> {
+  const client = clientFor(appId, session)
+  const result = await client.send.cancelPledge({ args: [], coverAppCallInnerTransactionFees: true })
+
+  const confirmedRound = result.confirmation.confirmedRound
+  if (confirmedRound !== undefined) {
+    await waitForIndexerRound(confirmedRound)
+  }
+}

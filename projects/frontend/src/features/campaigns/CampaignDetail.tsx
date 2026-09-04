@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { CampaignViewModel } from '../../lib/campaign'
 import { getCampaign } from '../../lib/campaign'
 import { formatAlgo, formatCountdown, formatDeadline } from '../../lib/format'
-import { claim, refund } from '../../lib/transaction'
+import { cancelPledge, claim, refund } from '../../lib/transaction'
 import PledgeForm from './PledgeForm'
 
 interface CampaignDetailProps {
@@ -52,6 +52,7 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   const canPledge = campaign.status === 'open' && connected && !isCreator
   const canClaim = campaign.status === 'funded' && isCreator
   const canRefund = campaign.status === 'failed' && connected && hasPledge
+  const canCancelPledge = campaign.status === 'open' && connected && hasPledge
 
   const runAction = async (action: () => Promise<void>, success: string) => {
     setBusy(true)
@@ -75,6 +76,11 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   const handleRefund = () => {
     if (!activeAddress) return
     void runAction(() => refund(appId, { address: activeAddress, signer: transactionSigner }), 'Refund submitted!')
+  }
+
+  const handleCancelPledge = () => {
+    if (!activeAddress) return
+    void runAction(() => cancelPledge(appId, { address: activeAddress, signer: transactionSigner }), 'Pledge withdrawn!')
   }
 
   return (
@@ -137,6 +143,14 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
           <div className="detail__actions">
             <button type="button" className="btn btn--primary" disabled={busy} onClick={handleRefund}>
               {busy ? 'Refunding…' : 'Refund my pledge'}
+            </button>
+          </div>
+        )}
+
+        {canCancelPledge && (
+          <div className="detail__actions">
+            <button type="button" className="btn" disabled={busy} onClick={handleCancelPledge}>
+              {busy ? 'Withdrawing…' : 'Cancel my pledge'}
             </button>
           </div>
         )}

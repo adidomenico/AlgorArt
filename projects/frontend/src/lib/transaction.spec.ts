@@ -1,17 +1,26 @@
 import type { TransactionSigner } from 'algosdk'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { claim, createCampaign, pledge, refund } from './transaction'
+import { cancelPledge, claim, createCampaign, pledge, refund } from './transaction'
 
-const { sendCreateMock, sendClaimMock, sendRefundMock, sendPledgeMock, paymentMock, waitForIndexerRoundMock, waitForIndexerCatchUpMock } =
-  vi.hoisted(() => ({
-    sendCreateMock: vi.fn(),
-    sendClaimMock: vi.fn(),
-    sendRefundMock: vi.fn(),
-    sendPledgeMock: vi.fn(),
-    paymentMock: vi.fn(),
-    waitForIndexerRoundMock: vi.fn(),
-    waitForIndexerCatchUpMock: vi.fn(),
-  }))
+const {
+  sendCreateMock,
+  sendClaimMock,
+  sendRefundMock,
+  sendPledgeMock,
+  sendCancelPledgeMock,
+  paymentMock,
+  waitForIndexerRoundMock,
+  waitForIndexerCatchUpMock,
+} = vi.hoisted(() => ({
+  sendCreateMock: vi.fn(),
+  sendClaimMock: vi.fn(),
+  sendRefundMock: vi.fn(),
+  sendPledgeMock: vi.fn(),
+  sendCancelPledgeMock: vi.fn(),
+  paymentMock: vi.fn(),
+  waitForIndexerRoundMock: vi.fn(),
+  waitForIndexerCatchUpMock: vi.fn(),
+}))
 
 vi.mock('../contracts/Campaign', () => ({
   CampaignClient: class {
@@ -20,6 +29,7 @@ vi.mock('../contracts/Campaign', () => ({
       claim: sendClaimMock,
       refund: sendRefundMock,
       pledge: sendPledgeMock,
+      cancelPledge: sendCancelPledgeMock,
     }
   },
   CampaignFactory: class {
@@ -92,6 +102,13 @@ describe('transaction helpers', () => {
     await refund(42n, session)
     expect(sendRefundMock).toHaveBeenCalledWith({ args: [], coverAppCallInnerTransactionFees: true })
     expect(waitForIndexerRoundMock).toHaveBeenCalledWith(9n)
+  })
+
+  it('cancelPledge sends a bare cancelPledge call covering inner fees', async () => {
+    sendCancelPledgeMock.mockResolvedValue({ confirmation: { confirmedRound: 10n } })
+    await cancelPledge(42n, session)
+    expect(sendCancelPledgeMock).toHaveBeenCalledWith({ args: [], coverAppCallInnerTransactionFees: true })
+    expect(waitForIndexerRoundMock).toHaveBeenCalledWith(10n)
   })
 
   it('skips the indexer wait when the confirmed round is unavailable', async () => {
