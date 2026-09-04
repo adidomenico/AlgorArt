@@ -50,6 +50,9 @@ item links to the doc that has the details.
 
 ## Backend & archival
 
+The catalog is a minimal backend (API + DB) — see
+[`architecture.md`](architecture.md). The items below are the backend work.
+
 - [ ] **Minimal catalog backend** — API + DB storing one row per campaign (app id, creator, title, metadata URI, goal, deadline, status, outcome, raised, backer count), serving browse/detail pages for ended campaigns — see [`architecture.md`](architecture.md).
 - [ ] **Chain watcher** — observes the indexer and finalizes campaign records (created/pledged/claimed/refunded/deleted) into the catalog.
 - [ ] **Archive snapshot at finalization** — snapshot the outcome while pledge boxes still exist, before any app delete.

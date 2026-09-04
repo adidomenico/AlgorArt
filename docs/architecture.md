@@ -3,8 +3,11 @@
 How AlgorArt moves from "a contract that works" to "a Kickstarter that does not
 lose its history". This doc explains the split between the **escrow** and the
 **catalog**, and why a minimal backend is the right call for discovery and
-archival. It is a design plan, not implemented code.
+archival.
 
+> **Decision (settled):** the catalog lives in a minimal backend (API + DB),
+> not an on-chain registry app. It is a design plan, not implemented code.
+>
 > Contract internals: [`campaign.md`](campaign.md). Frontend design:
 > [`frontend.md`](frontend.md). Product design & open questions:
 > [`design.md`](design.md). Roadmap: [`roadmap.md`](roadmap.md).
@@ -29,20 +32,18 @@ Even ignoring deletion, a Kickstarter-style browse page is hard on a pure
 indexer. The Algorand indexer is keyed by **account** and **app id**. There is no
 cheap "list every app whose approval program is X" query.
 
-So "show all campaigns" requires either:
-
-- a **registry app** on-chain (a singleton whose state lists every campaign's app
-  id), or
-- an **off-chain catalog** (a database the frontend writes to at creation).
+So "show all campaigns" requires the catalog — a database the frontend writes
+to at creation — rather than indexer gymnastics.
 
 And search/filter/sort ("art", "games", "ending soon", "most funded") cannot be
 done by the indexer at all — it is not a text-search or analytics engine.
-Kickstarter's browse experience needs a real query layer.
+Kickstarter's browse experience needs a real query layer, which is what the
+catalog (API + DB) provides.
 
 **The catalog is the real reason a backend exists. Archival is a consequence of
 having one.**
 
-## Recommended architecture
+## Chosen architecture: minimal backend
 
 ```mermaid
 flowchart LR
@@ -80,18 +81,6 @@ Four pieces:
    matches (prevents junk/forged listings).
 5. The watcher later confirms `status` transitions and finalizes the record.
 
-## Why this is the right call
-
-- **Ended campaigns live forever**, with full metadata, even after the app is
-  deleted and residue swept.
-- **Discovery** (browse all, filter, sort, paginate, search) becomes a real query,
-  not indexer gymnastics.
-- **Rich detail pages** for ended campaigns — backer counts, funding timeline,
-  outcome — stored once at finalization.
-- **Notifications later** slot into the same watcher (design.md already says this
-  is the one feature that needs a backend).
-- **Contract can recover residue** — the delete tension disappears.
-
 ## Archived vs live data (the verified caveat)
 
 What the chain and indexer actually retain after an app is deleted, per the
@@ -111,14 +100,6 @@ per-backer pledge data (boxes) is exactly what becomes non-modifiable dead data.
 This is why the catalog should **snapshot the outcome while the boxes still
 exist**, then let the chain forget. Archiving into our own DB at the moment of
 finalization is safer than relying on indexer history.
-
-## Lighter alternatives, if no backend yet
-
-| Option | Ended-campaign story | Discovery | Residue recovery |
-| --- | --- | --- | --- |
-| Pure on-chain, never delete (today) | Indexer keeps live apps | Needs a registry app; no search | Stranded |
-| Registry app + keep alive | Registry lists app ids; indexer serves state | Registry solves listing, not search | Stranded |
-| **Minimal backend (recommended)** | DB catalog + archived snapshot | Real queries | `delete()` works, record survives |
 
 ## Scope of the minimal backend
 
