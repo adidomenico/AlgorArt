@@ -17,6 +17,7 @@ workspace: an Algorand TypeScript smart contract plus a React + Vite frontend.
 - [`docs/`](docs/) — technical docs: [`campaign.md`](docs/campaign.md)
   (internals), [`testing.md`](docs/testing.md),
   [`frontend.md`](docs/frontend.md), [`ci.md`](docs/ci.md),
+  [`conventions.md`](docs/conventions.md) (lint/format/tsconfig rules),
   [`roadmap.md`](docs/roadmap.md) (checklist), [`design.md`](docs/design.md) (product plan)
 - [`README.md`](README.md) — the project specification (contract design, roadmap, testing strategy)
 
@@ -50,11 +51,7 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
 
 - Read [`README.md`](README.md) and the relevant file under [`docs/`](docs/) **before**
   changing behavior.
-- Implement the smallest change that satisfies the request; no unrequested refactors
-  or speculative extensibility.
-- Add or update tests for any code you change, even when not asked.
 - Don't create or switch branches or worktrees without explicit approval.
-- If it's unclear how to verify a change, ask.
 - The contract is the source of truth; the indexer is only a read model.
 - **Confirm assumptions against real documentation.** Algorand behavior (box MBR,
   app lifecycle, indexer retention, transaction semantics, inner-txn fees) changes
@@ -62,69 +59,84 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
   memory — check the official Algorand docs (see [References](#references)) before
   writing docs or code that depends on a protocol detail, and cite the source in
   the docs. When the docs are ambiguous, test on LocalNet rather than guessing.
-- When you edit any Markdown file, run `npx --yes markdownlint-cli2@0.23.2`
-  (from the repo root) to lint it.
+- When you edit any Markdown file, lint it with the command in
+  [Commands](#commands).
+
+## Coding behaviour
+
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+
+**Tradeoff:** these guidelines bias toward caution over speed. For trivial tasks, use judgement.
+
+### 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+### 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+### 3. Surgical Changes
+
+**Touch only what you must. Clean up your own mess.**
+
+When editing existing code:
+
+- Don't "improve" adjacent code, comments or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+### 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+
+- "Add validation" -> "Write tests for invalid inputs, then make them pass."
+- "Fix the bug" -> "Write a test that reproduces it, then make it pass."
+- "Refactor X" -> "Ensure tests pass before and after."
+
+For multi-step tasks, state a brief plan:
+
+```text
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
 ## Conventions
 
 - **Generated files are gitignored.** `smart_contracts/artifacts/` (compiled TEAL, specs,
   `*Client.ts`) and the frontend's linked clients are build outputs — never edit or commit
   them. Rebuild instead.
-- **Lint & format are required.** ESLint (flat config, `typescript-eslint`,
-  `eslint-plugin-jsdoc`, `eslint-plugin-import`) and Prettier run per project via
-  `npm run lint` / `npm run format`. Keep sources lint- and format-clean; configs are
-  shared from the repo-root `.prettierrc.json`.
-- **Type-aware linting is on.** `typescript-eslint` uses the `strictTypeChecked`
-  preset via `projectService`, so rules like `no-floating-promises`,
-  `no-misused-promises`, `no-unnecessary-condition`, and the `no-unsafe-*` family run
-  with full type information. The `no-unsafe-*` rules are relaxed in test files (Vitest
-  mocks return `any`). Config files outside any `tsconfig.json` are listed in
-  `allowDefaultProject`.
-- **Cheap safety rails.** `eqeqeq` (always use `===`/`!==`) and
-  `@typescript-eslint/no-non-null-assertion` (no `!` assertions) are both at `error`
-  severity.
-- **`noImplicitOverride` is on.** `tsconfig.json` in both projects enables
-  `noImplicitOverride`, so any member that overrides a base-class member must be marked
-  with the `override` keyword (e.g. `override render()` in `ErrorBoundary`).
-- **`noUnusedLocals`/`noUnusedParameters` are on.** `tsconfig.json` in both projects
-  enables them, so unused variables/parameters are caught by `tsc --noEmit`, not just
-  ESLint. Generated client files are exempt: contracts exclude
-  `smart_contracts/artifacts` from `tsc`, and the frontend prepends `// @ts-nocheck` to
-  the linked `src/contracts/*.ts` files via `scripts/ts-nocheck-generated.mjs` (wired
-  into `generate:app-clients` and the CI link step).
-- **`verbatimModuleSyntax` is on (contracts).** The contracts `tsconfig.json` enables
-  it, so type-only imports must be written `import type` and the compiler no longer
-  elides them silently. The frontend omits it — Vite (rolldown) does not elide
-  type-only imports in the generated client, which imports them as value imports and
-  would fail the bundle step. The frontend instead relies on
-  `@typescript-eslint/consistent-type-imports`.
-- **`noUncheckedIndexedAccess` is on.** `tsconfig.json` in both projects enables it,
-  so `arr[i]` and record access yield `T | undefined` and require explicit guards,
-  defaults, or optional chaining before use.
-- **`exactOptionalPropertyTypes` is on.** `tsconfig.json` in both projects enables
-  it, so an optional property means "may be absent" rather than "`T | undefined`".
-  Fields that can genuinely be `undefined` are declared `T | undefined` explicitly.
-- **Imports are checked.** `eslint-plugin-import` enforces `no-duplicates`,
-  `no-named-as-default`, and `no-named-as-default-member` at `error` severity.
-  Resolution-based rules (`no-unresolved` etc.) are intentionally off — `tsc --noEmit`
-  already validates module resolution, and the default `eslint-import-resolver-node`
-  cannot read `exports`-only packages. Import **ordering** is owned by
-  `prettier-plugin-organize-imports` (enabled in the shared `.prettierrc.json`), not by
-  an ESLint rule, so the formatter and linter never disagree.
-- **JSDoc is required on public/exported declarations.** The jsdoc plugin runs the
-  `flat/recommended-typescript-error` preset (all rules at `error` severity), with
-  `require-jsdoc` and `require-returns` scoped via `publicOnly` so internal helpers are
-  exempt. Document exported functions, classes, and interfaces; keep `@param`/`@returns`
-  descriptions in the same style as the surrounding code.
-- **JSDoc is formatted by Prettier.** `prettier-plugin-jsdoc` is enabled in the shared
-  repo-root `.prettierrc.json`. It inserts one blank line between the description and
-  the first tag, which `jsdoc/tag-lines` is configured to match (`startLines: 1`), so
-  `npm run format` and `npm run lint` agree.
-- **Markdown is linted too.** Run `npx --yes markdownlint-cli2@0.23.2` (from the repo
-  root) to lint every `*.md` file; add `--fix` to autofix. Rules, globs, and ignores
-  all live in a single `.markdownlint-cli2.jsonc`, shared with the VS Code extension.
-  The version is pinned in the command (no root `package.json` needed).
 - **Never commit secrets.** `.env` files are gitignored; mnemonics/API keys never go in code.
+- **Lint, format, and compiler rules** (ESLint, Prettier, and `tsconfig.json` options)
+  are documented in [`docs/conventions.md`](docs/conventions.md).
 - **Algorand TypeScript gotchas** (contracts use `@algorandfoundation/algorand-typescript`):
   - `assert` must be imported explicitly — it is not a global.
   - `GlobalState`/`BoxMap` class properties require the options object
@@ -140,8 +152,6 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
   - `README.md` for spec-level behavior, roadmap status, and getting-started steps
   - `AGENTS.md` (this file) for commands, conventions, and agent-facing guidance
   If the change doesn't affect these, no doc update is needed.
-- When updating any `*.md` file, run `npx --yes markdownlint-cli2@0.23.2` (from the
-  repo root; add `--fix` to autofix) to keep it lint-clean.
 
 ## Testing
 
@@ -151,15 +161,9 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
 
 ## Definition of done
 
-Before marking work complete, run these from `projects/contracts` and/or
-`projects/frontend` (or `algokit project run …` from the repo root), in order:
-
-1. `npm run format` (then `npm run format:fix` if it reports)
-2. `npm run lint`
-3. `npm run check-types`
-4. The relevant test suite
-
-Fix everything until green — don't skip a step because the change "looks small."
+Before marking work complete, run the checks from [Commands](#commands) in order —
+format, lint, check-types, then the relevant test suite — and fix everything until
+green. Don't skip a step because the change "looks small."
 
 ## Commits & pull requests
 
