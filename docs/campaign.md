@@ -49,6 +49,7 @@ stateDiagram-v2
     Open --> Open: pledge()
     Open --> Claimed: claim() — deadline passed & raised >= goal
     Open --> Failed: refund() — deadline passed & raised < goal
+    Open --> Open: cancelPledge() — backer withdraws before deadline
     Failed --> Failed: refund() — remaining backers reclaim
     Claimed --> [*]
 ```
@@ -66,6 +67,8 @@ there is no cron, scheduler, or "at deadline, settle" event.
   call `refund()` to reclaim their pledge, or someone sweeps with `refundBatch()`
   until the escrow is drained. Until a refund is called, the pledge sits in the
   escrow indefinitely.
+- **Open campaign:** a backer can call `cancelPledge()` any time before the
+  deadline to withdraw their pledge and free their box.
 - **Creator seed:** the base minimum balance (0.1 ALGO + global-state bytes) is
   recovered by deleting the app; each backer's box MBR is recovered only by
   deleting that box. Neither is automatic, and no such method exists yet.
@@ -113,8 +116,6 @@ transaction submitted by a caller; none of it is automatic.
   fees (app call + one inner payment ≈ 0.002 ALGO); the refund amount is never reduced.
 
 ### `cancelPledge()`
-
-> **Proposed** — documented for design alignment; not yet implemented.
 
 - Backer only (`Txn.sender` must have a pledge box), **before** the deadline, while
   the campaign is still `Open`.

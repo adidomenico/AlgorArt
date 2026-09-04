@@ -156,6 +156,33 @@ export class Campaign extends Contract {
       .submit()
   }
 
+  /**
+   * Withdraw a backer's pledge before the deadline.
+   *
+   * Only available while the campaign is still open (before the deadline). Deletes the caller's pledge box, pays the amount back and
+   * decrements `raised`; the box delete makes a second cancel impossible (same pattern as `refund`).
+   */
+  @abimethod()
+  cancelPledge(): void {
+    assert(Global.latestTimestamp < this.deadline.value, 'pledging is closed')
+    assert(this.status.value === STATUS_OPEN, 'campaign is not open')
+
+    const backer = Txn.sender
+    const pledgeBox = this.pledges(backer)
+    assert(pledgeBox.exists, 'nothing to cancel')
+
+    const amount = pledgeBox.value
+    pledgeBox.delete()
+    this.raised.value = this.raised.value - amount
+
+    itxn
+      .payment({
+        receiver: backer,
+        amount: amount,
+      })
+      .submit()
+  }
+
   /** The spendable ALGO held at the escrow address (total minus the minimum balance). */
   private escrowBalance(): uint64 {
     const balance = Global.currentApplicationAddress.balance

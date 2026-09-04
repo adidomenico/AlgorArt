@@ -20,7 +20,7 @@ item links to the doc that has the details.
 
 - [ ] **Decide `updateMetadata()` before any "final" deploy** — without it, `title`
       and `metadataUri` are immutable forever (see [`campaign.md`](campaign.md)).
-- [ ] **`cancelPledge()`** — backer withdraws while the campaign is `Open` (needs a contract change).
+- [x] **`cancelPledge()`** — backer withdraws while the campaign is `Open`.
 - [ ] **`refundBatch()`** — refund up to 8 backers in one permissionless call; loop until drained.
 - [ ] **`delete()`** — permissionless cleanup after `Claimed`: delete pledge boxes (batched), then close the app, recovering the stranded base balance + box MBR (see [`campaign.md`](campaign.md)).
 - [ ] **Decide on `settle()`** — closes the zero-pledge-campaign gap (cosmetic; the UI already derives "failed").

@@ -77,6 +77,20 @@ describe('Campaign', () => {
     })
   }
 
+  /**
+   * Cancel `backer`'s pledge.
+   *
+   * `cancelPledge()` reads the caller's box, so it must run with `Txn.sender == backer`.
+   *
+   * @param contract The campaign to cancel from.
+   * @param backer The backer whose pledge is cancelled.
+   */
+  function cancelPledgeAs(contract: Campaign, backer: ReturnType<typeof backerAccount>) {
+    ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: contract, sender: backer })]).execute(() => {
+      contract.cancelPledge()
+    })
+  }
+
   describe('create', () => {
     test('sets creator, title, metadata uri, goal, deadline, raised and status', () => {
       const contract = createCampaign()
@@ -286,6 +300,92 @@ describe('Campaign', () => {
       expect(() => {
         contract.claim()
       }).toThrow('already claimed')
+    })
+  })
+
+  describe('cancelPledge', () => {
+    test('returns a backer their pledge and decrements raised', () => {
+      const contract = createCampaign()
+      const backer = backerAccount()
+      const appAddress = ctx.ledger.getApplicationForContract(contract).address
+
+      pledgeAs(contract, backer, 100_000)
+      ctx.ledger.patchAccountData(appAddress, { account: { balance: 100_000 + MIN_BALANCE } })
+
+      cancelPledgeAs(contract, backer)
+
+      expect(contract.status.value).toEqual(0)
+      expect(contract.raised.value).toEqual(0)
+      expect(contract.pledges(backer).exists).toEqual(false)
+      const payout = ctx.txn.lastGroup.lastItxnGroup().getPaymentInnerTxn()
+      expect(payout.receiver).toEqual(backer)
+      expect(payout.amount).toEqual(100_000)
+    })
+
+    test('returns the full accumulated amount of a re-pledged box', () => {
+      const contract = createCampaign()
+      const backer = backerAccount()
+      const appAddress = ctx.ledger.getApplicationForContract(contract).address
+
+      pledgeAs(contract, backer, 100_000)
+      pledgeAs(contract, backer, 50_000)
+      ctx.ledger.patchAccountData(appAddress, { account: { balance: 150_000 + MIN_BALANCE } })
+
+      cancelPledgeAs(contract, backer)
+
+      expect(contract.raised.value).toEqual(0)
+      const payout = ctx.txn.lastGroup.lastItxnGroup().getPaymentInnerTxn()
+      expect(payout.amount).toEqual(150_000)
+    })
+
+    test("only removes the caller's pledge and keeps other backers intact", () => {
+      const contract = createCampaign()
+      const backerA = backerAccount()
+      const backerB = backerAccount()
+      const appAddress = ctx.ledger.getApplicationForContract(contract).address
+
+      pledgeAs(contract, backerA, 60_000)
+      pledgeAs(contract, backerB, 40_000)
+      ctx.ledger.patchAccountData(appAddress, { account: { balance: 100_000 + MIN_BALANCE } })
+
+      cancelPledgeAs(contract, backerA)
+
+      expect(contract.raised.value).toEqual(40_000)
+      expect(contract.pledges(backerA).exists).toEqual(false)
+      expect(contract.pledges(backerB).value).toEqual(40_000)
+    })
+
+    test('rejects canceling after the deadline', () => {
+      const contract = createCampaign()
+      const backer = backerAccount()
+      pledgeAs(contract, backer, 100_000)
+
+      ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
+      expect(() => {
+        cancelPledgeAs(contract, backer)
+      }).toThrow('pledging is closed')
+    })
+
+    test('rejects a caller with nothing to cancel', () => {
+      const contract = createCampaign()
+      expect(() => {
+        contract.cancelPledge()
+      }).toThrow('nothing to cancel')
+    })
+
+    test('rejects a second cancel from the same backer', () => {
+      const contract = createCampaign()
+      const backer = backerAccount()
+      const appAddress = ctx.ledger.getApplicationForContract(contract).address
+
+      pledgeAs(contract, backer, 100_000)
+      ctx.ledger.patchAccountData(appAddress, { account: { balance: 100_000 + MIN_BALANCE } })
+
+      cancelPledgeAs(contract, backer)
+
+      expect(() => {
+        cancelPledgeAs(contract, backer)
+      }).toThrow('nothing to cancel')
     })
   })
 
