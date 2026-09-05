@@ -477,4 +477,15 @@ describe('Campaign', () => {
       expect(payout.amount).toEqual(40_000)
     })
   })
+
+  describe('delete', () => {
+    test('runs as a DeleteApplication call (bare, guard-free for now)', () => {
+      const contract = createCampaign()
+
+      // The current `delete()` has no guards and no body; this simply proves the method is callable and covered.
+      expect(() => {
+        contract.delete()
+      }).not.toThrow()
+    })
+  })
 })

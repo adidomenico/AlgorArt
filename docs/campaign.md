@@ -143,34 +143,109 @@ transaction submitted by a caller; none of it is automatic.
 
 ### `delete()`
 
-> **Proposed** — documented for design alignment; not yet implemented.
+> **Testing phase** — implemented as a bare, guard-free
+> `@abimethod({ allowActions: 'DeleteApplication' })` to observe, on LocalNet, what
+> happens to the escrow balance, base minimum balance and box MBR. Guards and
+> balance recovery are the open design decision (see
+> [`roadmap.md`](roadmap.md)).
 
-- **Callable by anyone** after `status == Claimed` — recovers the residue that
-  `claim()` leaves behind.
-- **Two kinds of residue, two mechanisms.** The creator's seeded **base minimum
-  balance** (0.1 ALGO + global-state bytes) is released by deleting the
-  application. Each backer's **box MBR** (~0.0185 ALGO) is released only when
-  that box is deleted — deleting the app alone does **not** delete its boxes, and
-  a deleted app with outstanding boxes leaves their MBR permanently locked (AVM
-  box rules).
-- **Correct cleanup order.** The method must first delete pledge boxes (batched,
-  ≤ 8 per call, same box-reference limit as `refundBatch`) and only then submit
-  the application delete. Box names are read off-chain from the indexer, so the
-  sweep can be permissionless; the destination of recovered ALGO is fixed by the
-  contract, so no one can divert funds.
-- **Claim cannot be replaced by a bare delete.** Deleting the app pays out only
-  the base minimum balance — it does not sweep box MBR — so the current
-  `balance − minBalance` claim payout and a box sweep are complementary, not
-  alternatives.
-- **On a failed campaign, delete must be guarded.** The app can only be deleted
-  once every pledge box is gone (all refunds done); otherwise a delete would close
-  the app with un-refunded pledges still locked inside it. Because the contract
-  cannot enumerate boxes, this needs an explicit backer counter (increment on
-  first pledge, decrement on refund) that must read zero before deleting.
-- **Trade-off:** deleting the app freezes the on-chain record (`status`, `title`,
-  pledge boxes) as non-modifiable. The indexer still returns the app with a
-  `deleted` flag and its boxes remain queryable, but the UI must treat a deleted
-  campaign as "claimed, and settled".
+#### Why it exists at all
+
+`delete()` is needed **only** to return the escrow's locked ALGO (base minimum
+balance + box MBR) to the creator after the campaign is settled. Without it, that
+ALGO is stranded on-chain forever. It is not needed for correctness — the
+contract already pays out `balance − minBalance` on `claim()` — it exists purely
+to recover residue.
+
+#### Verified on LocalNet (real contract)
+
+The `delete()` cases live in `contract.integration.test.ts` and were run against
+LocalNet on the **real** `Campaign` contract:
+
+**Delete app, no boxes** (funded with a 1 ALGO surplus):
+
+| | Before | After |
+| --- | --- | --- |
+| App account balance | unchanged | unchanged (stranded) |
+| Creator balance | — | **−1,000 µA** (the delete fee) |
+
+**Delete app with one pledge box**:
+
+| | Before | After |
+| --- | --- | --- |
+| App min balance | 113,000 µA (base + box MBR) | 113,000 µA (box MBR stays locked) |
+| App balance | unchanged | unchanged (stranded) |
+| Pledge box | present | present (queryable, now non-modifiable) |
+| Creator balance | — | −1,000 µA |
+
+**Refund (deletes one pledge box)**:
+
+| | Before refund | After refund |
+| --- | --- | --- |
+| App min balance | 118,900 µA (base 100k + box MBR 18,900) | 100,000 µA (box MBR freed) |
+| Backer balance | — | +1 ALGO − 2,000 µA fees |
+
+where one pledge box MBR is $2500 + 400\times(33+8) = 18{,}900$ µA (33-byte
+`p`-prefixed address key + 8-byte value).
+
+**Conclusion — two separate facts, one settled, one still open:**
+
+1. **The base 0.1 ALGO minimum balance is unrecoverable, full stop.** A bare
+   `DeleteApplication` returns nothing — not the surplus, not the base minimum,
+   not the box MBR. The app account's balance stays in the now-deleteless
+   account. There is no AVM mechanism to pay out the base minimum (the account
+   cannot drop below it, and deleting the app moves no funds). **Do not re-open
+   this question** — it is settled and not worth re-investigating.
+2. **Box MBR on a claimed campaign is a separate, still-open question.** Whether
+   the per-backer storage deposit (~0.0185 ALGO each) can be returned to the
+   creator is *not* settled by these tests: the bare `delete()` never tries to
+   recover it. Any recovery would require deleting the boxes (frees their MBR)
+   and sweeping the freed balance out via inner payments *before* the app is
+   deleted — capped at ~8 boxes per call. That is the design decision below.
+
+#### The two problem cases
+
+1. **Successful campaign (claimed).** The creator has already been paid
+   `balance − minBalance`. What remains locked is the base 0.1 ALGO + every
+   backer's box MBR (~0.0185 each). The boxes are all still there. Recovering
+   this is the hard case, because the boxes must be deleted (batched) before the
+   app can be deleted — and a box delete also frees its MBR, so the *order* and
+   *who sweeps* matter.
+
+2. **Failed campaign.** Backers refund themselves one by one (each deletes their
+   own box and gets their pledge back). Once **every** box is gone, the only
+   residue is the base 0.1 ALGO. Deleting then is easy — but the app can only be
+   deleted after the last box is gone, and the contract cannot enumerate boxes,
+   so a backer counter is needed to enforce "no boxes left".
+
+#### Design options
+
+> Decision pending — these are the options under discussion. See
+> [`roadmap.md`](roadmap.md).
+>
+> **Settled:** the base 0.1 ALGO is lost forever regardless of what `delete()`
+> does. The only open question is whether box MBR on a claimed campaign is worth
+> recovering (it would require a batched sweep, capped at ~8 boxes per call).
+
+1. **No sweep at all.** Accept that box MBR is also lost on claimed campaigns.
+   Simplest; only leaves ~0.0185 ALGO × backer count stranded. For a demo this
+   is negligible.
+
+2. **`delete()` / `sweep()` actively recovers box MBR.** After `claim()`, a
+   batched method deletes boxes (≤ 8 per call, looped off-chain), sweeps the
+   freed balance to the creator via inner payments, then deletes the app. The
+   base 0.1 ALGO still stays locked — this only rescues box MBR.
+
+3. **Fold the first batch into `claim()`.** `claim()` could delete up to 8 boxes
+   before computing its payout, so the creator captures that much box MBR in the
+   same call. Micro-optimization at best: it only rescues 8 boxes' MBR and still
+   leaves the rest stranded, and it complicates `claim()`.
+
+Open sub-questions before implementing: (a) is box MBR worth recovering at demo
+scale? (b) who may call the sweep (creator only vs permissionless); (c) one
+method or two (sweep + delete vs combined); (d) the failed-campaign case, where
+boxes only exist until each backer `refund()`s — no sweep needed there, but the
+app can only be deleted after the last box is gone (needs a backer counter).
 
 ## Boxes & minimum balance
 

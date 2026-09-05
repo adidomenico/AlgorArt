@@ -183,6 +183,16 @@ export class Campaign extends Contract {
       .submit()
   }
 
+  /**
+   * Delete the campaign application.
+   *
+   * **Testing phase — no guards yet.** This is the bare form used to observe, on LocalNet, where the escrow balance, the base minimum
+   * balance and box MBR go when the app is deleted (with and without outstanding pledge boxes). Once those facts are recorded, guards and
+   * balance recovery will be added (see `docs/campaign.md` → `delete()`).
+   */
+  @abimethod({ allowActions: 'DeleteApplication' })
+  delete(): void {}
+
   /** The spendable ALGO held at the escrow address (total minus the minimum balance). */
   private escrowBalance(): uint64 {
     const balance = Global.currentApplicationAddress.balance
