@@ -29,6 +29,10 @@ item links to the doc that has the details.
       [`campaign.md`](campaign.md).
 - [ ] **`refundBatch()`** — refund up to 8 backers in one permissionless call; loop until drained.
 - [ ] **Decide on `settle()`** — closes the zero-pledge-campaign gap (cosmetic; the UI already derives "failed").
+- [ ] **Implement the commitment redesign** — replace per-backer boxes with an
+      on-chain incremental Merkle tree (root + 1-bit-per-backer spent bitmap),
+      making refunds/delete scale and killing the box-MBR residue. See
+      [`commitment-redesign.md`](commitment-redesign.md).
 - [ ] **Verify `refundBatch` fits the opcode budget** — drop to 6–7 backers if it doesn't compile.
 - [ ] **Tests** for batch/re-pledge flows once the methods exist (see [`testing.md`](testing.md)).
 

@@ -221,6 +221,13 @@ implemented and covered by the LocalNet integration suite. Box-MBR recovery is
 therefore done in a single call for up to 8 backers; a batched sweep for more is
 deferred as unnecessary at demo scale.
 
+> **Planned redesign.** The per-backer box model caps at ~8 backers per
+> operation and leaves box-MBR residue after `claim()`. A Merkle-commitment
+> redesign — an on-chain incremental tree with a 1-bit-per-backer spent bitmap,
+> no boxes — removes both limits and is specified in
+> [`commitment-redesign.md`](commitment-redesign.md). This section's
+> `delete(backers)` is the demo-scale answer until that lands.
+
 #### Design options (resolved)
 
 1. **Guarded `delete(backers)` with `CloseRemainderTo` (chosen).** Creator-only,
