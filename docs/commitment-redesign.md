@@ -54,7 +54,7 @@ Everything in [`campaign.md`](campaign.md) today, minus the `pledges` box, plus:
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `root` | `bytes` (32) | Merkle root over all `(address, amount)` leaves, updated on every pledge/cancel |
-| `frontier` | `Box` | The incremental tree's frontier (the right spine; ~17 × 32 bytes at 100k leaves) |
+| `frontier` | `Box` | The MMR frontier: completed-subtree roots, `h + 1` × 32 bytes |
 | `spent` | `BoxMap<uint64, bytes>` | Sharded nullifier bitmap, one bit per leaf index |
 
 ### Methods
@@ -89,40 +89,50 @@ creator from sweeping un-refunded money on a failed campaign.
 
 ### The incremental tree
 
-A **fixed-height padded Merkle tree**: `h` is fixed at deploy (`h = 20` →
-1,048,576 leaf slots). Leaves fill slots `0..N−1` in order; slots beyond `N` are
-a domain-separated empty leaf. The root is the balanced hash over all `2^h`
-slots, so every proof is exactly `h` siblings and there is no "promote the odd
-node" edge case. Empty-subtree roots are precomputed constants:
+A **fixed-height padded Merkle tree**: `h` is fixed at deploy (`h = 15` → 32,768
+leaf slots). Leaves fill slots `0..N−1` in order; slots beyond `N` are a
+domain-separated empty leaf. The root is the balanced hash over all `2^h` slots,
+so every proof is exactly `h` siblings and there is no "promote the odd node"
+edge case. Empty-subtree roots are hardcoded constants:
 
-- `EMPTY[0] = sha512_256(b'')` — distinct from a real leaf (which hashes 40
-  bytes: 32-byte address + 8-byte amount).
-- `EMPTY[k] = sha512_256(EMPTY[k-1] || EMPTY[k-1])`.
+- `EMPTY[0] = sha256(b'')` — distinct from a real leaf (which hashes 40 bytes:
+  32-byte address + 8-byte amount).
+- `EMPTY[k] = sha256(EMPTY[k-1] || EMPTY[k-1])`.
 
-Appending is O(log N): the contract keeps a `frontier` `Box` of at most `h`
-right-spine nodes and recomputes ancestors along the leaf's path, substituting
-`EMPTY[k]` for any empty sibling. `h` and the `EMPTY[k]` constants are fixed at
-deploy.
+Appending is O(h): the contract keeps the completed-subtree roots (an MMR
+frontier) in a single `Box` and recomputes the empty-padded fold of the peaks.
+`h` and the `EMPTY[k]` constants are fixed at deploy.
+
+#### Why `sha256` and `h = 15`
+
+A single app call has an opcode budget of 700 cost units, and `sha512_256` costs
+45 while `sha256` costs 35 (see the
+[AVM opcodes reference](https://developer.algorand.org/docs/get-details/dapps/avm/teal/opcodes/)).
+A pledge (append + fold) and a refund (proof verify) are each `h + 1` hashes, so
+at `h = 15` that is `16 × 35 = 560` cost — comfortably inside the budget with
+room for box I/O and the payout. A binary tree cannot scale much higher within
+this budget (`h = 19` would be 700 with nothing left over); a fanout-4/8 tree
+would raise capacity if it is ever needed.
 
 ### Proof format
 
-- Leaf at slot `i`: `leaf = sha512_256(address_bytes(32) || uint64_be(amount))`.
-- Internal: `node = sha512_256(left(32) || right(32))`.
+- Leaf at slot `i`: `leaf = sha256(address_bytes(32) || uint64_be(amount))`.
+- Internal: `node = sha256(left(32) || right(32))`.
 - A proof is exactly `h` siblings; direction at level `j` is bit `j` of `i`
   (0 = left child, 1 = right child). Empty subtrees appear in the proof as their
   precomputed `EMPTY[j]` constant, so the verifier needs no special case.
 
 ```text
-node = sha512_256(sender || itob(amount))
+node = sha256(sender || itob(amount))
 for i in 0 ..< siblings.length:
     node = ((index >> i) & 1) == 0
-        ? sha512_256(node || siblings[i])
-        : sha512_256(siblings[i] || node)
+        ? sha256(node || siblings[i])
+        : sha256(siblings[i] || node)
 assert(node == root)
 ```
 
-With `h = 20`, a proof is `20 × 32 = 640` bytes — within the 2048-byte argument
-limit, and 20 hash ops is trivial for the 700-opcode budget.
+With `h = 15`, a proof is `15 × 32 = 480` bytes — well within the 2048-byte
+argument limit, and 15 hash ops is well within the 700-opcode budget.
 
 ### Spent bitmap (nullifier)
 
@@ -176,8 +186,8 @@ adding and are listed here so they land in the same change set:
   instead of scraping raw transactions (what makes the backend "real").
 - **`@readonly` ABI methods** — free on-chain reads via `simulate` for the
   frontend.
-- **Native hash opcodes** — `sha512_256` / `sha256` (required for the Merkle
-  tree; also the "professional crypto" flex). See the
+- **Native hash opcodes** — `sha256` (chosen over `sha512_256` for its lower
+  opcode cost, see above). See the
   [AVM opcodes reference](https://developer.algorand.org/docs/get-details/dapps/avm/teal/opcodes/).
 - **Publishable ARC-56 spec** — the generated spec is the interface; publish it.
 
@@ -187,7 +197,8 @@ NFTs, and box streaming — none of them are relevant to a crowdfunding escrow.
 ## Open questions / verify on LocalNet
 
 - Exact first-pledge minimum with no boxes (should be ~0.1 ALGO).
-- The `sha512_256` + `bytes[]` proof loop compiles within the opcode budget.
+- The `sha256` + `bytes[]` proof loop compiles within the opcode budget (560 cost
+  measured in the reference; verify the compiled TEAL stays under 700).
 - Bitmap box I/O at the shard boundary.
 
 ## References

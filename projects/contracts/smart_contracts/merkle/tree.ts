@@ -6,19 +6,21 @@ import { createHash } from 'node:crypto'
  *
  * This file is plain TypeScript, not a contract: it exists to (a) define the exact hash scheme the AVM port must
  * reproduce, and (b) provide a naive reference against which the on-chain incremental tree can be property-tested.
- * The contract itself will verify proofs with the `h`-hash chain in `verify`; it never builds the full tree.
+ * The contract verifies proofs with the `h`-hash chain in `verify` and appends via `PaddedTree`; it never builds the
+ * full tree.
  */
 
 /**
- * SHA-512/256 over the concatenation of the given byte arrays (matches the AVM `sha512_256` opcode).
+ * SHA-256 over the concatenation of the given byte arrays (matches the AVM `sha256` opcode; chosen over `sha512_256`
+ * because it is cheaper — 35 vs 45 opcode cost — and the proof fits the 700-cost app-call budget).
  *
  * @param parts Byte arrays to hash, in order.
  * @returns The 32-byte digest.
  */
-export function sha512256(...parts: Uint8Array[]): Uint8Array {
-  const hash = createHash('sha512-256')
-  for (const part of parts) hash.update(part)
-  return new Uint8Array(hash.digest())
+export function hash(...parts: Uint8Array[]): Uint8Array {
+  const h = createHash('sha256')
+  for (const part of parts) h.update(part)
+  return new Uint8Array(h.digest())
 }
 
 /**
@@ -38,23 +40,23 @@ export function bigEndian64(value: bigint): Uint8Array {
 }
 
 /**
- * The hash of a pledge leaf: `sha512_256(address(32) || amount(8))`.
+ * The hash of a pledge leaf: `sha256(address(32) || amount(8))`.
  *
  * @param address The backer's 32-byte public key.
  * @param amount Pledged microAlgos.
  * @returns The leaf hash.
  */
 export function leafHash(address: Uint8Array, amount: bigint): Uint8Array {
-  return sha512256(address, bigEndian64(amount))
+  return hash(address, bigEndian64(amount))
 }
 
-// Empty-subtree roots, memoized: EMPTY[0] = sha512_256(b''), EMPTY[k] = sha512_256(EMPTY[k-1] || EMPTY[k-1]).
+// Empty-subtree roots, memoized: EMPTY[0] = sha256(b''), EMPTY[k] = sha256(EMPTY[k-1] || EMPTY[k-1]).
 const emptyCache: Uint8Array[] = []
 
 function cachedEmpty(k: number): Uint8Array {
   while (emptyCache.length <= k) {
     const height = emptyCache.length
-    emptyCache.push(height === 0 ? sha512256() : sha512256(at(emptyCache, height - 1), at(emptyCache, height - 1)))
+    emptyCache.push(height === 0 ? hash() : hash(at(emptyCache, height - 1), at(emptyCache, height - 1)))
   }
   return at(emptyCache, k)
 }
@@ -80,7 +82,8 @@ export function emptyNode(k: number): Uint8Array {
  * Incremental fixed-height padded Merkle tree, mirroring what the on-chain contract will maintain.
  *
  * Leaves occupy slots `0..count-1`; slots beyond `count` are empty. The root is the balanced hash over all `2^h` slots.
- * Appending is O(log N): the `peaks` array holds the roots of the completed subtrees that make up `count` in binary.
+ * The `peaks` array holds the roots of the completed subtrees that make up `count` in binary (an MMR frontier); the root
+ * is their empty-padded fold. Appending is O(h) hashes, which keeps a pledge within the opcode budget.
  */
 export class PaddedTree {
   readonly h: number
@@ -113,7 +116,7 @@ export class PaddedTree {
     let k = 0
     let left = this.peaks[k] ?? null
     while (left !== null) {
-      node = sha512256(left, node)
+      node = hash(left, node)
       this.peaks[k] = null
       k++
       left = this.peaks[k] ?? null
@@ -136,16 +139,16 @@ export class PaddedTree {
         accHeight = k
       } else {
         while (accHeight < k) {
-          acc = sha512256(acc, emptyNode(accHeight))
+          acc = hash(acc, emptyNode(accHeight))
           accHeight++
         }
-        acc = sha512256(peak, acc)
+        acc = hash(peak, acc)
         accHeight = k + 1
       }
     }
     if (acc === null) return emptyNode(this.h)
     while (accHeight < this.h) {
-      acc = sha512256(acc, emptyNode(accHeight))
+      acc = hash(acc, emptyNode(accHeight))
       accHeight++
     }
     return acc
@@ -168,7 +171,7 @@ export function buildLayers(leaves: Uint8Array[], h: number): Uint8Array[][] {
   for (let k = 1; k <= h; k++) {
     const prev = at(layers, k - 1)
     const next = new Array<Uint8Array>(prev.length / 2)
-    for (let i = 0; i < next.length; i++) next[i] = sha512256(at(prev, 2 * i), at(prev, 2 * i + 1))
+    for (let i = 0; i < next.length; i++) next[i] = hash(at(prev, 2 * i), at(prev, 2 * i + 1))
     layers.push(next)
   }
   return layers
@@ -226,7 +229,7 @@ export function verify(root: Uint8Array, h: number, index: number, leaf: Uint8Ar
   let node = leaf
   for (let k = 0; k < h; k++) {
     const sibling = at(siblings, k)
-    node = ((index >> k) & 1) === 0 ? sha512256(node, sibling) : sha512256(sibling, node)
+    node = ((index >> k) & 1) === 0 ? hash(node, sibling) : hash(sibling, node)
   }
   return bytesEqual(node, root)
 }

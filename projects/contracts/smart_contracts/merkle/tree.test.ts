@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { PaddedTree, emptyNode, leafHash, rootOf, sha512256, siblingsFor, verify } from './tree'
+import { PaddedTree, emptyNode, hash, leafHash, rootOf, siblingsFor, verify } from './tree'
 
 // A deterministic 32-byte "address" (real addresses are 32-byte public keys).
 function fakeAddress(seed: number): Uint8Array {
@@ -25,8 +25,8 @@ describe('emptyNode', () => {
     const empty0 = emptyNode(0)
     expect(hex(empty0)).not.toEqual(hex(leafHash(fakeAddress(1), 0n)))
     expect(empty0.length).toBe(32)
-    expect(emptyNode(1)).toEqual(sha512256(empty0, empty0))
-    expect(emptyNode(3)).toEqual(sha512256(emptyNode(2), emptyNode(2)))
+    expect(emptyNode(1)).toEqual(hash(empty0, empty0))
+    expect(emptyNode(3)).toEqual(hash(emptyNode(2), emptyNode(2)))
   })
 })
 
