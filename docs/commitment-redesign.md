@@ -89,18 +89,28 @@ creator from sweeping un-refunded money on a failed campaign.
 
 ### The incremental tree
 
-Append-only Merkle tree: leaves are added left-to-right, and the root updates by
-walking the frontier (the set of right-spine nodes). Append-only is sufficient —
-we never need proofs-of-non-membership — so a sorted tree is not required. The
-frontier lives in a single `Box` (~17 × 32 bytes at 100k leaves, well under the
-2 KB I/O budget).
+A **fixed-height padded Merkle tree**: `h` is fixed at deploy (`h = 20` →
+1,048,576 leaf slots). Leaves fill slots `0..N−1` in order; slots beyond `N` are
+a domain-separated empty leaf. The root is the balanced hash over all `2^h`
+slots, so every proof is exactly `h` siblings and there is no "promote the odd
+node" edge case. Empty-subtree roots are precomputed constants:
+
+- `EMPTY[0] = sha512_256(b'')` — distinct from a real leaf (which hashes 40
+  bytes: 32-byte address + 8-byte amount).
+- `EMPTY[k] = sha512_256(EMPTY[k-1] || EMPTY[k-1])`.
+
+Appending is O(log N): the contract keeps a `frontier` `Box` of at most `h`
+right-spine nodes and recomputes ancestors along the leaf's path, substituting
+`EMPTY[k]` for any empty sibling. `h` and the `EMPTY[k]` constants are fixed at
+deploy.
 
 ### Proof format
 
-- Leaf: `leaf = sha512_256(address_bytes(32) || uint64_be(amount))`.
+- Leaf at slot `i`: `leaf = sha512_256(address_bytes(32) || uint64_be(amount))`.
 - Internal: `node = sha512_256(left(32) || right(32))`.
-- `index` is the leaf position; direction at level `i` is bit `i` of `index`
-  (0 = left child, 1 = right child) — no separate direction mask needed.
+- A proof is exactly `h` siblings; direction at level `j` is bit `j` of `i`
+  (0 = left child, 1 = right child). Empty subtrees appear in the proof as their
+  precomputed `EMPTY[j]` constant, so the verifier needs no special case.
 
 ```text
 node = sha512_256(sender || itob(amount))
@@ -111,8 +121,8 @@ for i in 0 ..< siblings.length:
 assert(node == root)
 ```
 
-At 100k backers, `siblings` ≈ 17 × 32 bytes ≈ 544 bytes — within the 2048-byte
-argument limit, and ~17 hash ops is trivial for the 700-opcode budget.
+With `h = 20`, a proof is `20 × 32 = 640` bytes — within the 2048-byte argument
+limit, and 20 hash ops is trivial for the 700-opcode budget.
 
 ### Spent bitmap (nullifier)
 
@@ -123,18 +133,13 @@ bit → set bit → write byte. ≈ 5,100 µA total MBR for 100k backers. Set by
 
 ## Re-pledge and live-leaf semantics
 
-Each pledge appends one leaf; a backer who pledges twice ends up with two leaves.
-There is no per-backer accumulation on-chain: `raised` is the global sum of live
+**Decision: one leaf per pledge (append-only).** A backer who pledges twice gets
+two leaves; there is no on-chain accumulation. `raised` is the global sum of live
 (not-spent) leaves, and a backer's individual total is the sum of their live
-leaves, computed off-chain for the UI. `cancelPledge`/`refund` target a specific
-leaf index.
-
-This is the one decision to lock **before** coding: the exact leaf identity (one
-leaf per pledge vs. an "accumulate by spending the old leaf and appending a new
-one" model) and the resulting semantics for `raised`, cancel, and the
-backer-facing total. The one-leaf-per-pledge model is the simplest; accumulating
-requires the backer to prove their old leaf on re-pledge and is a possible later
-refinement.
+leaves, computed off-chain for the UI. `cancelPledge`/`refund` target one leaf
+index, so cancelling everything costs one call (and one fee) per leaf — the fee
+scales with pledge transactions, not backers, which is accepted as negligible
+(≈ 0.002 ALGO per call).
 
 ## Backend surface
 
@@ -181,8 +186,6 @@ NFTs, and box streaming — none of them are relevant to a crowdfunding escrow.
 
 ## Open questions / verify on LocalNet
 
-- Leaf identity on re-pledge (one leaf per pledge vs. accumulate) — lock before
-  coding, see above.
 - Exact first-pledge minimum with no boxes (should be ~0.1 ALGO).
 - The `sha512_256` + `bytes[]` proof loop compiles within the opcode budget.
 - Bitmap box I/O at the shard boundary.
