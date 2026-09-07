@@ -1,4 +1,4 @@
-import { Bytes } from '@algorandfoundation/algorand-typescript'
+import { Bytes, OnCompleteAction } from '@algorandfoundation/algorand-typescript'
 import { TestExecutionContext } from '@algorandfoundation/algorand-typescript-testing'
 import { beforeEach, describe, expect, test } from 'vitest'
 import { Campaign } from './contract.algo'
@@ -479,13 +479,60 @@ describe('Campaign', () => {
   })
 
   describe('delete', () => {
-    test('runs as a DeleteApplication call (bare, guard-free for now)', () => {
+    test('rejects a non-creator caller', () => {
       const contract = createCampaign()
 
-      // The current `delete()` has no guards and no body; this simply proves the method is callable and covered.
+      const other = ctx.any.account()
+      ctx.txn
+        .createScope([ctx.any.txn.applicationCall({ appId: contract, sender: other, onCompletion: OnCompleteAction.DeleteApplication })])
+        .execute(() => {
+          expect(() => {
+            contract.delete([])
+          }).toThrow('only the creator can delete')
+        })
+    })
+
+    test('rejects an open campaign', () => {
+      const contract = createCampaign()
       expect(() => {
-        contract.delete()
-      }).not.toThrow()
+        contract.delete([])
+      }).toThrow('cannot delete an open campaign')
+    })
+
+    test('deletes the listed pledge boxes on a claimed campaign', () => {
+      const contract = createCampaign()
+      const backer = backerAccount()
+      const appAddress = ctx.ledger.getApplicationForContract(contract).address
+
+      pledgeAs(contract, backer, GOAL)
+      ctx.ledger.patchAccountData(appAddress, { account: { balance: GOAL + MIN_BALANCE } })
+
+      ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
+      contract.claim()
+
+      contract.delete([backer])
+
+      expect(contract.pledges(backer).exists).toEqual(false)
+    })
+
+    test('ignores the backer list on a failed campaign', () => {
+      const contract = createCampaign()
+      const backerA = backerAccount()
+      const backerB = backerAccount()
+      const appAddress = ctx.ledger.getApplicationForContract(contract).address
+
+      pledgeAs(contract, backerA, 40_000)
+      pledgeAs(contract, backerB, 40_000)
+      ctx.ledger.patchAccountData(appAddress, { account: { balance: 80_000 + MIN_BALANCE } })
+
+      ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
+      refundAs(contract, backerA) // materialises Failed, deletes backerA's box only
+
+      contract.delete([backerB])
+
+      // On a Failed campaign the box deletion is skipped, so backerB's box survives.
+      expect(contract.pledges(backerA).exists).toEqual(false)
+      expect(contract.pledges(backerB).exists).toEqual(true)
     })
   })
 })

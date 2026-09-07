@@ -21,11 +21,13 @@ item links to the doc that has the details.
 - [ ] **Decide `updateMetadata()` before any "final" deploy** — without it, `title`
       and `metadataUri` are immutable forever (see [`campaign.md`](campaign.md)).
 - [x] **`cancelPledge()`** — backer withdraws while the campaign is `Open`.
+- [x] **Guarded `delete(backers)`** — creator-only, settled only; deletes listed boxes
+      on a claimed campaign and closes the app account with `CloseRemainderTo`,
+      recovering the residue and freeing the creator's sponsorship floor. The base
+      0.1 ALGO is a sponsorship floor on the creator's account (not ALGO in the
+      escrow). A batched sweep for > 8 backers is deferred. See
+      [`campaign.md`](campaign.md).
 - [ ] **`refundBatch()`** — refund up to 8 backers in one permissionless call; loop until drained.
-- [ ] **Decide box-MBR recovery** — the base 0.1 ALGO minimum balance is
-      **unrecoverable** (settled: bare `DeleteApplication` returns nothing). Open
-      question is only whether to sweep box MBR (~0.0185 ALGO × backers) after
-      `claim()` via a batched method. Options in [`campaign.md`](campaign.md).
 - [ ] **Decide on `settle()`** — closes the zero-pledge-campaign gap (cosmetic; the UI already derives "failed").
 - [ ] **Verify `refundBatch` fits the opcode budget** — drop to 6–7 backers if it doesn't compile.
 - [ ] **Tests** for batch/re-pledge flows once the methods exist (see [`testing.md`](testing.md)).

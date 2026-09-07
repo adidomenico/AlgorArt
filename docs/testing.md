@@ -142,6 +142,10 @@ class as it does not extend Contract or BaseContract".
       create → pledge → claim and → refund end-to-end.
 - [x] **M5 — `cancelPledge`.** Contract method + offline behavioral tests +
       frontend wiring (helper, detail-page action, unit tests).
+- [x] **M6 — guarded `delete(backers)`.** Contract method + offline guard tests +
+      LocalNet integration covering the full money flow with three backers
+      (pledge → claim → delete, and pledge → refund → delete), asserting balances,
+      minimum balances (MBR), fees, and the sponsorship-floor free on every step.
 
 ## Coverage matrix (every method × every branch)
 
@@ -174,6 +178,11 @@ class as it does not extend Contract or BaseContract".
 | `cancelPledge` | after deadline | ✅ |
 | `cancelPledge` | non-backer (no box) | ✅ |
 | `cancelPledge` | double cancel (box deleted) | ✅ |
+| `delete` | success (claimed — deletes listed boxes + `CloseRemainderTo`) | ✅ |
+| `delete` | success (failed, fully refunded — `CloseRemainderTo` on empty account) | ✅ |
+| `delete` | non-creator | ✅ |
+| `delete` | open campaign | ✅ |
+| `delete` | failed with outstanding boxes (ignores the list, `CloseRemainderTo` fails) | ✅ |
 
 ## Browser E2E / acceptance tests
 

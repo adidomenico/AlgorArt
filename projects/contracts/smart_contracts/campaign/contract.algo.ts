@@ -184,14 +184,36 @@ export class Campaign extends Contract {
   }
 
   /**
-   * Delete the campaign application.
+   * Delete the campaign application and recover the residual ALGO.
    *
-   * **Testing phase — no guards yet.** This is the bare form used to observe, on LocalNet, where the escrow balance, the base minimum
-   * balance and box MBR go when the app is deleted (with and without outstanding pledge boxes). Once those facts are recorded, guards and
-   * balance recovery will be added (see `docs/campaign.md` → `delete()`).
+   * Creator only, and only after the campaign is settled (`Failed` or `Claimed`). On a `Claimed` campaign the pledge boxes are residue (the
+   * creator has already been paid), so the listed `backers`' boxes are deleted to free their MBR before the app account is closed with
+   * `CloseRemainderTo`, which returns the remaining balance (base minimum + freed box MBR + any stray ALGO) to the creator. On a `Failed`
+   * campaign the `backers` list is ignored and `CloseRemainderTo` alone runs — it fails on any outstanding box, so an un-refunded pledge can
+   * never be swept into the creator's pocket. Deleting the app also frees the creator's own sponsorship floor (the size-sponsor minimum
+   * balance carried on the creator's account).
+   *
+   * @param backers The pledge-box addresses to delete (meaningful only on a `Claimed` campaign; pass an empty array on a `Failed` one).
    */
   @abimethod({ allowActions: 'DeleteApplication' })
-  delete(): void {}
+  delete(backers: Account[]): void {
+    assert(Txn.sender === this.creator.value, 'only the creator can delete')
+    assert(this.status.value !== STATUS_OPEN, 'cannot delete an open campaign')
+
+    if (this.status.value === STATUS_CLAIMED) {
+      for (const backer of backers) {
+        this.pledges(backer).delete()
+      }
+    }
+
+    itxn
+      .payment({
+        receiver: this.creator.value,
+        amount: 0,
+        closeRemainderTo: this.creator.value,
+      })
+      .submit()
+  }
 
   /** The spendable ALGO held at the escrow address (total minus the minimum balance). */
   private escrowBalance(): uint64 {

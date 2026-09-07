@@ -64,6 +64,8 @@ stateDiagram-v2
 | `pledge()` | backer | before deadline | Payment tx into escrow; records backer's amount in a box; bumps `raised` |
 | `claim()` | creator | after deadline **and** `raised >= goal` | Sends escrow balance to the creator |
 | `refund()` | backer | after deadline **and** `raised < goal` | Returns the backer's pledge from escrow |
+| `cancelPledge()` | backer | before deadline | Returns the backer's pledge, decrements `raised` |
+| `delete(backers)` | creator | settled (`Failed` / `Claimed`) | Deletes listed boxes (claimed only) and closes the escrow to the creator, freeing all minimum balances |
 
 ### Key on-chain state
 
