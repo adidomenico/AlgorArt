@@ -97,18 +97,14 @@ describe('transaction helpers', () => {
     expect(waitForIndexerRoundMock).toHaveBeenCalledWith(8n)
   })
 
-  it('refund sends a bare refund call covering inner fees', async () => {
-    sendRefundMock.mockResolvedValue({ confirmation: { confirmedRound: 9n } })
-    await refund(42n, session)
-    expect(sendRefundMock).toHaveBeenCalledWith({ args: [], extraFee: expect.anything() })
-    expect(waitForIndexerRoundMock).toHaveBeenCalledWith(9n)
+  it('refund is stubbed and throws until Merkle proof generation lands', async () => {
+    await expect(refund(42n, session)).rejects.toThrow(/not implemented/)
+    expect(sendRefundMock).not.toHaveBeenCalled()
   })
 
-  it('cancelPledge sends a bare cancelPledge call covering inner fees', async () => {
-    sendCancelPledgeMock.mockResolvedValue({ confirmation: { confirmedRound: 10n } })
-    await cancelPledge(42n, session)
-    expect(sendCancelPledgeMock).toHaveBeenCalledWith({ args: [], extraFee: expect.anything() })
-    expect(waitForIndexerRoundMock).toHaveBeenCalledWith(10n)
+  it('cancelPledge is stubbed and throws until Merkle proof generation lands', async () => {
+    await expect(cancelPledge(42n, session)).rejects.toThrow(/not implemented/)
+    expect(sendCancelPledgeMock).not.toHaveBeenCalled()
   })
 
   it('skips the indexer wait when the confirmed round is unavailable', async () => {

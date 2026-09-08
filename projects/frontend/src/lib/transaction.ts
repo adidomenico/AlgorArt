@@ -106,31 +106,24 @@ export async function claim(appId: bigint, session: WalletSession): Promise<void
 /**
  * Refund the caller's pledge (backer, after deadline, goal not reached).
  *
- * @param appId Campaign application id.
- * @param session Wallet session holding the signer and address.
+ * Not implemented yet: the Merkle redesign requires a proof (index + amount + siblings) rebuilt client-side from the
+ * indexer. Stubbed to keep the frontend type-checking against the new ABI; see docs/roadmap.md.
+ *
+ * @param _appId Campaign application id.
+ * @param _session Wallet session holding the signer and address.
  */
-export async function refund(appId: bigint, session: WalletSession): Promise<void> {
-  const client = clientFor(appId, session)
-  const result = await client.send.refund({ args: [], extraFee: microAlgos(1000) })
-
-  const confirmedRound = result.confirmation.confirmedRound
-  if (confirmedRound !== undefined) {
-    await waitForIndexerRound(confirmedRound)
-  }
+export async function refund(_appId: bigint, _session: WalletSession): Promise<void> {
+  await Promise.reject(new Error('refund is not implemented yet — Merkle proof generation is pending'))
 }
 
 /**
  * Withdraw the caller's pledge before the deadline (backer, while the campaign is still open).
  *
- * @param appId Campaign application id.
- * @param session Wallet session holding the signer and address.
+ * Not implemented yet: see `refund` — it needs the same client-side Merkle proof generation.
+ *
+ * @param _appId Campaign application id.
+ * @param _session Wallet session holding the signer and address.
  */
-export async function cancelPledge(appId: bigint, session: WalletSession): Promise<void> {
-  const client = clientFor(appId, session)
-  const result = await client.send.cancelPledge({ args: [], extraFee: microAlgos(1000) })
-
-  const confirmedRound = result.confirmation.confirmedRound
-  if (confirmedRound !== undefined) {
-    await waitForIndexerRound(confirmedRound)
-  }
+export async function cancelPledge(_appId: bigint, _session: WalletSession): Promise<void> {
+  await Promise.reject(new Error('cancelPledge is not implemented yet — Merkle proof generation is pending'))
 }

@@ -340,7 +340,7 @@ export class Campaign extends Contract {
 
   // Compute the empty-padded fold of the frontier for `count` leaves (the root).
   private fold(frontier: bytes, count: uint64): bytes {
-    // A fully-loaded tree collapses into a single subtree at level TREE_HEIGHT.
+    /* v8 ignore next 3 — a fully-loaded tree (32,768 leaves) collapses into one subtree; untestable without that many pledges. */
     if (count === Uint64(32768)) {
       return op.extract(frontier, Uint64(TREE_HEIGHT * (FANOUT - 1)) * Uint64(32), 32)
     }

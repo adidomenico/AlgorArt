@@ -198,6 +198,18 @@ describe('Campaign', () => {
       }).toThrow('pledge must be greater than zero')
     })
 
+    test('crosses the carry point at 8 backers and keeps the root in sync', () => {
+      const contract = createCampaign()
+      const tree = new WideTree(FANOUT, TREE_HEIGHT)
+      const leaves: Uint8Array[] = []
+      const backers = Array.from({ length: 8 }, () => backerAccount())
+      for (const backer of backers) {
+        pledgeAs(contract, tree, leaves, backer, 10_000)
+      }
+      expect(rootOf(contract)).toEqual(tree.root)
+      expect(contract.leafCount.value).toEqual(8)
+    })
+
     test('rejects pledging after the deadline', () => {
       const contract = createCampaign()
       ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
@@ -452,6 +464,28 @@ describe('Campaign', () => {
       contract.status.value = 2 // claimed
       const appAddress = ctx.ledger.getApplicationForContract(contract).address
       ctx.ledger.patchAccountData(appAddress, { account: { balance: DEPOSIT } })
+      expect(() => {
+        contract.delete()
+      }).not.toThrow()
+    })
+
+    test('deletes and clears the spent shards left by a refund', () => {
+      const contract = createCampaign()
+      fundAs(contract, DEPOSIT)
+      const tree = new WideTree(FANOUT, TREE_HEIGHT)
+      const leaves: Uint8Array[] = []
+      const a = backerAccount()
+      const aIndex = pledgeAs(contract, tree, leaves, a, 60_000)
+
+      // Refund to create the spent shard, then delete (status Failed, only the deposit remains).
+      ctx.ledger.patchAccountData(ctx.ledger.getApplicationForContract(contract).address, { account: { balance: 60_000 + DEPOSIT } })
+      ctx.ledger.patchGlobalData({ latestTimestamp: DEADLINE })
+      const proof = proofFor(leaves, aIndex)
+      ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: contract, sender: a })]).execute(() => {
+        contract.refund(proof, aIndex, 60_000)
+      })
+
+      ctx.ledger.patchAccountData(ctx.ledger.getApplicationForContract(contract).address, { account: { balance: DEPOSIT } })
       expect(() => {
         contract.delete()
       }).not.toThrow()
