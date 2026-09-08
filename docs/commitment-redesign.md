@@ -92,13 +92,13 @@ a leaf `(Txn.sender, amount)` to the incremental tree, updating `root` and the
 `frontier` box, and `raised += amount`. Because the deposit covers the storage MBR,
 a pledge can be arbitrarily small (no first-pledge minimum).
 
-**`cancelPledge(siblings: bytes[], index: uint64, amount: uint64)`** — backer
+**`cancelPledge(proof: bytes, index: uint64, amount: uint64)`** — backer
 only, before the deadline. Verifies the proof against the live `root`, checks the
 `spent` bit is `0`, sets it, decrements `raised` by `amount`, and pays `amount`
 back. Cancellation is a spent marker, not a deletion — the leaf stays in the tree
 but is dead. This preserves today's withdraw-before-deadline behavior.
 
-**`refund(siblings: bytes[], index: uint64, amount: uint64)`** — backer only,
+**`refund(proof: bytes, index: uint64, amount: uint64)`** — backer only,
 after the deadline when `raised < goal`. Materializes `status = Failed` on the
 first call (same pattern as today). Verifies the proof, checks and sets the
 `spent` bit, pays `amount` to `Txn.sender`. The shared `spent` bitmap is what
@@ -116,50 +116,54 @@ from sweeping un-refunded money on a failed campaign.
 
 ### The incremental tree
 
-A **fixed-height padded Merkle tree**: `h` is fixed at deploy (`h = 15` → 32,768
-leaf slots). Leaves fill slots `0..N−1` in order; slots beyond `N` are a
-domain-separated empty leaf. The root is the balanced hash over all `2^h` slots,
-so every proof is exactly `h` siblings and there is no "promote the odd node"
-edge case. Empty-subtree roots are hardcoded constants:
+A **fixed-height fanout-8 padded Merkle tree**: each internal node is `sha256` over
+its 8 children, so the height is `log8(N)`. `h` is fixed at deploy (`h = 5` →
+8^5 = 32,768 leaf slots). Leaves fill slots `0..N−1` in order; slots beyond `N`
+are a domain-separated empty leaf. The root is the balanced hash over all `8^h`
+slots, so every proof is exactly `h` sibling *groups* and there is no "promote
+the odd node" edge case. Empty-subtree roots are hardcoded constants:
 
 - `EMPTY[0] = sha256(b'')` — distinct from a real leaf (which hashes 40 bytes:
   32-byte address + 8-byte amount).
-- `EMPTY[k] = sha256(EMPTY[k-1] || EMPTY[k-1])`.
+- `EMPTY[k] = sha256(EMPTY[k-1] repeated 8 times)`.
 
 Appending is O(h): the contract keeps the completed-subtree roots (an MMR
-frontier) in a single `Box` and recomputes the empty-padded fold of the peaks.
-`h` and the `EMPTY[k]` constants are fixed at deploy.
+frontier) in a single `Box` (one 32-byte slot per completed subtree, at most
+`(8−1) × (h+1) = 42` slots) and recomputes the empty-padded fold of the peaks.
+The fold pads each level with `EMPTY[k] × 8` (a precomputed constant) and
+overwrites the occupied slots with `replace`, so it is ~5 sha256 ops.
 
-#### Why `sha256` and `h = 15`
+#### Why `sha256` and a fanout-8 tree
 
 A single app call has an opcode budget of 700 cost units, and `sha512_256` costs
 45 while `sha256` costs 35 (see the
 [AVM opcodes reference](https://developer.algorand.org/docs/get-details/dapps/avm/teal/opcodes/)).
-A pledge (append + fold) and a refund (proof verify) are each `h + 1` hashes, so
-at `h = 15` that is `16 × 35 = 560` cost — comfortably inside the budget with
-room for box I/O and the payout. A binary tree cannot scale much higher within
-this budget (`h = 19` would be 700 with nothing left over); a fanout-4/8 tree
-would raise capacity if it is ever needed.
+A pledge (append + fold) and a refund (proof verify) are each ~`h` sha256 ops,
+so at `h = 5` that is ~5 × 35 = 175 — comfortably inside the budget with room
+for box I/O and the payout. A **binary** tree cannot fit at this capacity: its
+height is `log2(N) = 15`, and the per-level empty-padding dominates the budget
+(measured on LocalNet against AVM v11). The fanout-8 tree is what makes 32,768
+backers feasible; a larger fanout would raise capacity further at the cost of
+larger proofs.
 
 ### Proof format
 
 - Leaf at slot `i`: `leaf = sha256(address_bytes(32) || uint64_be(amount))`.
-- Internal: `node = sha256(left(32) || right(32))`.
-- A proof is exactly `h` siblings; direction at level `j` is bit `j` of `i`
-  (0 = left child, 1 = right child). Empty subtrees appear in the proof as their
+- Internal: `node = sha256(concat of its 8 children)`.
+- A proof is `h` sibling *groups*; the leaf's position within level `j` is the
+  j-th base-8 digit of `i`. Empty subtrees appear in the proof as their
   precomputed `EMPTY[j]` constant, so the verifier needs no special case.
 
 ```text
 node = sha256(sender || itob(amount))
-for i in 0 ..< siblings.length:
-    node = ((index >> i) & 1) == 0
-        ? sha256(node || siblings[i])
-        : sha256(siblings[i] || node)
+for level in 0 ..< h:
+    digit = (index >> (3 * level)) & 7
+    node = sha256(siblings[..digit] || node || siblings[digit..])
 assert(node == root)
 ```
 
-With `h = 15`, a proof is `15 × 32 = 480` bytes — well within the 2048-byte
-argument limit, and 15 hash ops is well within the 700-opcode budget.
+With `h = 5`, a proof is `5 × (8−1) × 32 = 1120` bytes — well within the
+2048-byte argument limit, and 5 hash ops is well within the 700-opcode budget.
 
 ### Spent bitmap (nullifier)
 
@@ -223,9 +227,10 @@ NFTs, and box streaming — none of them are relevant to a crowdfunding escrow.
 
 ## Open questions / verify on LocalNet
 
-- Exact first-pledge minimum with no boxes (should be ~0.1 ALGO).
-- The `sha256` + `bytes[]` proof loop compiles within the opcode budget (560 cost
-  measured in the reference; verify the compiled TEAL stays under 700).
+- Exact first-pledge minimum with no boxes (should be ~0.1 ALGO; the deposit
+  covers the storage MBR).
+- The pledge and refund paths stay within the opcode budget on LocalNet — verified
+  by the "large campaign" integration test (a binary tree did not; see above).
 - Bitmap box I/O at the shard boundary.
 
 ## References

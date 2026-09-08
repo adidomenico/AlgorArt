@@ -20,9 +20,9 @@ import {
  * One stateful application per campaign. Pledged ALGO is held at the app's escrow address and released by the contract itself, based purely
  * on the on-chain state and the transaction group presented by the caller.
  *
- * Backer records live in a fixed-height (h = 15) padded Merkle tree: each pledge appends a leaf `(address, amount)` and updates the root in
- * O(h) via an MMR frontier. A backer proves their leaf with a Merkle proof to `cancelPledge`/`refund`, which marks it spent in a
- * 1-bit-per-leaf bitmap. No per-backer boxes, so the escrow's minimum balance is a small constant and `delete()` is trivial.
+ * Backer records live in a fixed-height **fanout-8** padded Merkle tree: each pledge appends a leaf `(address, amount)` and updates the root in
+ * O(h) via an MMR frontier, where `h = log8(N)`. A backer proves their leaf with a Merkle proof to `cancelPledge`/`refund`, which marks it
+ * spent in a 1-bit-per-leaf bitmap. No per-backer boxes, so the escrow's minimum balance is a small constant and `delete()` is trivial.
  */
 
 // Status is stored in global state as a uint64.
@@ -34,39 +34,73 @@ const STATUS_CLAIMED = 2
 // A single bytes global-state value is capped at 128 bytes on the AVM.
 const MAX_BYTES_PER_STATE_KEY = 128
 
-// Fixed tree height: 2^15 = 32,768 backers. A pledge (append + fold) and a refund (proof verify) are each h + 1 sha256 ops; at h = 15 that
-// is 16 × 35 = 560 opcode cost, inside the 700-cost app-call budget (sha256 costs 35, sha512_256 costs 45).
-const TREE_HEIGHT = 15
-const FRONTIER_BYTES = 512 // 32 bytes per peak height
+// A fanout-8 tree: each internal node hashes its 8 children, so height = log8(N). At h = 5 that is 8^5 = 32,768
+// backers, and a pledge (append + fold) or refund (proof verify) is ~5 sha256 ops — inside the 700-cost app-call
+// budget (a binary tree could not fit; see docs/commitment-redesign.md).
+const FANOUT = 8
+const TREE_HEIGHT = 5
+const FRONTIER_BYTES = 1344 // 32 × (FANOUT − 1) × (TREE_HEIGHT + 1)
 
 // The spent bitmap is sharded into 1024-byte boxes (8192 leaves per shard), each under the 2048-byte box I/O budget.
 const BITMAP_SHARD_BITS = 13
 const BITMAP_SHARD_BYTES = 1024
 
-// The creator pre-funds the escrow's fixed storage MBR so backers' pledges stay fully refundable: a refund only flips
-// a bitmap bit, so the frontier and spent-shard boxes (and their MBR) persist until delete(). The worst case is the
-// account base (100,000) + the frontier box (2500 + 400×513 = 207,700) + all 4 spent shards (4 × (2500 + 400×1033)
-// = 4 × 415,700) = 1,970,500 µA ≈ 1.97 ALGO. The deposit is not a pledge and is returned on delete().
-const MIN_DEPOSIT = 1_970_500
+// The creator funds the escrow's fixed storage MBR via `fund()` so backers' pledges stay fully refundable: a refund
+// only flips a bitmap bit, so the frontier and spent-shard boxes (and their MBR) persist until delete(). The worst
+// case is the account base (100,000) + the frontier box (2500 + 400×1345 = 540,500) + the spent shards
+// (2500 + 400×1033 = 415,700 each) — the recommended deposit, returned on delete().
 
-// EMPTY[k] = sha256 of an empty subtree of height k; EMPTY[k] lives at bytes [k*32, (k+1)*32) of this constant.
+// EMPTY[k] = sha256 of an empty fanout-8 subtree of height k, at bytes [k*32, (k+1)*32) of this constant.
 const EMPTY = Bytes.fromHex(
   'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
-    '2dba5dbc339e7316aea2683faf839c1b7b1ee2313db792112588118df066aa35' +
-    '5310a330e8f970388503c73349d80b45cd764db615f1bced2801dcd4524a2ff4' +
-    '80d1bf4dd6c1f75bba022337a3f0842078f5c2e7f3f59dfd33ccbb8e963367b2' +
-    '1492e66e89e186840231850712161255d203b5bbf48d21242f0b51519b5eb3d4' +
-    '03a82289eea21de37e72ad6c07865dcab3f2cd681ad47c1cd0ea30e1751ad996' +
-    '35603b6278eb5d320c99eeb68354d448493e1ab9857cb0bddb9f7fa72250a3a8' +
-    '8ff9103704f4e7dfee6106551eb439d3ac6bc5cc4873ced8ec33eaf2d42f4c31' +
-    '259ca0ef3ecb66bb9f02e2ca9de6c7ff13951ad824ece4c680555cfef4321d17' +
-    '4f52a2051143520841633a6e53f1ad5948a584dcdbc8ea206d8008d1cfe104a9' +
-    '7ef919cf6137226a4c132f3bcab47a11aa1dfe78a357c19c0c804508829f2623' +
-    'cbafa51c68b69bc206500c4733c2cc4cc6b67f712cc5fbad5b2d365998ba37a0' +
-    'e11746324aa6ce20024a6e4796ae38d2dce7d5e015071a4a2cc96c9b71fafb32' +
-    'e3b4036e156dd6ccf9e41e36b011fd00f79645e361d02a9484eaba96e3be7179' +
-    'a3cbeb34d17bf5aa47054abd93e0ea1c992eef8359ad6a0f596ea48e455d540a' +
-    'd1f9c8fa1339b232013cc9585b380372614a869fd0fd2e3d07bec2f3c96b4c6d',
+    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
+    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
+    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
+    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
+    '4b2f7eba53965fb076d3d078f8d9f7100e0a9258f582b88304350729ad4a78e8',
+)
+// PREIMAGE[k] = EMPTY[k] repeated 8 times (256 bytes), for k = 0..TREE_HEIGHT-1; the fold pads each level with `replace`.
+const PREIMAGE = Bytes.fromHex(
+  'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
+    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
+    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
+    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
+    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
+    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
+    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
+    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
+    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
+    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
+    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
+    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
+    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
+    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
+    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
+    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
+    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
+    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
+    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
+    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
+    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
+    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
+    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
+    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
+    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
+    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
+    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
+    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
+    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
+    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
+    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
+    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
+    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
+    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
+    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
+    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
+    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
+    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
+    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
+    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4',
 )
 
 export class Campaign extends Contract {
@@ -113,20 +147,15 @@ export class Campaign extends Contract {
    * @param metadataUri URI of the off-chain campaign metadata (ARC-3-style JSON blob).
    * @param goal Funding target in microAlgos.
    * @param deadline UNIX timestamp (seconds) after which pledging closes.
-   * @param deposit Payment from the creator that pre-funds the escrow's fixed storage MBR, so backers' pledges stay
-   * fully refundable. Returned to the creator by delete().
    */
   @abimethod({ onCreate: 'require' })
-  create(title: bytes, metadataUri: bytes, goal: uint64, deadline: uint64, deposit: gtxn.PaymentTxn): void {
+  create(title: bytes, metadataUri: bytes, goal: uint64, deadline: uint64): void {
     assert(Txn.applicationId.id === 0, 'must be called on app creation')
     assert(title.length > 0, 'title must not be empty')
     assert(title.length <= MAX_BYTES_PER_STATE_KEY, 'title too long')
     assert(metadataUri.length <= MAX_BYTES_PER_STATE_KEY, 'metadata uri too long')
     assert(goal > 0, 'goal must be greater than zero')
     assert(deadline > Global.latestTimestamp, 'deadline must be in the future')
-    assert(deposit.sender === Txn.sender, 'deposit must come from the creator')
-    assert(deposit.receiver === Global.currentApplicationAddress, 'deposit must be made to the campaign escrow')
-    assert(deposit.amount >= MIN_DEPOSIT, 'deposit too small')
 
     this.creator.value = Txn.sender
     this.title.value = title
@@ -137,7 +166,27 @@ export class Campaign extends Contract {
     this.status.value = STATUS_OPEN
     this.root.value = this.emptyNode(Uint64(TREE_HEIGHT))
     this.leafCount.value = 0
-    this.deposit.value = deposit.amount
+    this.deposit.value = 0
+  }
+
+  /**
+   * Fund the campaign's storage deposit.
+   *
+   * The creator pays ALGO into the escrow to cover the fixed storage MBR (the frontier box and spent shards), so
+   * backers' pledges stay fully refundable. The deposit is accumulated and returned to the creator by `delete()`.
+   * Without it, the first pledge cannot create the frontier box (insufficient balance).
+   *
+   * @param payment Payment from the creator to the campaign escrow.
+   */
+  @abimethod()
+  fund(payment: gtxn.PaymentTxn): void {
+    assert(Txn.sender === this.creator.value, 'only the creator can fund')
+    assert(payment.sender === Txn.sender, 'payment must come from the caller')
+    assert(payment.receiver === Global.currentApplicationAddress, 'payment must be made to the campaign escrow')
+    assert(payment.amount > 0, 'fund must be greater than zero')
+    assert(this.status.value === STATUS_OPEN, 'campaign is not open')
+
+    this.deposit.value = this.deposit.value + payment.amount
   }
 
   /**
@@ -156,7 +205,7 @@ export class Campaign extends Contract {
     assert(payment.amount > 0, 'pledge must be greater than zero')
     assert(Txn.sender !== this.creator.value, 'creator cannot pledge to their own campaign')
 
-    this.append(this.leafHash(Txn.sender, payment.amount))
+    this.append(this.leafHash(Txn.sender, payment.amount), this.leafCount.value)
     this.raised.value = this.raised.value + payment.amount
     this.leafCount.value = this.leafCount.value + 1
   }
@@ -189,12 +238,12 @@ export class Campaign extends Contract {
    * Only after the deadline, when the goal was not reached. The backer proves their leaf against the root; the leaf's bit in the spent
    * bitmap makes a second refund impossible.
    *
-   * @param siblings The Merkle proof (h sibling hashes, from height 0 up).
+   * @param proof The Merkle proof: `height × (fanout − 1)` sibling hashes concatenated, grouped by level.
    * @param index The leaf's slot index.
    * @param amount The pledged amount (bound to the leaf by the proof).
    */
   @abimethod()
-  refund(siblings: bytes[], index: uint64, amount: uint64): void {
+  refund(proof: bytes, index: uint64, amount: uint64): void {
     assert(Global.latestTimestamp >= this.deadline.value, 'deadline has not passed')
     assert(this.raised.value < this.goal.value, 'goal was reached, no refunds')
 
@@ -203,7 +252,7 @@ export class Campaign extends Contract {
     }
     assert(this.status.value === STATUS_FAILED, 'campaign is not refundable')
 
-    this.verifyAndSpend(index, amount, siblings)
+    this.verifyAndSpend(index, amount, proof)
 
     itxn
       .payment({
@@ -218,16 +267,16 @@ export class Campaign extends Contract {
    *
    * Proves the leaf, marks it spent, decrements `raised` and pays the amount back.
    *
-   * @param siblings The Merkle proof (h sibling hashes, from height 0 up).
+   * @param proof The Merkle proof: `height × (fanout − 1)` sibling hashes concatenated, grouped by level.
    * @param index The leaf's slot index.
    * @param amount The pledged amount (bound to the leaf by the proof).
    */
   @abimethod()
-  cancelPledge(siblings: bytes[], index: uint64, amount: uint64): void {
+  cancelPledge(proof: bytes, index: uint64, amount: uint64): void {
     assert(Global.latestTimestamp < this.deadline.value, 'pledging is closed')
     assert(this.status.value === STATUS_OPEN, 'campaign is not open')
 
-    this.verifyAndSpend(index, amount, siblings)
+    this.verifyAndSpend(index, amount, proof)
     this.raised.value = this.raised.value - amount
 
     itxn
@@ -267,69 +316,67 @@ export class Campaign extends Contract {
       .submit()
   }
 
-  // Append a leaf hash to the tree: update the MMR frontier and the root.
-  private append(leaf: bytes): void {
+  // Append a leaf hash to the tree: update the MMR frontier and the root. `n` is the leaf count before this append.
+  private append(leaf: bytes, n: uint64): void {
     let frontier = this.frontier.get({ default: op.bzero(FRONTIER_BYTES) })
-    let node = leaf
+    let node: bytes = leaf
     let k = Uint64(0)
-    while (k <= Uint64(TREE_HEIGHT)) {
-      const peak = op.extract(frontier, k * 32, 32)
-      if (peak.equals(op.bzero(32))) {
-        break
-      }
-      node = op.sha256(op.concat(peak, node))
-      frontier = op.replace(frontier, k * 32, op.bzero(32))
+    // Merge: while the k-th base-FANOUT digit of `n` is FANOUT-1, the level carries — combine its FANOUT-1 completed
+    // subtrees with `node` into one subtree at the next level.
+    while (k < Uint64(TREE_HEIGHT)) {
+      const digit: uint64 = (n >> (k * Uint64(3))) & Uint64(FANOUT - 1)
+      if (digit !== Uint64(FANOUT - 1)) break
+      // The FANOUT-1 slots are contiguous: extract them as one range.
+      const group = op.extract(frontier, k * Uint64(FANOUT - 1) * Uint64(32), Uint64((FANOUT - 1) * 32))
+      node = op.sha256(op.concat(group, node))
       k = k + 1
     }
-    frontier = op.replace(frontier, k * 32, node)
+    // Store the new subtree in the first free slot at the first non-carrying level.
+    const slotIndex: uint64 = (n >> (k * Uint64(3))) & Uint64(FANOUT - 1)
+    frontier = op.replace(frontier, (k * Uint64(FANOUT - 1) + slotIndex) * Uint64(32), node)
     this.frontier.value = frontier
-    this.root.value = this.fold(frontier)
+    this.root.value = this.fold(frontier, n + 1)
   }
 
-  // Compute the empty-padded fold of the MMR frontier (the current tree root).
-  private fold(frontier: bytes): bytes {
-    let acc: bytes = op.bzero(0)
-    let hasAcc = false
-    let accHeight = Uint64(0)
+  // Compute the empty-padded fold of the frontier for `count` leaves (the root).
+  private fold(frontier: bytes, count: uint64): bytes {
+    // A fully-loaded tree collapses into a single subtree at level TREE_HEIGHT.
+    if (count === Uint64(32768)) {
+      return op.extract(frontier, Uint64(TREE_HEIGHT * (FANOUT - 1)) * Uint64(32), 32)
+    }
+    let partial: bytes = op.bzero(0)
+    let hasPartial = false
     let k = Uint64(0)
-    while (k <= Uint64(TREE_HEIGHT)) {
-      const peak = op.extract(frontier, k * 32, 32)
-      if (!peak.equals(op.bzero(32))) {
-        if (!hasAcc) {
-          acc = peak
-          accHeight = k
-          hasAcc = true
-        } else {
-          while (accHeight < k) {
-            acc = op.sha256(op.concat(acc, this.emptyNode(accHeight)))
-            accHeight = accHeight + 1
-          }
-          acc = op.sha256(op.concat(peak, acc))
-          accHeight = k + 1
-        }
+    while (k < Uint64(TREE_HEIGHT)) {
+      const occupied: uint64 = (count >> (k * Uint64(3))) & Uint64(FANOUT - 1)
+      // Start from EMPTY[k] × FANOUT, then overwrite the occupied slots and the partial with `replace`.
+      let buffer: bytes = this.emptyGroup(k)
+      if (occupied > 0) {
+        const group = op.extract(frontier, k * Uint64(FANOUT - 1) * Uint64(32), occupied * Uint64(32))
+        buffer = op.replace(buffer, 0, group)
       }
+      if (hasPartial) {
+        buffer = op.replace(buffer, occupied * Uint64(32), partial)
+      }
+      partial = op.sha256(buffer)
+      hasPartial = true
       k = k + 1
     }
-    if (!hasAcc) {
-      return this.emptyNode(Uint64(TREE_HEIGHT))
-    }
-    while (accHeight < Uint64(TREE_HEIGHT)) {
-      acc = op.sha256(op.concat(acc, this.emptyNode(accHeight)))
-      accHeight = accHeight + 1
-    }
-    return acc
+    return partial
   }
 
   // Verify the caller's proof and mark the leaf spent, atomically.
-  private verifyAndSpend(index: uint64, amount: uint64, siblings: bytes[]): void {
+  private verifyAndSpend(index: uint64, amount: uint64, proof: bytes): void {
     let node: bytes = op.sha256(op.concat(Txn.sender.bytes, op.itob(amount)))
+    let siblingOffset = Uint64(0)
     let k = Uint64(0)
-    for (const sibling of siblings) {
-      if (((index >> k) & 1) === 0) {
-        node = op.sha256(op.concat(node, sibling))
-      } else {
-        node = op.sha256(op.concat(sibling, node))
-      }
+    while (k < Uint64(TREE_HEIGHT)) {
+      const digit: uint64 = (index >> (k * Uint64(3))) & Uint64(FANOUT - 1)
+      // children = siblings[0..digit-1] ++ node ++ siblings[digit..FANOUT-2]
+      const left = op.extract(proof, siblingOffset, digit * Uint64(32))
+      const right = op.extract(proof, siblingOffset + digit * Uint64(32), (Uint64(FANOUT - 1) - digit) * Uint64(32))
+      node = op.sha256(op.concat(op.concat(left, node), right))
+      siblingOffset = siblingOffset + Uint64(FANOUT - 1) * Uint64(32)
       k = k + 1
     }
     assert(node.equals(this.root.value), 'invalid proof')
@@ -349,6 +396,11 @@ export class Campaign extends Contract {
   // The root of an empty subtree of height k (a precomputed constant).
   private emptyNode(k: uint64): bytes {
     return op.extract(EMPTY, k * 32, 32)
+  }
+
+  // The preimage of an empty level-k subtree: EMPTY[k] repeated FANOUT times (256 bytes), for the fold's padding.
+  private emptyGroup(k: uint64): bytes {
+    return op.extract(PREIMAGE, k * 256, 256)
   }
 
   /** The spendable ALGO held at the escrow address (total minus the minimum balance). */

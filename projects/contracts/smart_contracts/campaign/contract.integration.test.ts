@@ -4,12 +4,11 @@ import { algorandFixture } from '@algorandfoundation/algokit-utils/testing'
 import type { Arc56Contract } from '@algorandfoundation/algokit-utils/types/app-arc56'
 import type { AppClient } from '@algorandfoundation/algokit-utils/types/app-client'
 import { AppFactory } from '@algorandfoundation/algokit-utils/types/app-factory'
-import type { AppCreateMethodCall } from '@algorandfoundation/algokit-utils/types/composer'
 import algosdk from 'algosdk'
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
-import { PaddedTree, leafHash, siblingsFor } from '../merkle/tree'
+import { FANOUT, WideTree, leafHash, siblingsFor } from '../merkle/tree'
 
 /**
  * LocalNet integration tests: deploy the compiled Campaign TEAL to a live algod and exercise the full lifecycle end-to-end, checking every
@@ -21,11 +20,13 @@ import { PaddedTree, leafHash, siblingsFor } from '../merkle/tree'
 // --- protocol / contract constants (see docs/campaign.md "Boxes & minimum balance") ---
 const ALGO = 1_000_000n // microAlgos in one ALGO
 const BASE = 100_000n // network-wide account base minimum balance
-const FRONTIER_MBR = 2_500n + 400n * (1n + 512n) // 207,700 µA: the frontier box ('f' + 512-byte value)
-const MIN_DEPOSIT = 1_970_500n // creator's storage deposit (base + frontier + 4 shards)
-const CREATOR_FLOOR = 100_000n + 28_500n * 6n + 50_000n * 4n // 471,000 µA: app base + global-state schema carried on the creator
+const FRONTIER_MBR = 2_500n + 400n * (1n + 1344n) // 540,500 µA: the frontier box ('f' + 1344-byte value)
+const SHARD_MBR = 2_500n + 400n * (9n + 1024n) // 415,700 µA: one spent shard ('s' + 8-byte key, 1024-byte value)
+const MIN_DEPOSIT = 100_000n + FRONTIER_MBR + 4n * SHARD_MBR // base + frontier + 4 shards
+// 571,000 µA: app base + global-state schema (6 ints + 4 bytes) + one extra program page, carried on the creator.
+const CREATOR_FLOOR = 100_000n + 28_500n * 6n + 50_000n * 4n + 100_000n
 const TXN_FEE = 1_000n
-const TREE_HEIGHT = 15
+const TREE_HEIGHT = 5
 
 describe('Campaign (localnet)', () => {
   const fixture = algorandFixture()
@@ -33,7 +34,7 @@ describe('Campaign (localnet)', () => {
   let appSpec: Arc56Contract
 
   // The reference tree mirrors the contract's on-chain tree; proofs for refund/cancel are generated from it.
-  let tree: PaddedTree
+  let tree: WideTree
   let leaves: Uint8Array[]
 
   beforeAll(async () => {
@@ -43,7 +44,7 @@ describe('Campaign (localnet)', () => {
   })
 
   beforeEach(() => {
-    tree = new PaddedTree(TREE_HEIGHT)
+    tree = new WideTree(FANOUT, TREE_HEIGHT)
     leaves = []
   })
 
@@ -96,33 +97,29 @@ describe('Campaign (localnet)', () => {
   async function createCampaign(creatorAddr: string, title: string, goal: bigint) {
     const deadline = (await latestBlockTimestamp()) + 30n
     const factory = new AppFactory({ appSpec, algorand, defaultSender: creatorAddr })
-
-    // The deposit must land in the escrow (the app address) in the same group as create, but that address is only
-    // known once the create transaction is built. Build it first, derive the address, then submit create + deposit.
-    const createParams = await factory.params.create({
-      method: 'create(byte[],byte[],uint64,uint64,pay)void',
-      args: [new TextEncoder().encode(title), new TextEncoder().encode('ipfs://test'), goal, deadline],
-      sender: creatorAddr,
-    })
-    const builtCreate = await algorand.createTransaction.appCreateMethodCall(createParams as AppCreateMethodCall)
-    const createTxn = builtCreate.transactions[0]
-    if (createTxn === undefined) throw new Error('expected a create transaction')
-    const appId = BigInt(`0x${Buffer.from(algosdk.decodeAddress(createTxn.txID()).publicKey).toString('hex')}`)
-    const escrow = algosdk.getApplicationAddress(appId)
-
-    const deposit = await algorand.createTransaction.payment({
-      sender: creatorAddr,
-      receiver: escrow,
-      amount: microAlgos(MIN_DEPOSIT),
-    })
-
     const { appClient } = await factory.send.create({
-      method: 'create(byte[],byte[],uint64,uint64,pay)void',
-      args: [new TextEncoder().encode(title), new TextEncoder().encode('ipfs://test'), goal, deadline, deposit],
+      method: 'create(byte[],byte[],uint64,uint64)void',
+      args: [new TextEncoder().encode(title), new TextEncoder().encode('ipfs://test'), goal, deadline],
       sender: creatorAddr,
       suppressLog: true,
     })
     return appClient
+  }
+
+  /**
+   * The creator funds the escrow's storage deposit via `fund()`.
+   *
+   * @param appClient The deployed campaign client.
+   * @param creatorAddr The creator's address.
+   * @param amount Deposit amount in microAlgos.
+   */
+  async function fundAs(appClient: AppClient, creatorAddr: string, amount: bigint) {
+    const payment = await algorand.createTransaction.payment({
+      sender: creatorAddr,
+      receiver: appClient.appAddress,
+      amount: microAlgos(amount),
+    })
+    await appClient.send.call({ method: 'fund(pay)void', args: [payment], sender: creatorAddr, suppressLog: true })
   }
 
   /**
@@ -145,19 +142,71 @@ describe('Campaign (localnet)', () => {
     return tree.append(leaf)
   }
 
-  function proofFor(index: number): Uint8Array[] {
-    return siblingsFor(leaves, TREE_HEIGHT, index)
+  function proofFor(index: number): Uint8Array {
+    return Buffer.concat(siblingsFor(leaves, FANOUT, TREE_HEIGHT, index))
   }
 
   async function refundAs(appClient: AppClient, backerAddr: string, index: number, amount: bigint) {
     await appClient.send.call({
-      method: 'refund(byte[][],uint64,uint64)void',
+      method: 'refund(byte[],uint64,uint64)void',
       args: [proofFor(index), index, amount],
       sender: backerAddr,
       extraFee: (1000).microAlgo(),
       suppressLog: true,
     })
   }
+
+  async function cancelAs(appClient: AppClient, backerAddr: string, index: number, amount: bigint) {
+    await appClient.send.call({
+      method: 'cancelPledge(byte[],uint64,uint64)void',
+      args: [proofFor(index), index, amount],
+      sender: backerAddr,
+      extraFee: (1000).microAlgo(),
+      suppressLog: true,
+    })
+  }
+
+  test('cancelPledge happy path: a backer withdraws their pledge before the deadline', async () => {
+    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const appClient = await createCampaign(creator.addr.toString(), 'Cancel me', (10).algo().microAlgo)
+    await fundAs(appClient, creator.addr.toString(), MIN_DEPOSIT)
+
+    const index = await pledgeAs(appClient, backer.addr.toString(), ALGO)
+
+    const before = await accountInfo(backer.addr.toString())
+    await cancelAs(appClient, backer.addr.toString(), index, ALGO)
+    const after = await accountInfo(backer.addr.toString())
+
+    // The full pledge is returned, minus the app-call + inner-payment fees.
+    expect(after.balance - before.balance).toEqual(ALGO - 2n * TXN_FEE)
+
+    // A second cancel of the same leaf fails (already spent).
+    await expect(cancelAs(appClient, backer.addr.toString(), index, ALGO)).rejects.toThrow(/already spent/)
+  })
+
+  test('large campaign: 10 backers pledge and refund within the opcode budget', { timeout: 60_000 }, async () => {
+    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const appClient = await createCampaign(creator.addr.toString(), 'Big campaign', (1_000).algo().microAlgo)
+    await fundAs(appClient, creator.addr.toString(), MIN_DEPOSIT)
+
+    // 10 backers cross the first carry point (the 8th backer fills a level and merges it into the next).
+    const backers = await Promise.all(
+      Array.from({ length: 10 }, () => fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })),
+    )
+
+    const indices: { backer: (typeof backers)[number]; index: number }[] = []
+    for (const backer of backers) {
+      const index = await pledgeAs(appClient, backer.addr.toString(), ALGO)
+      indices.push({ backer, index })
+    }
+
+    // Fast-forward and refund everyone — each refund exercises the full proof-verification chain.
+    await advanceTime(60)
+    for (const { backer, index } of indices) {
+      await refundAs(appClient, backer.addr.toString(), index, ALGO)
+    }
+  })
 
   test('funded flow: 3 backers pledge, creator claims, creator deletes and recovers everything', async () => {
     const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
@@ -171,11 +220,14 @@ describe('Campaign (localnet)', () => {
 
     const escrow = appClient.appAddress.toString()
 
-    // After create: the escrow holds the deposit; the creator carries the sponsorship floor on their own account.
+    // After create: the escrow is empty; the creator carries the sponsorship floor on their own account.
     const creatorAfterCreate = await accountInfo(creator.addr.toString())
     const escrowAfterCreate = await accountInfo(escrow)
-    expect(escrowAfterCreate.balance).toEqual(MIN_DEPOSIT)
+    expect(escrowAfterCreate.balance).toEqual(0n)
     expect(creatorAfterCreate.minBalance).toEqual(100_000n + CREATOR_FLOOR)
+
+    // The creator funds the storage deposit.
+    await fundAs(appClient, creator.addr.toString(), MIN_DEPOSIT)
 
     // Three backers pledge 1 ALGO each.
     for (const backer of backers) {
@@ -215,9 +267,9 @@ describe('Campaign (localnet)', () => {
     expect(creatorAfterDelete.balance - creatorBeforeDelete.balance).toEqual(BASE + FRONTIER_MBR - 2n * TXN_FEE)
     expect(creatorAfterDelete.minBalance).toEqual(100_000n) // floor freed
 
-    // Net: the creator recovered the deposit plus all 3 ALGO pledged, paying only fees.
+    // Net: the creator recovered the deposit plus all 3 ALGO pledged, paying only fees (create + fund + claim + delete).
     const creatorFinal = await accountInfo(creator.addr.toString())
-    expect(creatorFinal.balance).toEqual(10n * ALGO + 3n * ALGO - 6n * TXN_FEE)
+    expect(creatorFinal.balance).toEqual(10n * ALGO + 3n * ALGO - 7n * TXN_FEE)
   })
 
   test('failed flow: 3 backers pledge, all refund in full, creator deletes to recover the deposit', async () => {
@@ -229,6 +281,7 @@ describe('Campaign (localnet)', () => {
     ])
     const backers = [backer1, backer2, backer3]
     const appClient = await createCampaign(creator.addr.toString(), 'Failed campaign', (10).algo().microAlgo)
+    await fundAs(appClient, creator.addr.toString(), MIN_DEPOSIT)
 
     const escrow = appClient.appAddress.toString()
 
@@ -271,6 +324,7 @@ describe('Campaign (localnet)', () => {
     const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const backer2 = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const appClient = await createCampaign(creator.addr.toString(), 'Guard me', (10).algo().microAlgo)
+    await fundAs(appClient, creator.addr.toString(), MIN_DEPOSIT)
 
     // 1. Open campaign cannot be deleted.
     await expect(

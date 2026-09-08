@@ -55,7 +55,7 @@ this file documents the contract as built.
 
 | Box | Key | Value | Meaning |
 | --- | --- | --- | --- |
-| `frontier` | `'f'` | 512 `bytes` | The MMR frontier: completed-subtree roots, one 32-byte slot per height |
+| `frontier` | `'f'` | 1344 `bytes` | The MMR frontier: completed-subtree roots, one 32-byte slot each (at most 42) |
 | `spent` (map) | shard index | 1024 `bytes` | Sharded spent bitmap, one bit per leaf index |
 
 The `frontier` box holds the incremental tree's completed subtrees (empty slots are
@@ -185,7 +185,7 @@ Boxes are not free. Every box raises the app account's minimum balance by
 `2500 + 400 × (key bytes + value bytes)` µA, and that ALGO is locked in the escrow
 for as long as the box exists. The new contract uses **fixed** boxes:
 
-- the 512-byte `frontier` box → **207,700 µA** of MBR;
+- the 1344-byte `frontier` box → **540,500 µA** of MBR;
 - each 1024-byte spent shard → **415,700 µA** of MBR (up to 4 shards at 32,768 backers).
 
 A refund does **not** free any of this — it only flips a bit in the spent bitmap;
@@ -195,10 +195,10 @@ refund pool:
 
 | Event (3 backers × 1 ALGO, failed) | Escrow balance | min balance | Spendable |
 | --- | --- | --- | --- |
-| pledge × 3 | 3.00 | 0.31 (base + frontier) | 2.69 |
-| A refunds (creates shard 0) | 2.00 | 0.72 (+ shard) | 1.28 |
-| B refunds | 1.00 | 0.72 | 0.28 |
-| **C refunds** | **fails** — needs 1.00, only 0.28 left | | |
+| pledge × 3 | 3.00 | 0.64 (base + frontier) | 2.36 |
+| A refunds (creates shard 0) | 2.00 | 1.06 (+ shard) | 0.94 |
+| B refunds | 1.00 | 1.06 | 0.00 |
+| **C refunds** | **fails** — needs 1.00, none left | | |
 
 The last backer could not be refunded. The old per-backer-box design sidestepped
 this because each refund *deleted* the backer's box and freed its MBR; the new
@@ -207,7 +207,7 @@ design has no per-backer box to delete.
 ### The fix: the creator fronts the storage
 
 `create()` requires the creator to pay a **storage deposit** — at least
-`MIN_DEPOSIT = 1,970,500 µA` (≈ 1.97 ALGO), the worst-case fixed MBR (0.1 base +
+`MIN_DEPOSIT = 2,303,300 µA` (≈ 2.30 ALGO), the worst-case fixed MBR (0.1 base +
 frontier + all four shards) — into the escrow. The deposit is recorded in global
 state, is **not** counted in `raised`, and is returned to the creator.
 
@@ -257,11 +257,11 @@ the backer count:
 
 | Box | Size | MBR |
 | --- | --- | --- |
-| `frontier` | 512 bytes | `2500 + 400 × 513` = 207,700 µA |
+| `frontier` | 1344 bytes | `2500 + 400 × 1345` = 540,500 µA |
 | `spent` shard (× up to 4) | 1024 bytes | `2500 + 400 × 1033` = 415,700 µA each |
 
-A campaign at full capacity (32,768 backers) locks at most 0.1 + 0.21 + 4 × 0.42 ≈
-1.97 ALGO of box MBR, regardless of backer count — that is what `MIN_DEPOSIT`
+A campaign at full capacity (32,768 backers) locks at most 0.1 + 0.54 + 4 × 0.42 ≈
+2.30 ALGO of box MBR, regardless of backer count — that is what `MIN_DEPOSIT`
 covers, and it is paid by the creator, not the backers.
 
 ### Who pays for it
@@ -313,10 +313,12 @@ covers, and it is paid by the creator, not the backers.
    bypasses `pledge()`. On success `claim()` pays `balance − minBalance`, so stray
    ALGO goes to the creator; on failure it sits above the deposit and blocks
    `delete()` until it is drained (it is never in a leaf). Documented and accepted.
-3. **Opcode budget.** The tree is fixed at height 15 (`sha256`, 35 opcode cost); a
-   pledge (append + fold) and a refund (proof verify) are each `h + 1 = 16` hashes
-   = 560 cost, inside the 700-cost app-call budget. A binary tree cannot go much
-   higher; see [`commitment-redesign.md`](commitment-redesign.md) for the analysis.
+3. **Opcode budget.** The tree is a fanout-8 tree at height 5 (`sha256`, 35 opcode
+   cost); a pledge (append + fold) and a refund (proof verify) are each ~5 hashes,
+   well inside the 700-cost app-call budget. A binary tree could not fit at this
+   capacity — its per-level empty-padding dominated the budget (measured on
+   LocalNet against AVM v11). See
+   [`commitment-redesign.md`](commitment-redesign.md) for the analysis.
 4. **Re-pledge → cancel → re-pledge.** Cancelling marks one leaf spent and decrements
    `raised`; a later pledge appends a fresh leaf. The UI must present the *sum* of a
    backer's live leaves.
