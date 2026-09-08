@@ -1,7 +1,11 @@
 import { microAlgos } from '@algorandfoundation/algokit-utils'
 import type { TransactionSigner } from 'algosdk'
+import { decodeAddress } from 'algosdk'
 import { CampaignClient, CampaignFactory } from '../contracts/Campaign'
 import { algorand, waitForIndexerCatchUp, waitForIndexerRound } from './algorand'
+import type { LiveLeaf } from './campaign'
+import { fetchPledgesForBacker } from './campaign'
+import { leafHash, proofBytes } from './merkle'
 
 /**
  * Write path: assembles + signs transactions through the generated `CampaignClient`. Each helper takes the wallet's signer/address so the
@@ -13,6 +17,10 @@ export interface WalletSession {
   signer: TransactionSigner
 }
 
+// The creator fronts the escrow's fixed storage MBR (app base + frontier box + all four spent shards) so backers' pledges stay fully
+// refundable. See docs/campaign.md "The storage deposit". Matches MIN_DEPOSIT in the contract integration tests.
+const STORAGE_DEPOSIT_MICRO_ALGOS = 2_303_300n
+
 function clientFor(appId: bigint, session: WalletSession): CampaignClient {
   return new CampaignClient({
     algorand,
@@ -23,7 +31,7 @@ function clientFor(appId: bigint, session: WalletSession): CampaignClient {
 }
 
 /**
- * Deploy a new campaign. Returns the new app id and escrow address.
+ * Deploy a new campaign and fund its storage deposit. Returns the new app id and escrow address.
  *
  * @param session Wallet session holding the signer and address.
  * @param title Short campaign title (stored on-chain).
@@ -54,10 +62,23 @@ export async function createCampaign(
     },
   })
 
+  // The deposit is a separate step now: without it the first pledge cannot create the frontier box (insufficient balance).
+  const appId = sendResult.result.appId
+  const client = clientFor(appId, session)
+  await client.send.fund({
+    args: {
+      payment: await algorand.createTransaction.payment({
+        sender: session.address,
+        receiver: client.appAddress,
+        amount: microAlgos(STORAGE_DEPOSIT_MICRO_ALGOS),
+      }),
+    },
+  })
+
   // The generated create result doesn't expose the confirmation round, so wait for the indexer to catch up to algod's current tip.
   await waitForIndexerCatchUp()
 
-  return { appId: sendResult.result.appId, appAddress: sendResult.result.appAddress.toString() }
+  return { appId, appAddress: sendResult.result.appAddress.toString() }
 }
 
 /**
@@ -104,26 +125,58 @@ export async function claim(appId: bigint, session: WalletSession): Promise<void
 }
 
 /**
- * Refund the caller's pledge (backer, after deadline, goal not reached).
+ * Reconstruct the campaign's tree and the backer's live leaves, then hash every leaf so proofs can be generated.
  *
- * Not implemented yet: the Merkle redesign requires a proof (index + amount + siblings) rebuilt client-side from the
- * indexer. Stubbed to keep the frontend type-checking against the new ABI; see docs/roadmap.md.
- *
- * @param _appId Campaign application id.
- * @param _session Wallet session holding the signer and address.
+ * @param appId Campaign application id.
+ * @param address The backer's address.
+ * @returns The leaf hashes (in slot order) and the backer's live leaves.
  */
-export async function refund(_appId: bigint, _session: WalletSession): Promise<void> {
-  await Promise.reject(new Error('refund is not implemented yet — Merkle proof generation is pending'))
+async function prepareProofs(appId: bigint, address: string): Promise<{ leafHashes: Uint8Array[]; live: LiveLeaf[] }> {
+  const { leaves, live } = await fetchPledgesForBacker(appId, address)
+  if (live.length === 0) {
+    throw new Error('no live pledge to act on')
+  }
+  const leafHashes = await Promise.all(leaves.map((leaf) => leafHash(decodeAddress(leaf.address).publicKey, leaf.amount)))
+  return { leafHashes, live }
 }
 
 /**
- * Withdraw the caller's pledge before the deadline (backer, while the campaign is still open).
+ * Refund the caller's pledge (backer, after deadline, goal not reached). Each live leaf is refunded with its own Merkle proof.
  *
- * Not implemented yet: see `refund` — it needs the same client-side Merkle proof generation.
- *
- * @param _appId Campaign application id.
- * @param _session Wallet session holding the signer and address.
+ * @param appId Campaign application id.
+ * @param session Wallet session holding the signer and address.
  */
-export async function cancelPledge(_appId: bigint, _session: WalletSession): Promise<void> {
-  await Promise.reject(new Error('cancelPledge is not implemented yet — Merkle proof generation is pending'))
+export async function refund(appId: bigint, session: WalletSession): Promise<void> {
+  const { leafHashes, live } = await prepareProofs(appId, session.address)
+  const client = clientFor(appId, session)
+
+  for (const leaf of live) {
+    const proof = await proofBytes(leafHashes, leaf.index)
+    const result = await client.send.refund({ args: { proof, index: leaf.index, amount: leaf.amount }, extraFee: microAlgos(1000) })
+    const confirmedRound = result.confirmation.confirmedRound
+    if (confirmedRound !== undefined) {
+      await waitForIndexerRound(confirmedRound)
+    }
+  }
+}
+
+/**
+ * Withdraw the caller's pledge before the deadline (backer, while the campaign is still open). Each live leaf is withdrawn with its own
+ * Merkle proof.
+ *
+ * @param appId Campaign application id.
+ * @param session Wallet session holding the signer and address.
+ */
+export async function cancelPledge(appId: bigint, session: WalletSession): Promise<void> {
+  const { leafHashes, live } = await prepareProofs(appId, session.address)
+  const client = clientFor(appId, session)
+
+  for (const leaf of live) {
+    const proof = await proofBytes(leafHashes, leaf.index)
+    const result = await client.send.cancelPledge({ args: { proof, index: leaf.index, amount: leaf.amount }, extraFee: microAlgos(1000) })
+    const confirmedRound = result.confirmation.confirmedRound
+    if (confirmedRound !== undefined) {
+      await waitForIndexerRound(confirmedRound)
+    }
+  }
 }

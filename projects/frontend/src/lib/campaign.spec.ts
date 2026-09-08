@@ -1,6 +1,6 @@
 import algosdk from 'algosdk'
 import { describe, expect, it } from 'vitest'
-import { decodeGlobalState, decodePledgeBoxValue, deriveStatus, isCampaignApp, pledgeBoxName, toCampaignViewModel } from './campaign'
+import { decodeGlobalState, deriveStatus, isCampaignApp, toCampaignViewModel } from './campaign'
 
 const ZERO_ADDRESS = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ'
 
@@ -33,12 +33,13 @@ function campaignApp(overrides: { status?: bigint; raised?: bigint } = {}): algo
     kv('deadline', tealUint(2_000n)),
     kv('raised', tealUint(overrides.raised ?? 5_000_000n)),
     kv('status', tealUint(overrides.status ?? 0n)),
+    kv('leafCount', tealUint(0n)),
   ]
   return new algosdk.indexerModels.Application({ id: 42n, params: appParams(globalState) })
 }
 
 describe('decodeGlobalState', () => {
-  it('decodes creator, title, metadata uri, goal, deadline, raised, and status', () => {
+  it('decodes creator, title, metadata uri, goal, deadline, raised, status, and leafCount', () => {
     const app = campaignApp()
     const state = decodeGlobalState(app)
     expect(state.creator).toBe(ZERO_ADDRESS)
@@ -48,6 +49,7 @@ describe('decodeGlobalState', () => {
     expect(state.deadline).toBe(2_000n)
     expect(state.raised).toBe(5_000_000n)
     expect(state.status).toBe(0n)
+    expect(state.leafCount).toBe(0n)
   })
 
   it('ignores unknown keys', () => {
@@ -74,6 +76,22 @@ describe('decodeGlobalState', () => {
 describe('isCampaignApp', () => {
   it('returns true when all known keys are present', () => {
     expect(isCampaignApp(campaignApp())).toBe(true)
+  })
+
+  it('returns false when the leafCount key is missing', () => {
+    const app = new algosdk.indexerModels.Application({
+      id: 1n,
+      params: appParams([
+        kv('creator', tealBytes(algosdk.decodeAddress(ZERO_ADDRESS).publicKey)),
+        kv('title', tealBytes(new TextEncoder().encode('t'))),
+        kv('metadataUri', tealBytes(new TextEncoder().encode('m'))),
+        kv('goal', tealUint(1n)),
+        kv('deadline', tealUint(2n)),
+        kv('raised', tealUint(3n)),
+        kv('status', tealUint(0n)),
+      ]),
+    })
+    expect(isCampaignApp(app)).toBe(false)
   })
 
   it('returns false for unrelated apps', () => {
@@ -119,22 +137,6 @@ describe('deriveStatus', () => {
 
   it('returns open while before the deadline', () => {
     expect(deriveStatus(10n, 10n, 3_000n, 0n, 2_000n)).toBe('open')
-  })
-})
-
-describe('pledgeBoxName', () => {
-  it('prefixes with "p" and appends the 32-byte address', () => {
-    const name = pledgeBoxName(ZERO_ADDRESS)
-    expect(name.length).toBe(33)
-    expect(name[0]).toBe('p'.charCodeAt(0))
-    expect(name.slice(1)).toEqual(algosdk.decodeAddress(ZERO_ADDRESS).publicKey)
-  })
-})
-
-describe('decodePledgeBoxValue', () => {
-  it('decodes a big-endian uint64', () => {
-    const value = new Uint8Array([0, 0, 0, 0, 0, 0, 1, 0]) // 256
-    expect(decodePledgeBoxValue(value)).toBe(256n)
   })
 })
 

@@ -49,7 +49,7 @@ this file documents the contract as built.
 | `status` | `uint64` | `0` Open, `1` Failed, `2` Claimed |
 | `root` | `bytes` (32) | Merkle root over all pledge leaves |
 | `leafCount` | `uint64` | Number of leaves appended so far (the backer count) |
-| `deposit` | `uint64` | Storage deposit the creator fronts at `create()` (see below) |
+| `deposit` | `uint64` | Storage deposit the creator fronts via `fund()` (see below) |
 
 ### Boxes
 
@@ -66,7 +66,7 @@ each) so a single refund touches at most one box, under the box-I/O budget.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Open: create(..., deposit)
+    [*] --> Open: create() + fund()
     Open --> Open: pledge()
     Open --> Claimed: claim() — deadline passed & raised >= goal
     Open --> Failed: refund() — deadline passed & raised < goal
@@ -99,18 +99,25 @@ submitted by a caller; none of it is automatic.
 
 ## Methods & guards
 
-### `create(title, metadataUri, goal, deadline, deposit)`
+### `create(title, metadataUri, goal, deadline)`
 
 - `@abimethod({ onCreate: 'require' })` — only runs in the app-create transaction.
 - Guards: must be app-create (`applicationId == 0`), `title` non-empty, `title` and
   `metadataUri` at most 128 bytes each (the AVM cap for a bytes global-state value),
   `goal > 0`, deadline in the future.
-- Guards on `deposit` (a `gtxn.PaymentTxn`): it must come from `Txn.sender` (the
-  creator), be paid to the escrow, and be at least **1,970,500 µA** (`MIN_DEPOSIT`).
 - Sets `creator`, `title`, `metadataUri`, `goal`, `deadline`, `raised = 0`,
-  `status = Open`, `root = EMPTY[15]` (the empty tree), `leafCount = 0`, and
-  `deposit = deposit.amount`.
+  `status = Open`, `root = EMPTY[5]` (the empty fanout-8 tree), `leafCount = 0`,
+  and `deposit = 0`.
 - `title` is immutable; `metadataUri` is an off-chain pointer (description/image/category).
+
+### `fund(payment)`
+
+- Creator only, while the campaign is `Open`.
+- Takes a `gtxn.PaymentTxn` from the caller to the escrow and accumulates it into
+  `deposit`. There is no on-chain minimum — the recommended deposit is the
+  worst-case fixed MBR (see [The storage deposit](#the-storage-deposit)).
+- `deposit` is **not** counted in `raised` and is returned to the creator by
+  `delete()`.
 
 ### `pledge(payment)`
 
@@ -206,10 +213,12 @@ design has no per-backer box to delete.
 
 ### The fix: the creator fronts the storage
 
-`create()` requires the creator to pay a **storage deposit** — at least
-`MIN_DEPOSIT = 2,303,300 µA` (≈ 2.30 ALGO), the worst-case fixed MBR (0.1 base +
-frontier + all four shards) — into the escrow. The deposit is recorded in global
-state, is **not** counted in `raised`, and is returned to the creator.
+After `create()`, the creator calls **`fund()`** to pay a **storage deposit**
+into the escrow — the recommended amount is the worst-case fixed MBR
+(`2,303,300 µA` ≈ 2.30 ALGO: 0.1 base + frontier + all four shards). The deposit
+is recorded in global state, is **not** counted in `raised`, and is returned to
+the creator by `delete()`. The frontend funds this in the same `createCampaign`
+action, so the two on-chain steps are one user action.
 
 With the deposit covering the storage, the escrow always holds
 `deposit + pledged` while its minimum balance is at most `deposit`, so backers'
@@ -261,8 +270,8 @@ the backer count:
 | `spent` shard (× up to 4) | 1024 bytes | `2500 + 400 × 1033` = 415,700 µA each |
 
 A campaign at full capacity (32,768 backers) locks at most 0.1 + 0.54 + 4 × 0.42 ≈
-2.30 ALGO of box MBR, regardless of backer count — that is what `MIN_DEPOSIT`
-covers, and it is paid by the creator, not the backers.
+2.30 ALGO of box MBR, regardless of backer count — that is the recommended
+`fund()` deposit, and it is paid by the creator, not the backers.
 
 ### Who pays for it
 

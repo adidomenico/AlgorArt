@@ -44,8 +44,9 @@ projects/frontend/src/
 │       └── Nav.tsx                 # brand, wallet button, address badge
 ├── lib/                      # shared services
 │   ├── algorand.ts           # lazy AlgorandClient + IndexerClient singletons
-│   ├── campaign.ts           # indexer -> CampaignViewModel mapping
-│   ├── transaction.ts        # create/pledge/claim/refund/cancelPledge send helpers
+│   ├── campaign.ts           # indexer -> CampaignViewModel mapping + leaf reconstruction
+│   ├── merkle.ts             # fanout-8 tree math (leafHash, proofs, verify)
+│   ├── transaction.ts        # create/fund/pledge/claim/refund/cancelPledge send helpers
 │   └── format.ts             # microAlgo / deadline formatting
 ├── contracts/                # generated typed clients (gitignored)
 │   └── CampaignClient.ts
@@ -72,8 +73,9 @@ route structure grows.
 The indexer exposes each campaign as an `Application` (`id` + `params`). The
 contract's global state arrives as `params.global-state`: a list of
 `{ key, value }` pairs where each key is the base64 of the UTF-8 key name
-(`creator`, `goal`, `deadline`, `raised`, `status`). A backer's pledge amount
-lives in a box, fetched separately (see [reads](#reads-indexer)).
+(`creator`, `goal`, `deadline`, `raised`, `status`, `leafCount`). A backer's
+pledge amount is not stored per-backer on-chain — it is reconstructed from the
+pledge leaves of the Merkle tree (see [reads](#reads-indexer)).
 
 ```ts
 // lib/campaign.ts — the shape the UI renders
@@ -124,13 +126,24 @@ const indexer = new algosdk.Indexer(token, server, port)
   apps whose `global-state` contains the `Campaign` keys. (There is no app-name
   filter, so the filter is by the presence of the known global-state keys.)
 - **One campaign** — `indexer.lookupApplications(appId).do()` for the global
-  state, plus `indexer.searchForApplicationBoxes(appId).do()` for backer boxes.
-- **My pledge** — decode the box named by the `p` prefix + the connected
-  address; absent box means no pledge yet.
+  state.
+- **Pledge leaves** — reconstructed from `searchForTransactions`: the pledge
+  `appl` calls to the campaign (filtered by sender != creator and matched to the
+  payment in their group) yield the ordered leaf list `(address, amount)`.
+- **Spent bitmap** — read the `spent` shard boxes (key `'s'` + shard index) to
+  tell which leaves are already spent.
+- **My pledge** — the sum of the connected backer's live (not-yet-spent) leaves;
+  no live leaves means no pledge yet.
 
 Global-state keys decode as: `creator` (bytes → address),
-`goal`/`deadline`/`raised`/`status` (uint). The contract's `status` mapping is
-`0` Open, `1` Failed, `2` Claimed.
+`goal`/`deadline`/`raised`/`status`/`leafCount` (uint). The contract's `status`
+mapping is `0` Open, `1` Failed, `2` Claimed.
+
+The tree math lives in `lib/merkle.ts` (a port of the contract's
+`sha256` fanout-8 tree): `leafHash`, `siblingsFor`, `proofBytes`, and `verify`
+produce the `(proof, index, amount)` a backer submits to `refund`/`cancelPledge`.
+The frontend is the "survivable" fallback of the backend proof endpoint — it
+rebuilds the whole tree from the indexer when a proof is needed.
 
 ## Writes (generated client)
 
@@ -147,7 +160,7 @@ const algorand = AlgorandClient.fromClients({ algod })   // from lib/algorand.ts
 const client = new CampaignClient({ algorand, appId, defaultSender: activeAddress, defaultSigner: transactionSigner })
 ```
 
-### create — deploy a campaign
+### create — deploy a campaign and fund its storage deposit
 
 ```ts
 const factory = new CampaignFactory({ algorand, defaultSender: activeAddress, defaultSigner: transactionSigner })
@@ -155,6 +168,24 @@ const { appClient, result } = await factory.send.create.create({
   args: { title: new TextEncoder().encode(title), metadataUri: new TextEncoder().encode(metadataUri), goal: goalMicroAlgos, deadline: deadlineUnixSeconds },
 })
 // result.appId / result.appAddress identify the new campaign
+```
+
+`create()` is followed by a separate `fund()` call: the creator pays the escrow's
+storage deposit so the first pledge can create the frontier box (see
+[`campaign.md`](campaign.md) → "The storage deposit"). The frontend funds the
+recommended worst-case deposit (≈ 2.30 ALGO) in the same `createCampaign`
+helper, so the two steps are one user action.
+
+```ts
+await client.send.fund({
+  args: {
+    payment: await algorand.createTransaction.payment({
+      sender: activeAddress,
+      receiver: client.appAddress,       // the escrow
+      amount: microAlgos(deposit),
+    }),
+  },
+})
 ```
 
 ### pledge — payment + app call in one atomic group
@@ -178,13 +209,29 @@ The client adds the payment transaction to the group, assigns it as the ABI
 `pay` argument, and the wallet signs the whole group. The contract then checks
 `sender == caller`, `receiver == escrow`, and `amount > 0`.
 
-### claim / refund / cancelPledge — bare no-arg calls
+### claim — bare no-arg call
 
 ```ts
 await client.send.claim({ args: [], extraFee: microAlgos(1000) })
-await client.send.refund({ args: [], extraFee: microAlgos(1000) })
-await client.send.cancelPledge({ args: [], extraFee: microAlgos(1000) })
 ```
+
+### refund / cancelPledge — Merkle-proof calls
+
+`refund` and `cancelPledge` take `(proof, index, amount)`. The frontend
+reconstructs the campaign's pledge leaves from the indexer, picks the caller's
+live leaves, and generates a proof for each one with `lib/merkle.ts`:
+
+```ts
+const { leaves, live } = await fetchPledgesForBacker(appId, address)   // lib/campaign.ts
+const leafHashes = await Promise.all(leaves.map((l) => leafHash(decodeAddress(l.address).publicKey, l.amount)))
+for (const leaf of live) {
+  const proof = await proofBytes(leafHashes, leaf.index)
+  await client.send.refund({ args: { proof, index: leaf.index, amount: leaf.amount }, extraFee: microAlgos(1000) })
+  // …or client.send.cancelPledge({ args: { proof, index, amount }, extraFee: microAlgos(1000) })
+}
+```
+
+A backer with several live leaves (re-pledges) gets one call per leaf.
 
 Each issues an inner payment (to the creator / the backer / the backer), and the
 contract hard-codes the inner payment's own fee to `0` (see the compiled TEAL:
@@ -278,11 +325,12 @@ ones live in [`campaign.md`](campaign.md) → "Known edge cases".
   vice versa); check the wallet's active network against `VITE_ALGOD_NETWORK`.
 - **Fractional ALGO rounding.** `parseAlgoToMicroAlgos` should reject or round
   sub-microAlgo inputs (6+ decimal places) predictably.
-- **Batch sweep correctness.** "Refund all" must fetch live box addresses from the
-  indexer, dedupe, and never pass an address twice — a bad entry reverts the whole
-  `refundBatch` call.
-- **Suppress pledge readout on `claimed`.** `claim()` leaves pledge boxes behind, so
-  the detail view must not show "Your pledge: X ALGO" once the campaign is `claimed`.
+- **Batch sweep correctness.** "Refund all" must fetch live leaves from the
+  indexer, dedupe, and never refund a spent leaf — a bad proof reverts the whole
+  call.
+- **Suppress pledge readout on `claimed`.** `claim()` leaves the leaves in place,
+  so the detail view must not show "Your pledge: X ALGO" once the campaign is
+  `claimed`.
 
 ## Wallet integration
 
@@ -310,10 +358,13 @@ the generated `src/contracts/**` clients are excluded), with thresholds of
 90% across lines/branches/functions/statements:
 
 - `lib/format.ts` — ALGO/microAlgo conversion, deadline/countdown formatting.
-- `lib/campaign.ts` — global-state decoding, status derivation, pledge-box
-  name/value encoding, and the indexer-backed read helpers.
+- `lib/campaign.ts` — global-state decoding, status derivation, leaf/spent-bitmap
+  reconstruction, and the indexer-backed read helpers.
+- `lib/merkle.ts` — the fanout-8 tree math, checked against the contract's
+  empty-subtree constants and proof round-trips.
 - `lib/algorand.ts` / `lib/transaction.ts` — lazy client singletons and the
-  create/pledge/claim/refund send helpers (mocked at the `CampaignClient` boundary).
+  create/fund/pledge/claim/refund/cancelPledge send helpers (mocked at the
+  `CampaignClient` boundary).
 - `features/campaigns/*` — `CampaignList`, `CampaignCard`, `CampaignDetail`,
   `CreateCampaignForm`, `PledgeForm`.
 - `features/app/Nav`, `components/*` (ConnectWallet, Account, ErrorBoundary),
@@ -325,6 +376,5 @@ indexer/client services via `vi.mock`.
 ## Out of scope for now
 
 - Campaign metadata — implemented (hybrid, see [Campaign metadata](#campaign-metadata)); rich media/IPFS rendering is on the roadmap.
-- Cancel-before-deadline — on the roadmap (needs a contract change).
 - TestNet deployment — on the roadmap.
 - Backend / database — never; the indexer is the read model.
