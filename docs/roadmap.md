@@ -14,27 +14,16 @@ item links to the doc that has the details.
 
 - [x] **Setup** — AlgoKit workspace, toolchain, LocalNet sandbox, lint/format/type-check, CI.
 - [x] **Contract** — `create`/`pledge`/`claim`/`refund`/`cancelPledge` with full behavioral + integration tests.
+- [x] **Commitment redesign** — replaced per-backer boxes with an on-chain incremental
+      Merkle tree (root + 1-bit-per-backer spent bitmap) and a creator storage
+      deposit, so refunds/delete scale and the box-MBR residue is gone. See
+      [`campaign.md`](campaign.md) and [`commitment-redesign.md`](commitment-redesign.md).
 - [x] **Frontend core** — wallet connect (Pera/Defly), browse, create, pledge, claim/refund/cancel.
 
 ## Contract
 
 - [ ] **Decide `updateMetadata()` before any "final" deploy** — without it, `title`
       and `metadataUri` are immutable forever (see [`campaign.md`](campaign.md)).
-- [x] **`cancelPledge()`** — backer withdraws while the campaign is `Open`.
-- [x] **Guarded `delete(backers)`** — creator-only, settled only; deletes listed boxes
-      on a claimed campaign and closes the app account with `CloseRemainderTo`,
-      recovering the residue and freeing the creator's sponsorship floor. The base
-      0.1 ALGO is a sponsorship floor on the creator's account (not ALGO in the
-      escrow). A batched sweep for > 8 backers is deferred. See
-      [`campaign.md`](campaign.md).
-- [ ] **`refundBatch()`** — refund up to 8 backers in one permissionless call; loop until drained.
-- [ ] **Decide on `settle()`** — closes the zero-pledge-campaign gap (cosmetic; the UI already derives "failed").
-- [ ] **Implement the commitment redesign** — replace per-backer boxes with an
-      on-chain incremental Merkle tree (root + 1-bit-per-backer spent bitmap),
-      making refunds/delete scale and killing the box-MBR residue. See
-      [`commitment-redesign.md`](commitment-redesign.md).
-- [ ] **Verify `refundBatch` fits the opcode budget** — drop to 6–7 backers if it doesn't compile.
-- [ ] **Tests** for batch/re-pledge flows once the methods exist (see [`testing.md`](testing.md)).
 
 ## Frontend UX
 
@@ -64,7 +53,7 @@ The catalog is a minimal backend (API + DB) — see
 
 - [ ] **Minimal catalog backend** — API + DB storing one row per campaign (app id, creator, title, metadata URI, goal, deadline, status, outcome, raised, backer count), serving browse/detail pages for ended campaigns — see [`architecture.md`](architecture.md).
 - [ ] **Chain watcher** — observes the indexer and finalizes campaign records (created/pledged/claimed/refunded/deleted) into the catalog.
-- [ ] **Archive snapshot at finalization** — snapshot the outcome while pledge boxes still exist, before any app delete.
+- [ ] **Archive snapshot at finalization** — snapshot the outcome before any app delete.
 
 ## Testing
 

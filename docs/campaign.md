@@ -21,37 +21,59 @@ and the only applications that exist are campaigns. The compiled programs live i
 up stored and executed on-chain. The ARC-32/56 specs and the generated client are
 tooling-only and never go on-chain.
 
+## The Merkle-tree design
+
+Instead of a box per backer (the earlier design), the campaign commits every pledge
+to an **on-chain incremental Merkle tree**. A backer's pledge is a leaf
+`(address, amount)`; the tree root is stored in global state and updated on every
+pledge. A refund or cancel is proven with a **Merkle proof** against that root and
+double-spend is stopped by a 1-bit-per-leaf spent bitmap. This keeps the escrow's
+storage at a small fixed size regardless of how many people pledge, so refunds and
+deletion scale to tens of thousands of backers with no per-backer cleanup loop.
+
+The full design rationale is in [`commitment-redesign.md`](commitment-redesign.md);
+this file documents the contract as built.
+
 ## State
 
 ### Global state
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `creator` | `Account` | Campaign creator; the only account allowed to `claim()` |
+| `creator` | `Account` | Campaign creator; the only account allowed to `claim()` / `delete()` |
 | `title` | `bytes` | Short campaign title, fixed at `create()` |
 | `metadataUri` | `bytes` | URI of off-chain campaign metadata (ARC-3-style JSON blob) |
 | `goal` | `uint64` | Funding target, in microAlgos |
 | `deadline` | `uint64` | UNIX timestamp (seconds) after which the outcome is decided |
-| `raised` | `uint64` | Total microAlgos pledged so far |
+| `raised` | `uint64` | Total microAlgos pledged so far (sum of live, non-spent leaves) |
 | `status` | `uint64` | `0` Open, `1` Failed, `2` Claimed |
+| `root` | `bytes` (32) | Merkle root over all pledge leaves |
+| `leafCount` | `uint64` | Number of leaves appended so far (the backer count) |
+| `deposit` | `uint64` | Storage deposit the creator fronts at `create()` (see below) |
 
 ### Boxes
 
-| Map | Key | Value | Meaning |
+| Box | Key | Value | Meaning |
 | --- | --- | --- | --- |
-| `pledges` | backer address | `uint64` | That backer's pledged microAlgos |
+| `frontier` | `'f'` | 512 `bytes` | The MMR frontier: completed-subtree roots, one 32-byte slot per height |
+| `spent` (map) | shard index | 1024 `bytes` | Sharded spent bitmap, one bit per leaf index |
+
+The `frontier` box holds the incremental tree's completed subtrees (empty slots are
+32 zero bytes). The `spent` `BoxMap` is sharded into 1024-byte chunks (8192 leaves
+each) so a single refund touches at most one box, under the box-I/O budget.
 
 ## State machine
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Open: create(goal, deadline)
+    [*] --> Open: create(..., deposit)
     Open --> Open: pledge()
     Open --> Claimed: claim() — deadline passed & raised >= goal
     Open --> Failed: refund() — deadline passed & raised < goal
     Open --> Open: cancelPledge() — backer withdraws before deadline
     Failed --> Failed: refund() — remaining backers reclaim
-    Claimed --> [*]
+    Claimed --> [*]: delete()
+    Failed --> [*]: delete() — once all backers refunded
 ```
 
 ## Settlement is pull-based
@@ -60,34 +82,34 @@ Nothing runs automatically on Algorand: smart contracts execute only when someon
 submits a transaction. The `deadline` is a timestamp **guard**, not a trigger —
 there is no cron, scheduler, or "at deadline, settle" event.
 
-- **Successful campaign:** the deadline passes and nothing happens. The creator (or
-  anyone, if `claim()` were made permissionless) must call `claim()` for the payout
-  to execute.
+- **Successful campaign:** the deadline passes and nothing happens. The creator must
+  call `claim()` for the payout to execute.
 - **Failed campaign:** the deadline passes and nothing happens. Each backer must
-  call `refund()` to reclaim their pledge, or someone sweeps with `refundBatch()`
-  until the escrow is drained. Until a refund is called, the pledge sits in the
-  escrow indefinitely.
+  call `refund()` with their proof to reclaim their pledge. Until a refund is
+  called, the pledge sits in the escrow indefinitely.
 - **Open campaign:** a backer can call `cancelPledge()` any time before the
-  deadline to withdraw their pledge and free their box.
-- **Creator lock-up:** creating the app does **not** move ALGO into the escrow — it
-  raises the creator's *own* account minimum balance by a sponsorship floor (the
-  0.1 ALGO app base + the global-state schema, ≈ 0.364 ALGO total). That floor is
-  freed by deleting the app. Each backer's box MBR, in contrast, is real ALGO in
-  the escrow, freed only by deleting that box. Neither is automatic, and no
-  cleanup method exists yet.
+  deadline to withdraw their pledge.
+- **Creator lock-up:** creating the app raises the creator's *own* account minimum
+  balance by a sponsorship floor (the 0.1 ALGO app base + the global-state schema,
+  ≈ 0.471 ALGO total), freed by deleting the app. The creator additionally fronts a
+  **storage deposit** into the escrow (see below), recovered by deleting the app.
 
-Every movement of funds (claim, refund, sweep, delete) is therefore an explicit
-transaction submitted by a caller; none of it is automatic.
+Every movement of funds (claim, refund, cancel, delete) is an explicit transaction
+submitted by a caller; none of it is automatic.
 
 ## Methods & guards
 
-### `create(title, metadataUri, goal, deadline)`
+### `create(title, metadataUri, goal, deadline, deposit)`
 
 - `@abimethod({ onCreate: 'require' })` — only runs in the app-create transaction.
 - Guards: must be app-create (`applicationId == 0`), `title` non-empty, `title` and
   `metadataUri` at most 128 bytes each (the AVM cap for a bytes global-state value),
   `goal > 0`, deadline in the future.
-- Sets `creator`, `title`, `metadataUri`, `goal`, `deadline`, `raised = 0`, `status = Open`.
+- Guards on `deposit` (a `gtxn.PaymentTxn`): it must come from `Txn.sender` (the
+  creator), be paid to the escrow, and be at least **1,970,500 µA** (`MIN_DEPOSIT`).
+- Sets `creator`, `title`, `metadataUri`, `goal`, `deadline`, `raised = 0`,
+  `status = Open`, `root = EMPTY[15]` (the empty tree), `leafCount = 0`, and
+  `deposit = deposit.amount`.
 - `title` is immutable; `metadataUri` is an off-chain pointer (description/image/category).
 
 ### `pledge(payment)`
@@ -100,154 +122,121 @@ transaction submitted by a caller; none of it is automatic.
   - `payment.sender == Txn.sender` (payer is the caller)
   - `payment.amount > 0`
   - `Txn.sender != creator` (a creator cannot pledge to their own campaign)
-- Adds `payment.amount` to the backer's box and to `raised`.
-- **Re-pledging is allowed** — each payment is added to the existing box total.
+- Appends a leaf `(Txn.sender, amount)` to the tree, updating the `frontier` box and
+  `root`, then adds `amount` to `raised` and increments `leafCount`.
+- **Re-pledging is allowed** — each pledge appends a *new* leaf; a backer's total is
+  the sum of their live leaves (computed off-chain for the UI).
 
 ### `claim()`
 
 - Creator only (`Txn.sender == creator`), after the deadline, and `raised >= goal`.
 - Guards: `status == Open` (prevents double payout).
 - Sets `status = Claimed`, then pays `balance − minBalance` (the spendable amount)
-  to the creator — the minimum balance stays in the escrow (see Boxes & minimum balance).
+  to the creator — the minimum balance stays in the escrow (see below).
 
-### `refund()`
+### `refund(siblings, index, amount)`
 
 - Any backer, after the deadline, and `raised < goal`.
 - Materialises `status = Failed` on the first refund; subsequent calls require it.
-- Guard: the caller's pledge box must exist (prevents refunding twice or refunding non-backers).
-- Deletes the box and pays the box amount back to the caller. The backer pays the
-  fees (app call + one inner payment ≈ 0.002 ALGO); the refund amount is never reduced.
+- Verifies the Merkle proof: recomputes `sha256(leaf) → … → root` over the `h`
+  sibling hashes and asserts it equals `root`. The proof binds the caller's address
+  and `amount` to the tree, so the amount cannot be forged.
+- Checks and sets the leaf's bit in the spent bitmap; a second refund of the same
+  leaf fails with `already spent`.
+- Pays `amount` to `Txn.sender`. The backer pays the fees (app call + one inner
+  payment ≈ 0.002 ALGO); the refund amount is never reduced.
 
-### `cancelPledge()`
+### `cancelPledge(siblings, index, amount)`
 
-- Backer only (`Txn.sender` must have a pledge box), **before** the deadline, while
-  the campaign is still `Open`.
-- Deletes the caller's pledge box, pays the box amount back to the caller, and
-  decrements `raised` by that amount.
-- The box delete makes a second cancel impossible (same pattern as `refund`); the
-  backer pays ≈ 0.002 ALGO (app call + one inner payment).
-- **Trade-off:** while `Open`, `raised` becomes a live, revocable number. A large
-  backer can pledge to make a campaign look near-funded, then withdraw just before
-  the deadline. This mirrors the creator self-pledge concern (design decision 7)
-  but from the backer side, and the deadline remains the sole arbiter of the
-  outcome — accepted for a non-custodial demo.
+- Backer only, **before** the deadline, while the campaign is still `Open`.
+- Verifies the proof and marks the leaf spent (same machinery as `refund`), then
+  decrements `raised` by `amount` and pays it back.
+- The spent bit makes a second cancel impossible; the backer pays ≈ 0.002 ALGO.
+- **Trade-off:** while `Open`, `raised` is a live, revocable number. A large backer
+  can pledge to make a campaign look near-funded, then withdraw just before the
+  deadline. The deadline remains the sole arbiter of the outcome — accepted for a
+  non-custodial demo. Because each pledge is its own leaf, cancelling several
+  pledges costs one call (and one fee) per leaf.
 
-### `refundBatch(backers...)`
+### `delete()`
 
-> **Proposed** — documented for design alignment; not yet implemented.
-
-- Refunds up to 8 backers in a single call (the AVM box-reference limit), one
-  inner payment per backer, deleting each pledge box.
-- **Callable by anyone** after the deadline when `raised < goal` — the sweep is
-  permissionless, so closure does not depend on the creator returning.
-- The outer app-call fee must cover the app call plus one minimum fee per inner
-  payment: ≈ 0.009 ALGO for a full batch of 8. Refund amounts are never reduced
-  by fees; the caller pays.
-
-### `delete(backers)`
-
-Implemented as a guarded `@abimethod({ allowActions: 'DeleteApplication' })`:
+A guarded `@abimethod({ allowActions: 'DeleteApplication' })`:
 
 - **Creator only** (`Txn.sender == creator`).
 - **Settled only** (`status != Open`) — an open campaign cannot be deleted.
-- On a **`Claimed`** campaign the listed `backers`' boxes are deleted (frees their
-  MBR), then an inner `closeRemainderTo: creator` payment closes the app account,
-  returning the residue (base + freed box MBR + any stray ALGO) to the creator.
-- On a **`Failed`** campaign the `backers` list is ignored and `closeRemainderTo`
-  runs alone: it fails on any outstanding box, so an un-refunded pledge can never
-  be swept into the creator's pocket.
-- Deleting the app frees the creator's own 0.364 ALGO sponsorship floor.
+- **No backer funds remain**: the escrow balance must be at most the creator's
+  deposit (`balance <= deposit`). Since `balance = deposit + unrefunded pledges`,
+  this is exactly "every backer has been refunded or the creator has already
+  claimed".
+- Deletes the `frontier` box and every spent shard, then an inner
+  `closeRemainderTo: creator` payment closes the app account and returns its entire
+  remaining balance (the deposit + base) to the creator, freeing the sponsorship
+  floor on the creator's own account.
 
-#### What it exists for
+## The storage deposit
 
-`delete()` is the cleanup path: it frees the creator's sponsorship lock-up and can
-recover the escrow's residual ALGO after a campaign is settled. It is not needed
-for correctness — `claim()` already pays out `balance − minBalance` — it exists
-purely to reclaim residue and close the campaign record.
+This is the one genuinely new piece of the funding model and the key to making
+refunds scale. It exists to answer a single question: **who pays for the escrow's
+fixed storage, and how do backers get 100% of their pledge back?**
 
-#### Verified on LocalNet (real contract)
+### The problem it solves
 
-The LocalNet tests confirmed where the ALGO actually sits (numbers are real,
-observed against the compiled `Campaign` contract):
+Boxes are not free. Every box raises the app account's minimum balance by
+`2500 + 400 × (key bytes + value bytes)` µA, and that ALGO is locked in the escrow
+for as long as the box exists. The new contract uses **fixed** boxes:
 
-- **Creating the app does not fund the escrow.** After `create()`, the app account
-  balance is **0** while its minimum balance is 100,000 µA (0.1 ALGO). The 0.1 ALGO
-  base plus the global-state schema (28,500 × ints + 50,000 × byte-slices) is
-  carried as a **sponsorship floor on the creator's own account**: the creator's
-  minimum balance rises by 364,000 µA (0.364 ALGO) at create and drops back by the
-  same amount when the app is deleted. It never leaves the creator's wallet; it is
-  only locked.
-- **A pledge funds the box, not the base.** Each backer's pledge pays real ALGO into
-  the escrow and, in the same group, creates a box that raises the app account's
-  minimum balance by 18,900 µA (`2500 + 400 × (33-byte key + 8-byte value)`).
-- **`claim()` is correct.** The app account cannot pay out below its minimum balance
-  (an attempt to leave only the box MBR fails with `balance … below min …`), so
-  `balance − minBalance` is the maximum payout. The residue left behind is the
-  0.1 ALGO base + every backer's box MBR.
-- **A bare `DeleteApplication` returns nothing.** Deleting the app without first
-  deleting boxes or sweeping leaves the app account balance in the now-deleteless
-  account; the creator only pays the 1,000 µA delete fee.
-- **Box MBR is locked if the app is deleted with boxes outstanding.** The boxes
-  become non-modifiable, their MBR stays locked, and an inner payment with
-  `CloseRemainderTo` is rejected with `cannot close: N outstanding boxes`. The
-  [box docs](https://dev.algorand.co/concepts/smart-contracts/storage/box/) state
-  the same: *"If an application with outstanding boxes is deleted, the MBR is not
-  recoverable."*
-- **`CloseRemainderTo` recovers the full residual balance** — but only once every
-  box is gone. An inner payment with `closeRemainderTo: creator` closes the app
-  account and returns its entire balance (0.1 base + freed box MBR + any surplus)
-  to the creator. This is the documented
-  [Close an Account](https://dev.algorand.co/concepts/transactions/types/) mechanism.
+- the 512-byte `frontier` box → **207,700 µA** of MBR;
+- each 1024-byte spent shard → **415,700 µA** of MBR (up to 4 shards at 32,768 backers).
 
-#### The corrected model
+A refund does **not** free any of this — it only flips a bit in the spent bitmap;
+the boxes and their MBR persist until `delete()`. So if the backers' pledges were
+the only money in the escrow, the fixed MBR would be silently carved out of the
+refund pool:
 
-There is no "base 0.1 ALGO stranded in the escrow" to recover — the 0.1 ALGO base
-is a sponsorship floor on the creator's *own* account, freed automatically by
-deleting the app. What *is* recoverable is the residue left in the escrow after
-`claim()` (0.1 base + box MBR, paid for by backers' pledges), and that is recovered
-with `CloseRemainderTo` once all boxes are deleted.
+| Event (3 backers × 1 ALGO, failed) | Escrow balance | min balance | Spendable |
+| --- | --- | --- | --- |
+| pledge × 3 | 3.00 | 0.31 (base + frontier) | 2.69 |
+| A refunds (creates shard 0) | 2.00 | 0.72 (+ shard) | 1.28 |
+| B refunds | 1.00 | 0.72 | 0.28 |
+| **C refunds** | **fails** — needs 1.00, only 0.28 left | | |
 
-| Case | What the creator recovers |
-| --- | --- |
-| Failed, fully refunded (no boxes) | `CloseRemainderTo` closes the empty account; the app delete frees their own 0.364 ALGO floor |
-| Claimed, boxes remain | `delete(backers)` deletes the listed boxes, then `CloseRemainderTo` returns the residue (base + box MBR) |
-| Failed, un-refunded boxes | `delete()` fails (`CloseRemainderTo` cannot close) — safe, backers can still refund |
-| Open | Not deletable (guard) |
+The last backer could not be refunded. The old per-backer-box design sidestepped
+this because each refund *deleted* the backer's box and freed its MBR; the new
+design has no per-backer box to delete.
 
-#### Decision
+### The fix: the creator fronts the storage
 
-The guarded `delete(backers)` with `CloseRemainderTo` (option 1 below) is
-implemented and covered by the LocalNet integration suite. Box-MBR recovery is
-therefore done in a single call for up to 8 backers; a batched sweep for more is
-deferred as unnecessary at demo scale.
+`create()` requires the creator to pay a **storage deposit** — at least
+`MIN_DEPOSIT = 1,970,500 µA` (≈ 1.97 ALGO), the worst-case fixed MBR (0.1 base +
+frontier + all four shards) — into the escrow. The deposit is recorded in global
+state, is **not** counted in `raised`, and is returned to the creator.
 
-> **Planned redesign.** The per-backer box model caps at ~8 backers per
-> operation and leaves box-MBR residue after `claim()`. A Merkle-commitment
-> redesign — an on-chain incremental tree with a 1-bit-per-backer spent bitmap,
-> no boxes — removes both limits and is specified in
-> [`commitment-redesign.md`](commitment-redesign.md). This section's
-> `delete(backers)` is the demo-scale answer until that lands.
+With the deposit covering the storage, the escrow always holds
+`deposit + pledged` while its minimum balance is at most `deposit`, so backers'
+pledges are 100% spendable and every refund returns the full amount. The last
+backer is never stranded.
 
-#### Design options (resolved)
+### The money round-trip
 
-1. **Guarded `delete(backers)` with `CloseRemainderTo` (chosen).** Creator-only,
-   settled campaigns only; deletes listed boxes on a claimed campaign and closes
-   the app account to the creator. Fully-refunded failed campaigns close in one
-   call; a claimed campaign with ≤ 8 backers recovers everything in one call; a
-   campaign with outstanding boxes fails safely.
-2. **Batched sweep for > 8 backers.** Deferred — recover box MBR via a multi-call
-   loop only if backer counts ever warrant it.
-3. **No cleanup at all.** Rejected; the guarded delete is cheap and makes the
-   money story auditable end-to-end.
+The deposit is not spent, only parked. For a campaign with `P` total pledges:
+
+- **Success:** `claim()` pays `balance − minBalance` = `P + (deposit − minBalance)`
+  — the pledges plus the deposit surplus. `delete()` then closes the escrow and
+  returns the residual `minBalance` (the deposit remainder). The creator nets
+  `P + deposit`, minus fees.
+- **Failure:** each backer refunds their full pledge; the escrow is left holding
+  exactly the deposit. `delete()` returns it (plus the base) to the creator.
+
+The `balance <= deposit` guard in `delete()` is what makes both cases safe: it is
+false exactly when some backer's pledge has not yet been refunded on a failed
+campaign, so the creator can never sweep backer funds.
 
 ## Boxes & minimum balance
 
-A **box** is named key–value storage attached to an application. Each backer gets
-one box — keyed by their address, holding their pledged microAlgos — the `pledges`
-map described above. Boxes differ from global state in two ways that matter here:
+A **box** is named key–value storage attached to an application. Boxes differ from
+global state in two ways that matter here:
 
-- A box value can be up to 32 KB, versus the 128-byte cap on a global-state value,
-  so boxes hold per-backer data for an unbounded number of backers.
+- A box value can be up to 32 KB, versus the 128-byte cap on a global-state value.
 - **Every box increases the app account's minimum balance requirement (MBR).**
 
 ### Minimum balance
@@ -256,63 +245,33 @@ Every Algorand account must keep a minimum balance or the network treats it as
 closed. An application's storage minimum balance is split across two accounts:
 
 - The **app account** holds the 0.1 ALGO network-wide base plus the MBR for every
-  box it owns.
+  box it owns — here, the frontier box plus the spent shards.
 - The **creator's account** (the *size sponsor*) carries the MBR for the app's
   global-state schema and extra program pages — not the app account. For this
-  contract (4 ints + 3 byte-slices, single program page) that floor is a fixed
-  **0.364 ALGO** (`100,000 + 28,500 × 4 + 50,000 × 3` µA), the same for every
+  contract (6 ints + 4 byte-slices, single program page) that floor is a fixed
+  **0.471 ALGO** (`100,000 + 28,500 × 6 + 50,000 × 4` µA), the same for every
   campaign and independent of backers.
 
-The consensus formula for one pledge box (33-byte `p`-prefixed address key +
-8-byte value):
+The fixed box MBR, in contrast to the old per-backer boxes, does **not** grow with
+the backer count:
 
-$$ 2500 + 400 \times (\text{key bytes} + \text{value bytes}) = 18{,}900\ \mu\text{ALGO} \approx 0.0189\ \text{ALGO} $$
+| Box | Size | MBR |
+| --- | --- | --- |
+| `frontier` | 512 bytes | `2500 + 400 × 513` = 207,700 µA |
+| `spent` shard (× up to 4) | 1024 bytes | `2500 + 400 × 1033` = 415,700 µA each |
 
-A campaign with 500 backers therefore locks ≈ 9.45 ALGO of box MBR in the app
-account, on top of the creator's ~0.36 ALGO sponsorship floor.
+A campaign at full capacity (32,768 backers) locks at most 0.1 + 0.21 + 4 × 0.42 ≈
+1.97 ALGO of box MBR, regardless of backer count — that is what `MIN_DEPOSIT`
+covers, and it is paid by the creator, not the backers.
 
 ### Who pays for it
 
-The creator does **not** fund the escrow at `create()`. The app account starts at
-balance 0; its base 0.1 ALGO minimum is carried by the creator's own account as a
-sponsorship floor (the *size sponsor*, ≈ 0.364 ALGO total). Box MBR is **not** paid
-by the creator either — each backer funds their own box atomically.
-
-A backer who pledges `X` ALGO sends **one** payment of exactly `X` to the escrow —
-nothing extra. The escrow balance rises by the full `X`, and in the same
-transaction group the box is created, which raises the app account's `minBalance`
-by ≈ 0.0189 ALGO. The box MBR is not an added cost to the backer; it is carved out
-of `X` and locked in the escrow.
-
-Because `balance >= minBalance` must hold after every transaction, a box can only
-be created if the pledge covers it (verified on LocalNet):
-
-- **The very first pledge** must be ≥ **0.1189 ALGO** — the 0.1 base plus the
-  0.0189 box MBR — because the escrow starts empty and the first pledge must bring
-  it up to its full minimum balance.
-- **Each subsequent new backer** must pledge ≥ **0.0189 ALGO** (their box's MBR);
-  the base is already covered.
-- **A re-pledge by an existing backer** adds to an already-existing box and can be
-  arbitrarily small, since no new MBR is created.
-
-The protocol guarantees `balance >= minBalance` at all times by rejecting any
-transaction that would leave an account below its minimum — so an underfunded
-escrow is impossible; too-small pledges simply fail instead.
-
-### The cost is real
-
-Box MBR is not a fee — it is ALGO locked in the escrow for as long as the box
-exists. Consequences:
-
-- `claim()` pays `balance − minBalance`, so the creator receives roughly
-  **0.0189 ALGO per backer less** than the total pledged. With 100 backers
-  pledging 1 ALGO each, the creator gets ≈ 98 ALGO; the rest (box MBR ≈ 1.89 ALGO
-  plus the 0.1 base) stays locked in the escrow.
-- Deleting a box frees its MBR back into the spendable balance — `refund()` (and
-  `cancelPledge()`) rely on this.
-- The residue left after `claim()` (0.1 base + box MBR) is recoverable via the
-  guarded [`delete(backers)`](#deletebackers) above — it deletes the boxes and
-  closes the escrow with `CloseRemainderTo`.
+- The **creator** pays the sponsorship floor (locked on their own account) and the
+  storage deposit (parked in the escrow). Both come back on `delete()`.
+- The **backer** pays only their pledge: one payment of exactly `X` ALGO, nothing
+  extra. Because the deposit already covers the storage MBR, a pledge can be
+  arbitrarily small — there is no "first pledge must cover the box MBR" rule
+  anymore.
 
 ## Design decisions
 
@@ -321,58 +280,54 @@ exists. Consequences:
    materialised into global state; only `Open`, `Failed`, and `Claimed` are stored.
 2. **Escrow payout is `balance − minBalance`.** The app account must keep its minimum
    balance to remain alive, so the contract only ever pays out the spendable amount.
-3. **First pledge uses `Box.get({ default: 0 })`.** Reading a missing box's `.value` would
-   fail the transaction, so the first pledge defaults to 0.
-4. **Re-pledging accumulates.** A backer's box holds the running total of all their
-   payments; no separate pledge counter.
-5. **Refund deletes the box after reading it.** This makes a second refund impossible
-   (box no longer exists) and is safe because the payment is issued in the same transaction.
+3. **One leaf per pledge (append-only).** A backer who pledges twice gets two leaves;
+   there is no on-chain accumulation. `raised` is the sum of live leaves, and a
+   backer's total is aggregated off-chain. See
+   [`commitment-redesign.md`](commitment-redesign.md).
+4. **Refunds and cancels are proof-based.** The contract never stores a backer's
+   amount — it re-derives it from the address and the leaf proof, so the amount
+   cannot be forged without breaking SHA-256.
+5. **The spent bitmap is the nullifier.** Both `refund` and `cancelPledge` check and
+   set the same 1-bit-per-leaf bitmap, so a leaf can be spent exactly once.
 6. **`claim()` guards against re-entrancy/replay** with the `already claimed` status check.
 7. **Creators cannot self-pledge.** `pledge()` rejects `Txn.sender == creator`. A self-pledge is not a direct
    funds leak (the creator would only move their own ALGO in and out), but it lets a creator fabricate the
    `raised` number to make a campaign look funded — undermining the trust story the contract exists to provide.
-8. **Refund sweep is permissionless (proposed).** `refundBatch` is callable by any account, not just the
-   creator, so a failed campaign can be fully drained even if the creator never returns. Whoever calls pays the
-   batch fee; refund amounts are never reduced.
-9. **Pledges are cancellable before the deadline (proposed).** `cancelPledge` lets a backer withdraw while the
-   campaign is still `Open`, mirroring Kickstarter's "not charged until the deadline" model. It reintroduces the
-   revocable-`raised` concern the self-pledge ban guards against, but the deadline remains the sole arbiter of the
-   outcome — accepted for a non-custodial demo.
-10. **Claim residue is recoverable via `CloseRemainderTo` after box deletion (proposed).** `claim()` deliberately
-    keeps the app alive so the campaign record stays readable, but that leaves the 0.1 ALGO base plus every backer's
-    box MBR in the escrow. A `delete()` that first deletes the boxes and then closes the app account with
-    `CloseRemainderTo` recovers all of it — at the cost of freezing the on-chain record. The creator's own sponsorship
-    floor (≈ 0.364 ALGO) is freed by any app delete.
+8. **The storage deposit makes refunds clean.** The creator fronts the escrow's fixed
+   storage MBR so backers' pledges are never used for storage and every refund
+   returns the full amount. The deposit is returned on `delete()`.
+9. **`delete()` is safe by balance, not by box count.** The `balance <= deposit` guard
+   means the creator can delete only when no backer funds remain — uniformly for a
+   claimed campaign (already drained) and a fully-refunded failed one.
+10. **Pledges are cancellable before the deadline.** `cancelPledge` lets a backer withdraw while the
+    campaign is still `Open`, mirroring Kickstarter's "not charged until the deadline" model. It reintroduces the
+    revocable-`raised` concern the self-pledge ban guards against, but the deadline remains the sole arbiter of the
+    outcome — accepted for a non-custodial demo.
 
 ## Known edge cases
 
-The cases below drive implementation decisions for the proposed methods; they are
-referenced from the contract items in [`roadmap.md`](roadmap.md).
-
 1. **Zero-pledge campaign stays `Open`.** `refund()` materialises `Failed` **and**
-   requires the caller's box to exist in the same atomic call, so a campaign nobody
-   pledged to can never record `Failed` on-chain. The UI still derives "failed", so it
-   is cosmetic — but a permissionless `settle()` (proposed) would close the gap.
+   requires a valid proof in the same atomic call, so a campaign nobody pledged to
+   never records `Failed` on-chain. The UI still derives "failed", so it is cosmetic.
 2. **Stray ALGO sent directly to the escrow.** A plain payment to the app address
-   bypasses `pledge()`. On success `claim()` pays `balance − minBalance`, so stray ALGO
-   goes to the creator for free; on failure it is in no box and is stranded after all
-   refunds (unless a `delete()` with `CloseRemainderTo` recovers it). Documented and accepted.
-3. **`refundBatch` poisoning.** A single bad or duplicate address in a batch fails that
-   backer's inner payment and reverts the whole batch. The frontend must dedupe and pass
-   only live box addresses from the indexer.
-4. **Opcode budget.** 8 inner payments + 8 box references approach the app-call budget;
-   verify the batch actually compiles and reduce to 6–7 backers if not.
-5. **Re-pledge → cancel → re-pledge.** Cancelling deletes the box and decrements
-   `raised`; a later pledge must recreate the box with the fresh amount and re-increment
-   `raised` correctly (needs an explicit test once `cancelPledge` exists).
-6. **Deadline boundary.** Pledging/cancelling use `latestTimestamp < deadline` while
+   bypasses `pledge()`. On success `claim()` pays `balance − minBalance`, so stray
+   ALGO goes to the creator; on failure it sits above the deposit and blocks
+   `delete()` until it is drained (it is never in a leaf). Documented and accepted.
+3. **Opcode budget.** The tree is fixed at height 15 (`sha256`, 35 opcode cost); a
+   pledge (append + fold) and a refund (proof verify) are each `h + 1 = 16` hashes
+   = 560 cost, inside the 700-cost app-call budget. A binary tree cannot go much
+   higher; see [`commitment-redesign.md`](commitment-redesign.md) for the analysis.
+4. **Re-pledge → cancel → re-pledge.** Cancelling marks one leaf spent and decrements
+   `raised`; a later pledge appends a fresh leaf. The UI must present the *sum* of a
+   backer's live leaves.
+5. **Deadline boundary.** Pledging/cancelling use `latestTimestamp < deadline` while
    claim/refund use `>=`, so at the exact `==` block pledging is closed and settlement is
    open. Test the `==` boundary explicitly.
-7. **Claim leaves pledge boxes behind.** `claim()` does not delete backer boxes; they are
-   dead data whose MBR stays locked until the boxes are deleted, and the UI must not
-   show "your pledge" on a `claimed` campaign.
-8. **Overflow is impossible in practice.** `raised` and box values are `uint64`; an
-   overflow would need more ALGO than the total supply. No guard needed.
+6. **The spent bitmap shard is created lazily.** The first refund or cancel creates
+   the shard (raising the escrow's MBR); the deposit covers it, so no backer is
+   short-changed.
+7. **Overflow is impossible in practice.** `raised`, `leafCount`, and leaf amounts are
+   `uint64`; an overflow would need more ALGO than the total supply. No guard needed.
 
 ## Frontend integration
 
@@ -387,11 +342,14 @@ the catalog backend — lives in [`architecture.md`](architecture.md).
 ## Testing
 
 A full behavioral matrix lives in `contract.algo.spec.ts` — every method × every
-branch (caller checks, deadline checks, goal checks, re-pledge, double-claim,
-double-refund). Tests run offline via `algorand-typescript-testing` + Vitest.
+branch (caller checks, deadline checks, goal checks, proof verification, spent
+bitmap, double-claim, double-refund). Tests run offline via
+`algorand-typescript-testing` + Vitest, cross-checking the contract's Merkle root
+against the plain-TypeScript reference in `smart_contracts/merkle/tree.ts`.
 
 A LocalNet integration suite in `contract.integration.test.ts` deploys the compiled
-TEAL and exercises the full lifecycle (create → pledge → claim, and → refund).
+TEAL and exercises the full lifecycle (create → pledge → claim → delete, and →
+refund → delete).
 
 See [`testing.md`](testing.md) for the tooling setup, API cheat sheet, coverage
 matrix, and integration notes.
@@ -406,6 +364,8 @@ when in doubt):
 - [Box Storage](https://dev.algorand.co/concepts/smart-contracts/storage/box/) —
   box MBR formula (`2500 + 400 × (key + value)`), box deletion, and the rule that
   deleting an app does **not** delete its boxes (their MBR stays locked).
+- [AVM opcodes](https://developer.algorand.org/docs/get-details/dapps/avm/teal/opcodes/) —
+  `sha256` (35 cost), `sha512_256` (45 cost), and the 700-cost app-call budget.
 - [Inner Transactions](https://dev.algorand.co/concepts/smart-contracts/inner-txn/) —
   app-account payments and inner-transaction fees.
 - [Transaction Types](https://dev.algorand.co/concepts/transactions/types/) — the

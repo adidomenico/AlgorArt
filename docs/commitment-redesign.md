@@ -1,12 +1,13 @@
 # Commitment redesign (Merkle refunds)
 
-> **Planned — not yet implemented.** Replaces the per-backer pledge box with an
-> on-chain incremental Merkle tree, so refunds and app deletion scale to large
-> backer counts and the box-MBR residue disappears. This doc is the spec;
-> nothing here is code until it lands.
+> **Implemented.** Replaces the per-backer pledge box with an on-chain incremental
+> Merkle tree, so refunds and app deletion scale to large backer counts and the
+> box-MBR residue disappears. The contract internals live in
+> [`campaign.md`](campaign.md); this doc is the design rationale and the spec the
+> implementation followed.
 >
-> Contract internals today: [`campaign.md`](campaign.md). Backend/archival:
-> [`architecture.md`](architecture.md). Roadmap: [`roadmap.md`](roadmap.md).
+> Backend/archival: [`architecture.md`](architecture.md). Roadmap:
+> [`roadmap.md`](roadmap.md).
 
 ## The problem with per-backer boxes
 
@@ -45,6 +46,28 @@ Because the tree is computed on-chain, there is no operator to trust and no
 `finalize` step: the root is correct by construction, and `cancelPledge` remains
 possible (a backer proves a leaf against the live root and marks it spent).
 
+## Storage deposit
+
+A refund only flips a bit in the spent bitmap; it never deletes a box. So the
+frontier and spent-shard boxes — and their MBR — persist until `delete()`. If
+backers' pledges were the only money in the escrow, that fixed MBR would be carved
+out of the refund pool and the last backers could not be fully refunded (the old
+per-backer design avoided this because each refund deleted the backer's box).
+
+The fix is a **creator storage deposit**: `create()` requires the creator to pay
+`MIN_DEPOSIT = 1,970,500` µA (base 100,000 + frontier 207,700 + 4 shards × 415,700)
+into the escrow. The deposit:
+
+- is recorded in global state and **not** counted in `raised`;
+- covers the escrow's worst-case fixed MBR, so backers' pledges stay 100% spendable
+  and every refund returns the full amount;
+- is returned to the creator: `claim()` pays `balance − minBalance` (the pledges
+  plus any deposit surplus), and `delete()` closes the escrow and returns the rest.
+
+The `balance <= deposit` delete guard is then exactly "no backer funds remain" —
+`balance = deposit + unrefunded pledges`, so it is false whenever a backer has not
+yet been refunded on a failed campaign.
+
 ## Contract surface
 
 ### State
@@ -59,13 +82,15 @@ Everything in [`campaign.md`](campaign.md) today, minus the `pledges` box, plus:
 
 ### Methods
 
-**`create(title, metadataUri, goal, deadline)`** — unchanged.
+**`create(title, metadataUri, goal, deadline, deposit)`** — as today, plus a
+`gtxn.PaymentTxn` deposit the creator fronts to cover the escrow's fixed storage
+MBR (see [Storage deposit](#storage-deposit)). Requires `deposit.amount >= 1,970,500`
+µA and records it in global state.
 
 **`pledge(payment)`** — guards unchanged, but instead of writing a box it appends
 a leaf `(Txn.sender, amount)` to the incremental tree, updating `root` and the
-`frontier` box, and `raised += amount`. Side benefit: no box MBR, so the escrow's
-`minBalance` drops to the 0.1 ALGO base (verify the exact first-pledge minimum on
-LocalNet — it should fall from 0.1189 ALGO to ~0.1 ALGO).
+`frontier` box, and `raised += amount`. Because the deposit covers the storage MBR,
+a pledge can be arbitrarily small (no first-pledge minimum).
 
 **`cancelPledge(siblings: bytes[], index: uint64, amount: uint64)`** — backer
 only, before the deadline. Verifies the proof against the live `root`, checks the
@@ -83,9 +108,11 @@ makes a cancelled leaf non-refundable and a refunded leaf non-cancellable.
 base, so `balance − minBalance` ≈ 100% of pledges.
 
 **`delete()`** — `DeleteApplication`, creator-only, `status != Open`, and
-`escrowBalance() == 0`. No `backers` argument, no box loop. `CloseRemainderTo:
-creator` returns just the 0.1 base. The `escrowBalance() == 0` guard stops the
-creator from sweeping un-refunded money on a failed campaign.
+`balance <= deposit` (no backer funds remain). No `backers` argument, no box loop:
+it deletes the `frontier` box and the spent shards, then `CloseRemainderTo:
+creator` returns the residual (the deposit + base). The `balance <= deposit` guard
+— equivalent to "every backer refunded, or already claimed" — stops the creator
+from sweeping un-refunded money on a failed campaign.
 
 ### The incremental tree
 
