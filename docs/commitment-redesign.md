@@ -9,6 +9,59 @@
 > Backend/archival: [`architecture.md`](architecture.md). Roadmap:
 > [`roadmap.md`](roadmap.md).
 
+## Storage approaches compared
+
+There are three ways to record "who pledged what" on Algorand. The redesign
+weighed only the first and the last; the middle (local state) was not considered
+and is recorded here so the tradeoff is complete.
+
+| Approach | Per-backer MBR | Who pays | Refund path | Leak on success? | Delete |
+| --- | --- | --- | --- | --- | --- |
+| Box (per backer) | ~0.0189 ALGO | escrow (creator) | read box, delete, pay | **yes** | blocked until swept |
+| Local state (opt-in) | ~0.1285 ALGO | backer (returnable) | read own local, zero, pay | no | clean |
+| Merkle tree | 0 | creator (fixed deposit) | verify proof | no | clean |
+
+### Box — cheap per backer, leaks on success
+
+One box per backer holds `address → amount` (~0.0189 ALGO each). Cheap, and the
+refund is trivial — but the MBR is charged to the **escrow**, and nothing ever
+deletes a box when a campaign *succeeds* (backers don't un-pledge), so the residue
+locks MBR and blocks `delete()` — a contract cannot enumerate its own boxes, so
+cleanup needs an off-chain sweep. Rejected below in
+[The problem with per-backer boxes](#the-problem-with-per-backer-boxes).
+
+### Local state — idiomatic, backer pays a returnable opt-in
+
+Each backer opts into the app and stores their amount in **their own** local
+state. Opt-in costs the *backer* `100,000 + 28,500 = 128,500 µA` (~0.1285 ALGO)
+for one `uint` slot, returned on opt-out. No creator deposit, no proofs, no leak
+(state lives on the backer's account, never the escrow), no capacity cap, and the
+refund is a bare "read my own local state → zero it → pay me". The cost is the
+opt-in itself: one extra transaction on first pledge and a small returnable lock.
+
+This is the standard per-user pattern on Algorand: Tinyman v1's validator stores
+every pooler's position in local state (`app_local_put`/`app_local_get`/
+`app_local_del`, with a documented opt-in step — see
+[`tinymanorg/tinyman-contracts-v1`](https://github.com/tinymanorg/tinyman-contracts-v1)).
+
+### Merkle tree — zero per-backer cost, but proofs
+
+The chosen design. No per-backer state: only a 32-byte root, the frontier, and a
+1-bit-per-backer spent bitmap (~2.30 ALGO fixed, fronted by the creator and
+returned on delete). A backer proves their pledge with a Merkle proof against the
+root. Zero per-backer cost and O(1) storage, at the price of proof machinery, a
+hard capacity (`8^h`), and indexer-dependent proof reconstruction.
+
+### Why not local state?
+
+Local state was not weighed in the original redesign — the comparison stopped at
+"boxes vs Merkle". For a crowdfunding app (thousands of backers, one `uint`
+each), local state is the simpler and more idiomatic option; its only real cost
+is the per-backer returnable opt-in. The Merkle tree buys "zero per-backer cost"
+by optimizing a ~$0.02 returnable fee, at the price of the proof library, the
+indexer reconstruction path, a hard cap, and the creator deposit. Revisit before
+TestNet if backer opt-in is preferred over the proof machinery.
+
 ## The problem with per-backer boxes
 
 Today each backer gets one `pledges` box. Three costs follow from that:

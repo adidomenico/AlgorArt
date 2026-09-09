@@ -340,6 +340,94 @@ A campaign at full capacity (32,768 backers) locks at most 0.1 + 0.54 + 4 × 0.4
 7. **Overflow is impossible in practice.** `raised`, `leafCount`, and leaf amounts are
    `uint64`; an overflow would need more ALGO than the total supply. No guard needed.
 
+## Limits & bounds
+
+The fixed tree parameters set the hard *capacity*; everything else is bounded by
+`uint64` (which cannot overflow against the ~10¹⁶ µA total supply).
+
+| Dimension | Min | Max |
+| --- | --- | --- |
+| Leaves (total pledges) | 0 | 32,768 (`FANOUT^TREE_HEIGHT` = 8⁵) |
+| Distinct backers | 0 | 32,768 (one leaf per address) |
+| Pledges per backer | 0 | 32,768 (all leaves by one backer — no per-backer cap) |
+| Single pledge | 1 µA | none (`amount > 0`; bounded by the payer's balance) |
+| `goal` | 1 µA | none (uint64) |
+| `deadline` | now + 1 second | none (uint64 seconds) |
+| `title` | 1 byte | 128 bytes |
+| `metadataUri` | 0 bytes | 128 bytes |
+| Storage deposit (`fund`) | 1 µA | none |
+| Escrow locked MBR | 0 | ≈ 2.30 ALGO (base + frontier + 4 shards) |
+| Escrow balance | 0 | total supply (no contract cap) |
+| Merkle proof | 1120 bytes (fixed) | 1120 bytes (`h × (fanout−1) × 32`) |
+
+**Recommended, not enforced on-chain:**
+
+- **Deposit** — fund **2,303,300 µA** (≈ 2.30 ALGO), the worst-case fixed MBR, so
+  backers' pledges stay 100% refundable. Funding less still works while the
+  escrow holds enough for the boxes actually created.
+
+**A capacity boundary that is not guarded.** `pledge()` has no
+`leafCount < 32768` assertion: the tree is correct for the first 32,768 leaves,
+but a 32,769th pledge would overwrite a frontier slot and corrupt the root
+(existing proofs would then fail). Reaching it needs 32,768 pledges, so it is
+theoretical today, but the guard should be added before any large-scale use.
+
+## Storage & box limits
+
+Boxes are the only unbounded storage the AVM offers; the protocol limits
+([Algorand box storage](https://dev.algorand.co/concepts/smart-contracts/storage/box/)):
+
+| Limit | Value |
+| --- | --- |
+| Box size | ≤ 32,768 bytes (32 KB) |
+| Box name | 1–64 bytes, unique per app |
+| Box references per transaction | 8 (`txn.Boxes`) or 16 (`txn.Access`), 2 KB I/O budget each |
+| Box count | no hard cap — bounded by minimum balance |
+| MBR per box | `2500 + 400 × (name bytes + value bytes)` µA |
+
+There is no cap on *how many* boxes an app holds; the real bound is that every
+box raises the escrow's minimum balance and must be funded (and deleted before
+the app, or its MBR is lost). A box is fixed-size once created.
+
+### This campaign's storage
+
+| Box | Size | Count | MBR each |
+| --- | --- | --- | --- |
+| `frontier` | 1344 bytes | 1 | 540,500 µA |
+| `spent` shard | 1024 bytes | 0–4 | 415,700 µA |
+
+**Total: at most 5,440 bytes of boxes, ≈ 2.30 ALGO locked** — constant regardless
+of backer count, because the tree stores only the root + frontier and never a
+per-backer record.
+
+### Capacity & headroom
+
+Capacity is `FANOUT^TREE_HEIGHT` = 8⁵ = 32,768 leaves today. The knob that
+matters is **height**, and the binding constraint is the **opcode budget** (700
+per app call): each pledge/refund runs about one `sha256` per level (~35
+opcodes). The 2048-byte argument limit is *not* binding at fanout 8 — a proof
+stays under it up to height 9.
+
+| Height | Leaves | Proof size | Per-op hashes |
+| --- | --- | --- | --- |
+| 5 (current) | 32,768 | 1120 B | ~5 |
+| 6 | 262,144 | 1344 B | ~6 |
+| 7 | 2,097,152 | 1568 B | ~7 |
+
+Raising height is a small, contained change (the `TREE_HEIGHT`/`FRONTIER_BYTES`
+constants, the hardcoded `EMPTY`/`PREIMAGE` hex, and the `fold` full-tree special
+case). The only scaling cost is the spent bitmap — one bit per leaf — so capacity
+× 8 means 8× the worst-case shard MBR (height 6 → up to 32 shards ≈ 14 ALGO
+worst-case). Shards are created lazily, so a typical campaign never pays that.
+
+### Why proofs are not stored in boxes
+
+A backer's Merkle proof is passed as a transaction argument (≤ 2048 bytes), not
+stored in a box. Storing one proof box per backer would reintroduce the
+per-backer minimum balance the tree design removed (≈ 0.43 ALGO × 32k backers ≈
+14k ALGO) for no gain: a box only relocates the bytes, while the contract still
+has to hash every sibling within the same 700-opcode budget.
+
 ## Frontend integration
 
 The UI consumes the contract through the generated `CampaignClient` and the
