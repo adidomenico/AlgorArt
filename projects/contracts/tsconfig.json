@@ -30,7 +30,8 @@
   "exclude": ["node_modules", "dist", "coverage", "smart_contracts/artifacts"],
   "ts-node": {
     "compilerOptions": {
-      "module": "CommonJS"
+      "module": "CommonJS",
+      "moduleResolution": "node"
     }
   }
 }

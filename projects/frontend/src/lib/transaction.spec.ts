@@ -1,9 +1,7 @@
 import { microAlgos } from '@algorandfoundation/algokit-utils'
 import type { TransactionSigner } from 'algosdk'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { cancelPledge, claim, createCampaign, pledge, refund } from './transaction'
-
-const ZERO_ADDRESS = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ'
+import { cancelPledge, claim, closeOut, createCampaign, deleteCampaign, pledge, refund } from './transaction'
 
 const {
   sendCreateMock,
@@ -12,8 +10,15 @@ const {
   sendRefundMock,
   sendPledgeMock,
   sendCancelPledgeMock,
+  sendCloseOutMock,
+  sendDeleteMock,
+  sendRegisterMock,
+  sendUnregisterMock,
   paymentMock,
-  fetchPledgesForBackerMock,
+  assetTransferMock,
+  assetOptInMock,
+  fetchClaimAsaIdMock,
+  fetchClaimHoldingMock,
   waitForIndexerRoundMock,
   waitForIndexerCatchUpMock,
 } = vi.hoisted(() => ({
@@ -23,8 +28,15 @@ const {
   sendRefundMock: vi.fn(),
   sendPledgeMock: vi.fn(),
   sendCancelPledgeMock: vi.fn(),
+  sendCloseOutMock: vi.fn(),
+  sendDeleteMock: vi.fn(),
+  sendRegisterMock: vi.fn(),
+  sendUnregisterMock: vi.fn(),
   paymentMock: vi.fn(),
-  fetchPledgesForBackerMock: vi.fn(),
+  assetTransferMock: vi.fn(),
+  assetOptInMock: vi.fn(),
+  fetchClaimAsaIdMock: vi.fn(),
+  fetchClaimHoldingMock: vi.fn(),
   waitForIndexerRoundMock: vi.fn(),
   waitForIndexerCatchUpMock: vi.fn(),
 }))
@@ -38,6 +50,8 @@ vi.mock('../contracts/Campaign', () => ({
       refund: sendRefundMock,
       pledge: sendPledgeMock,
       cancelPledge: sendCancelPledgeMock,
+      closeOut: sendCloseOutMock,
+      delete: { delete: sendDeleteMock },
     }
   },
   CampaignFactory: class {
@@ -45,13 +59,26 @@ vi.mock('../contracts/Campaign', () => ({
   },
 }))
 
+vi.mock('../contracts/Factory', () => ({
+  FactoryClient: class {
+    appAddress = 'FACTORYADDRESS'
+    send = {
+      register: sendRegisterMock,
+      unregister: sendUnregisterMock,
+    }
+  },
+}))
+
 vi.mock('./campaign', () => ({
-  fetchPledgesForBacker: (...args: unknown[]) => fetchPledgesForBackerMock(...args),
+  factoryAppId: () => 1001n,
+  fetchClaimAsaId: (...args: unknown[]) => fetchClaimAsaIdMock(...args),
+  fetchClaimHolding: (...args: unknown[]) => fetchClaimHoldingMock(...args),
 }))
 
 vi.mock('./algorand', () => ({
   algorand: {
-    createTransaction: { payment: paymentMock },
+    createTransaction: { payment: paymentMock, assetTransfer: assetTransferMock },
+    send: { assetOptIn: assetOptInMock },
     client: { algod: { status: () => ({ do: () => Promise.resolve({ lastRound: 99n }) }) } },
   },
   waitForIndexerRound: (...args: unknown[]) => waitForIndexerRoundMock(...args),
@@ -70,10 +97,11 @@ describe('transaction helpers', () => {
     waitForIndexerCatchUpMock.mockResolvedValue(undefined)
   })
 
-  it('createCampaign deploys, funds the storage deposit, and returns appId/appAddress', async () => {
+  it('createCampaign deploys, funds the storage deposit (issuing the Claim ASA), and registers with the Factory', async () => {
     sendCreateMock.mockResolvedValue({ result: { appId: 9n, appAddress: { toString: () => 'ESCROW' } } })
-    paymentMock.mockResolvedValue({ payment: 'txn' })
+    paymentMock.mockResolvedValueOnce({ payment: 'fund-txn' }).mockResolvedValueOnce({ payment: 'register-txn' })
     sendFundMock.mockResolvedValue({ confirmation: {} })
+    sendRegisterMock.mockResolvedValue({ confirmation: {} })
 
     const result = await createCampaign(session, 'My campaign', 'ipfs://meta', 5_000_000n, 1_000n)
 
@@ -85,110 +113,138 @@ describe('transaction helpers', () => {
         deadline: 1_000n,
       },
     })
-    expect(paymentMock).toHaveBeenCalledWith({
+    expect(paymentMock).toHaveBeenNthCalledWith(1, {
       sender: 'ADDRESS',
       receiver: 'ESCROWADDRESS',
-      amount: microAlgos(2_303_300n),
+      amount: microAlgos(200_000n),
     })
-    expect(sendFundMock).toHaveBeenCalledWith({ args: { payment: { payment: 'txn' } } })
+    expect(sendFundMock).toHaveBeenCalledWith({ args: { payment: { payment: 'fund-txn' } }, extraFee: microAlgos(1000) })
+    expect(paymentMock).toHaveBeenNthCalledWith(2, {
+      sender: 'ADDRESS',
+      receiver: 'FACTORYADDRESS',
+      amount: microAlgos(18_900n),
+    })
+    expect(sendRegisterMock).toHaveBeenCalledWith({ args: { app: 9n, payment: { payment: 'register-txn' } }, appReferences: [9n] })
     expect(result).toEqual({ appId: 9n, appAddress: 'ESCROW' })
     expect(waitForIndexerCatchUpMock).toHaveBeenCalled()
   })
 
-  it('pledge builds a payment to the escrow and sends the pledge', async () => {
+  it('pledge opts in when needed, then pays the escrow and mints claim units', async () => {
+    fetchClaimAsaIdMock.mockResolvedValue(777n)
+    fetchClaimHoldingMock.mockResolvedValue({ optedIn: false, balance: 0n })
     paymentMock.mockResolvedValue({ payment: 'txn' })
     sendPledgeMock.mockResolvedValue({ confirmation: { confirmedRound: 7n } })
 
     await pledge(42n, session, 1_000_000n)
 
-    expect(paymentMock).toHaveBeenCalledWith({
-      sender: 'ADDRESS',
-      receiver: 'ESCROWADDRESS',
-      amount: expect.anything(),
+    expect(assetOptInMock).toHaveBeenCalledWith({ sender: 'ADDRESS', assetId: 777n })
+    expect(paymentMock).toHaveBeenCalledWith({ sender: 'ADDRESS', receiver: 'ESCROWADDRESS', amount: microAlgos(1_000_000n) })
+    expect(sendPledgeMock).toHaveBeenCalledWith({
+      args: { payment: { payment: 'txn' } },
+      assetReferences: [777n],
+      extraFee: microAlgos(1000),
     })
-    expect(sendPledgeMock).toHaveBeenCalled()
     expect(waitForIndexerRoundMock).toHaveBeenCalledWith(7n)
   })
 
-  it('claim sends a bare claim call covering inner fees', async () => {
-    sendClaimMock.mockResolvedValue({ confirmation: { confirmedRound: 8n } })
+  it('pledge skips the opt-in when already opted in', async () => {
+    fetchClaimAsaIdMock.mockResolvedValue(777n)
+    fetchClaimHoldingMock.mockResolvedValue({ optedIn: true, balance: 0n })
+    paymentMock.mockResolvedValue({ payment: 'txn' })
+    sendPledgeMock.mockResolvedValue({ confirmation: {} })
+
+    await pledge(42n, session, 1_000_000n)
+
+    expect(assetOptInMock).not.toHaveBeenCalled()
+  })
+
+  it('pledge rejects when the Claim ASA is not issued yet', async () => {
+    fetchClaimAsaIdMock.mockResolvedValue(undefined)
+    await expect(pledge(42n, session, 1_000_000n)).rejects.toThrow(/no claim asset/)
+  })
+
+  it('claim calls the contract once', async () => {
+    sendClaimMock.mockResolvedValue({ confirmation: { confirmedRound: 3n } })
     await claim(42n, session)
-    expect(sendClaimMock).toHaveBeenCalledWith({ args: [], extraFee: expect.anything() })
-    expect(waitForIndexerRoundMock).toHaveBeenCalledWith(8n)
+    expect(sendClaimMock).toHaveBeenCalledWith({ args: [], extraFee: microAlgos(1000) })
+    expect(waitForIndexerRoundMock).toHaveBeenCalledWith(3n)
   })
 
-  it('refund reconstructs the tree and refunds each live leaf with a proof', async () => {
-    fetchPledgesForBackerMock.mockResolvedValue({
-      leaves: [{ address: ZERO_ADDRESS, amount: 1_000_000n }],
-      live: [{ index: 0, amount: 1_000_000n }],
-    })
-    sendRefundMock.mockResolvedValue({ confirmation: { confirmedRound: 9n } })
+  it('refund surrenders the full claim balance', async () => {
+    fetchClaimAsaIdMock.mockResolvedValue(777n)
+    fetchClaimHoldingMock.mockResolvedValue({ optedIn: true, balance: 1_000_000n })
+    assetTransferMock.mockResolvedValue({ axfer: 'txn' })
+    sendRefundMock.mockResolvedValue({ confirmation: {} })
 
     await refund(42n, session)
 
-    expect(fetchPledgesForBackerMock).toHaveBeenCalledWith(42n, 'ADDRESS')
-    expect(sendRefundMock).toHaveBeenCalledWith({
-      args: { proof: expect.any(Uint8Array), index: 0, amount: 1_000_000n },
-      extraFee: expect.anything(),
+    expect(assetTransferMock).toHaveBeenCalledWith({
+      sender: 'ADDRESS',
+      assetId: 777n,
+      receiver: 'ESCROWADDRESS',
+      amount: 1_000_000n,
     })
-    expect(waitForIndexerRoundMock).toHaveBeenCalledWith(9n)
+    expect(sendRefundMock).toHaveBeenCalledWith({ args: { axfer: { axfer: 'txn' } }, extraFee: microAlgos(1000) })
   })
 
-  it('refund refunds multiple live leaves one transaction each', async () => {
-    fetchPledgesForBackerMock.mockResolvedValue({
-      leaves: [
-        { address: ZERO_ADDRESS, amount: 1_000_000n },
-        { address: ZERO_ADDRESS, amount: 2_000_000n },
-      ],
-      live: [
-        { index: 0, amount: 1_000_000n },
-        { index: 1, amount: 2_000_000n },
-      ],
-    })
-    sendRefundMock.mockResolvedValue({ confirmation: { confirmedRound: 9n } })
-
-    await refund(42n, session)
-
-    expect(sendRefundMock).toHaveBeenCalledTimes(2)
-    expect(sendRefundMock).toHaveBeenNthCalledWith(2, {
-      args: { proof: expect.any(Uint8Array), index: 1, amount: 2_000_000n },
-      extraFee: expect.anything(),
-    })
+  it('refund rejects when the backer holds no claim units', async () => {
+    fetchClaimAsaIdMock.mockResolvedValue(777n)
+    fetchClaimHoldingMock.mockResolvedValue({ optedIn: true, balance: 0n })
+    await expect(refund(42n, session)).rejects.toThrow(/no claim units/)
   })
 
-  it('refund throws when the backer has no live leaves', async () => {
-    fetchPledgesForBackerMock.mockResolvedValue({ leaves: [], live: [] })
-
-    await expect(refund(42n, session)).rejects.toThrow(/no live pledge/)
-    expect(sendRefundMock).not.toHaveBeenCalled()
-  })
-
-  it('cancelPledge reconstructs the tree and cancels each live leaf with a proof', async () => {
-    fetchPledgesForBackerMock.mockResolvedValue({
-      leaves: [{ address: ZERO_ADDRESS, amount: 1_000_000n }],
-      live: [{ index: 0, amount: 1_000_000n }],
-    })
-    sendCancelPledgeMock.mockResolvedValue({ confirmation: { confirmedRound: 10n } })
+  it('cancelPledge surrenders the full claim balance', async () => {
+    fetchClaimAsaIdMock.mockResolvedValue(777n)
+    fetchClaimHoldingMock.mockResolvedValue({ optedIn: true, balance: 500_000n })
+    assetTransferMock.mockResolvedValue({ axfer: 'txn' })
+    sendCancelPledgeMock.mockResolvedValue({ confirmation: {} })
 
     await cancelPledge(42n, session)
 
-    expect(sendCancelPledgeMock).toHaveBeenCalledWith({
-      args: { proof: expect.any(Uint8Array), index: 0, amount: 1_000_000n },
-      extraFee: expect.anything(),
+    expect(assetTransferMock).toHaveBeenCalledWith({
+      sender: 'ADDRESS',
+      assetId: 777n,
+      receiver: 'ESCROWADDRESS',
+      amount: 500_000n,
     })
-    expect(waitForIndexerRoundMock).toHaveBeenCalledWith(10n)
+    expect(sendCancelPledgeMock).toHaveBeenCalledWith({ args: { axfer: { axfer: 'txn' } }, extraFee: microAlgos(1000) })
   })
 
-  it('cancelPledge throws when the backer has no live leaves', async () => {
-    fetchPledgesForBackerMock.mockResolvedValue({ leaves: [], live: [] })
+  it('closeOut closes the claim holding to the escrow', async () => {
+    fetchClaimAsaIdMock.mockResolvedValue(777n)
+    assetTransferMock.mockResolvedValue({ axfer: 'txn' })
+    sendCloseOutMock.mockResolvedValue({ confirmation: {} })
 
-    await expect(cancelPledge(42n, session)).rejects.toThrow(/no live pledge/)
-    expect(sendCancelPledgeMock).not.toHaveBeenCalled()
+    await closeOut(42n, session)
+
+    expect(assetTransferMock).toHaveBeenCalledWith({
+      sender: 'ADDRESS',
+      assetId: 777n,
+      receiver: 'ESCROWADDRESS',
+      amount: 0n,
+      closeAssetTo: 'ESCROWADDRESS',
+    })
+    expect(sendCloseOutMock).toHaveBeenCalledWith({ args: { axfer: { axfer: 'txn' } } })
   })
 
-  it('skips the indexer wait when the confirmed round is unavailable', async () => {
-    sendClaimMock.mockResolvedValue({ confirmation: {} })
-    await claim(42n, session)
-    expect(waitForIndexerRoundMock).not.toHaveBeenCalled()
+  it('deleteCampaign deletes with the Claim ASA reference and unregisters from the Factory', async () => {
+    fetchClaimAsaIdMock.mockResolvedValue(777n)
+    sendDeleteMock.mockResolvedValue({ confirmation: { confirmedRound: 5n } })
+    sendUnregisterMock.mockResolvedValue({ confirmation: {} })
+
+    await deleteCampaign(42n, session)
+
+    expect(sendDeleteMock).toHaveBeenCalledWith({ args: [], assetReferences: [777n], extraFee: microAlgos(2000) })
+    expect(sendUnregisterMock).toHaveBeenCalledWith({ args: { app: 42n }, appReferences: [42n], extraFee: microAlgos(1000) })
+  })
+
+  it('deleteCampaign works for a never-funded campaign (no asset reference)', async () => {
+    fetchClaimAsaIdMock.mockResolvedValue(undefined)
+    sendDeleteMock.mockResolvedValue({ confirmation: {} })
+    sendUnregisterMock.mockResolvedValue({ confirmation: {} })
+
+    await deleteCampaign(42n, session)
+
+    expect(sendDeleteMock).toHaveBeenCalledWith({ args: [], assetReferences: [], extraFee: microAlgos(1000) })
   })
 })

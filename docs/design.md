@@ -41,7 +41,7 @@ living off-chain. The address→profile binding is proven by a **signed attestat
 | Display name, avatar, bio | Off-chain DB | Not needed by the contract |
 | Email address | Off-chain DB, never indexed publicly | Privacy; used only for notifications |
 | Notification preferences | Off-chain DB | Privacy + user control |
-| Pledge history | On-chain (boxes) | Source of truth for refunds |
+| Pledge history | On-chain (Claim ASA balances) | Source of truth for refunds |
 | "Your campaigns / your pledges" | Derived from indexer | No extra storage |
 
 **Rule of thumb:** if the contract doesn't need it to enforce a rule, don't put it

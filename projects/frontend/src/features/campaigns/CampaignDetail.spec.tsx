@@ -16,11 +16,15 @@ vi.mock('../../lib/campaign', async () => {
 const claimMock = vi.fn()
 const refundMock = vi.fn()
 const cancelPledgeMock = vi.fn()
+const closeOutMock = vi.fn()
+const deleteCampaignMock = vi.fn()
 
 vi.mock('../../lib/transaction', () => ({
   claim: (...args: unknown[]) => claimMock(...args),
   refund: (...args: unknown[]) => refundMock(...args),
   cancelPledge: (...args: unknown[]) => cancelPledgeMock(...args),
+  closeOut: (...args: unknown[]) => closeOutMock(...args),
+  deleteCampaign: (...args: unknown[]) => deleteCampaignMock(...args),
 }))
 
 const useWalletMock = vi.fn()
@@ -206,6 +210,55 @@ describe('CampaignDetail', () => {
     render(<CampaignDetail appId={42n} onBack={() => {}} />)
 
     expect(await screen.findByText(/Failed to load campaign/)).toBeInTheDocument()
+  })
+
+  it('shows a close-out button when claimed and the viewer holds claim units', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('claimed', { myPledgeMicroAlgos: 1_000_000n }))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    expect(await screen.findByText('Close out my claim')).toBeInTheDocument()
+  })
+
+  it('calls closeOut when the close-out button is clicked', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('claimed', { myPledgeMicroAlgos: 1_000_000n }))
+    closeOutMock.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await user.click(await screen.findByText('Close out my claim'))
+    expect(closeOutMock).toHaveBeenCalledWith(42n, { address: 'ADDRESS', signer: {} })
+  })
+
+  it('shows a delete button for the creator on a settled campaign', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('failed', { creator: 'ADDRESS' }))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    expect(await screen.findByText('Delete campaign')).toBeInTheDocument()
+  })
+
+  it('hides the delete button for non-creators and open campaigns with pledges', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('open', { raisedMicroAlgos: 5_000_000n }))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await screen.findByText('Campaign #42')
+    expect(screen.queryByText('Delete campaign')).not.toBeInTheDocument()
+  })
+
+  it('shows a delete button for the creator on an abandoned (pledge-less) open campaign', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('open', { creator: 'ADDRESS', raisedMicroAlgos: 0n }))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    expect(await screen.findByText('Delete campaign')).toBeInTheDocument()
+  })
+
+  it('calls deleteCampaign when the delete button is clicked', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('failed', { creator: 'ADDRESS' }))
+    deleteCampaignMock.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await user.click(await screen.findByText('Delete campaign'))
+    expect(deleteCampaignMock).toHaveBeenCalledWith(42n, { address: 'ADDRESS', signer: {} })
   })
 
   it('renders with a zero-percent progress when the goal is zero', async () => {

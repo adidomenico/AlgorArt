@@ -1,7 +1,7 @@
-import type { Account, bytes, gtxn, uint64 } from '@algorandfoundation/algorand-typescript'
+import type { bytes, gtxn, uint64 } from '@algorandfoundation/algorand-typescript'
 import {
-  Box,
-  BoxMap,
+  Account,
+  Asset,
   Bytes,
   Contract,
   Global,
@@ -15,14 +15,19 @@ import {
 } from '@algorandfoundation/algorand-typescript'
 
 /**
- * Campaign — a non-custodial crowdfunding escrow.
+ * Campaign — a non-custodial crowdfunding escrow whose backer records live in a **Claim ASA**.
  *
  * One stateful application per campaign. Pledged ALGO is held at the app's escrow address and released by the contract itself, based purely
  * on the on-chain state and the transaction group presented by the caller.
  *
- * Backer records live in a fixed-height **fanout-8** padded Merkle tree: each pledge appends a leaf `(address, amount)` and updates the root in
- * O(h) via an MMR frontier, where `h = log8(N)`. A backer proves their leaf with a Merkle proof to `cancelPledge`/`refund`, which marks it
- * spent in a 1-bit-per-leaf bitmap. No per-backer boxes, so the escrow's minimum balance is a small constant and `delete()` is trivial.
+ * The right to a refund is itself an on-chain asset balance: on `pledge`, the campaign mints the same number of **claim units** of its own
+ * Claim ASA to the backer (1 unit = 1 microAlgo). A refund or cancellation is the reverse — the backer surrenders claim units to the escrow
+ * and receives the same amount of ALGO. Because the units are destroyed from the backer's balance by the surrender, the same claim cannot
+ * be redeemed twice: the ASA balance *is* the anti-double-refund state. No Merkle tree, spent bitmap, boxes, or local state are needed, so
+ * the campaign's own storage is a small constant regardless of the number of backers.
+ *
+ * The Claim ASA is a bearer instrument: it is freely transferable, and whoever holds the units at settlement time is entitled to the
+ * refund. It is created and managed by the campaign itself via inner transactions (manager = the escrow), so no third party is trusted.
  */
 
 // Status is stored in global state as a uint64.
@@ -34,77 +39,17 @@ const STATUS_CLAIMED = 2
 // A single bytes global-state value is capped at 128 bytes on the AVM.
 const MAX_BYTES_PER_STATE_KEY = 128
 
-// A fanout-8 tree: each internal node hashes its 8 children, so height = log8(N). At h = 5 that is 8^5 = 32,768
-// backers, and a pledge (append + fold) or refund (proof verify) is ~5 sha256 ops — inside the 700-cost app-call
-// budget (a binary tree could not fit; see docs/commitment-redesign.md).
-const FANOUT = 8
-const TREE_HEIGHT = 5
-const FRONTIER_BYTES = 1344 // 32 × (FANOUT − 1) × (TREE_HEIGHT + 1)
+// The Claim ASA total supply: 2^64 - 1 units. The ASA total is immutable after creation, so the campaign mints units from this fixed pool.
+// The real cap is the ALGO total supply (~10^16 µA), far below 2^64 - 1, so the pool can never run dry.
+const TOTAL_CLAIM_UNITS = Uint64.MAX_VALUE
 
-// The spent bitmap is sharded into 1024-byte boxes (8192 leaves per shard), each under the 2048-byte box I/O budget.
-const BITMAP_SHARD_BITS = 13
-const BITMAP_SHARD_BYTES = 1024
-
-// The creator funds the escrow's fixed storage MBR via `fund()` so backers' pledges stay fully refundable: a refund
-// only flips a bitmap bit, so the frontier and spent-shard boxes (and their MBR) persist until delete(). The worst
-// case is the account base (100,000) + the frontier box (2500 + 400×1345 = 540,500) + the spent shards
-// (2500 + 400×1033 = 415,700 each) — the recommended deposit, returned on delete().
-
-// EMPTY[k] = sha256 of an empty fanout-8 subtree of height k, at bytes [k*32, (k+1)*32) of this constant.
-const EMPTY = Bytes.fromHex(
-  'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
-    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
-    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
-    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
-    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
-    '4b2f7eba53965fb076d3d078f8d9f7100e0a9258f582b88304350729ad4a78e8',
-)
-// PREIMAGE[k] = EMPTY[k] repeated 8 times (256 bytes), for k = 0..TREE_HEIGHT-1; the fold pads each level with `replace`.
-const PREIMAGE = Bytes.fromHex(
-  'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
-    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
-    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
-    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
-    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
-    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
-    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
-    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' +
-    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
-    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
-    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
-    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
-    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
-    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
-    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
-    'da4974409dcfd785cec6321826272da5cf679e2d48a28bab45e77d489752a47b' +
-    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
-    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
-    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
-    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
-    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
-    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
-    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
-    'e99ccc670b5de422c4e062a6d4c022ab4e130c184efc2cf3267f3f781dd9df77' +
-    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
-    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
-    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
-    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
-    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
-    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
-    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
-    'e22ee633fd2bb6de05e7e4668b908956c114db86d75ea7514b392466965e0b03' +
-    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
-    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
-    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
-    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
-    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
-    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
-    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4' +
-    'c7bffaadfee1012c52d1c1506240e8ba7b30528717ec89f99729c4c738a034b4',
-)
+// The escrow's minimum balance once the Claim ASA exists: 100,000 (account base) + 100,000 (created asset) = 200,000 µA (the asset's
+// creator needs no extra opt-in — the supply holding is implicit). The creator fronts this via `fund()` so backers' pledges stay 100%
+// refundable. Measured on LocalNet; see docs/campaign.md.
+const MIN_DEPOSIT = 200_000
 
 export class Campaign extends Contract {
-  /** Address of the creator — the only account allowed to claim. */
+  /** Address of the creator — the only account allowed to claim and delete. */
   creator = GlobalState<Account>()
 
   /** Campaign title, e.g. "My first novel". */
@@ -119,26 +64,17 @@ export class Campaign extends Contract {
   /** Deadline, as a UNIX timestamp (seconds). */
   deadline = GlobalState<uint64>()
 
-  /** Total amount pledged so far, in microAlgos. */
-  raised = GlobalState<uint64>()
+  /** Live pledge total, in microAlgos (pledges minus cancellations/refunds). */
+  raised = GlobalState<uint64>({ initialValue: 0 })
 
   /** Current status: 0 Open, 1 Failed, 2 Claimed. */
   status = GlobalState<uint64>({ initialValue: STATUS_OPEN })
 
-  /** Merkle root over all pledge leaves, updated on every pledge. */
-  root = GlobalState<bytes>()
+  /** The campaign's Claim ASA id; 0 until `fund()` issues it. */
+  claimAsa = GlobalState<uint64>({ initialValue: 0 })
 
-  /** Number of leaves appended so far (the backer count). */
-  leafCount = GlobalState<uint64>({ initialValue: 0 })
-
-  /** Storage deposit the creator fronts at create() to cover the escrow's fixed box MBR. */
+  /** Storage deposit the creator fronts at `fund()` to cover the escrow's fixed minimum balance. */
   deposit = GlobalState<uint64>({ initialValue: 0 })
-
-  /** MMR frontier: the completed-subtree roots, one 32-byte slot per height (empty = 32 zero bytes). */
-  frontier = Box<bytes>({ key: 'f' })
-
-  /** Sharded spent bitmap, one bit per leaf index; `spent(index >> 13)` holds 1024 bytes. */
-  spent = BoxMap<uint64, bytes>({ keyPrefix: 's' })
 
   /**
    * Deploy the campaign.
@@ -164,56 +100,81 @@ export class Campaign extends Contract {
     this.deadline.value = deadline
     this.raised.value = 0
     this.status.value = STATUS_OPEN
-    this.root.value = this.emptyNode(Uint64(TREE_HEIGHT))
-    this.leafCount.value = 0
+    this.claimAsa.value = 0
     this.deposit.value = 0
   }
 
   /**
-   * Fund the campaign's storage deposit.
+   * Fund the campaign's storage deposit and issue the Claim ASA.
    *
-   * The creator pays ALGO into the escrow to cover the fixed storage MBR (the frontier box and spent shards), so
-   * backers' pledges stay fully refundable. The deposit is accumulated and returned to the creator by `delete()`.
-   * Without it, the first pledge cannot create the frontier box (insufficient balance).
+   * The creator pays ALGO into the escrow to cover the fixed storage minimum balance (the escrow's account base plus the Claim ASA's
+   * created-asset and opt-in cost, 300,000 µA total), so backers' pledges stay fully refundable. The same call creates the Claim ASA via
+   * an inner transaction: total supply `2^64 - 1`, `manager` = the escrow (so only this contract can later destroy it), no reserve, no
+   * freeze, no clawback — the claim is a freely transferable bearer instrument. The deposit is accumulated and returned to the creator by
+   * `delete()`.
    *
    * @param payment Payment from the creator to the campaign escrow.
    */
   @abimethod()
   fund(payment: gtxn.PaymentTxn): void {
     assert(Txn.sender === this.creator.value, 'only the creator can fund')
+    assert(this.status.value === STATUS_OPEN, 'campaign is not open')
+    assert(this.claimAsa.value === Uint64(0), 'claim asset already issued')
     assert(payment.sender === Txn.sender, 'payment must come from the caller')
     assert(payment.receiver === Global.currentApplicationAddress, 'payment must be made to the campaign escrow')
-    assert(payment.amount > 0, 'fund must be greater than zero')
-    assert(this.status.value === STATUS_OPEN, 'campaign is not open')
+    assert(payment.amount >= MIN_DEPOSIT, 'fund must cover the escrow minimum balance')
 
-    this.deposit.value = this.deposit.value + payment.amount
+    const created = itxn
+      .assetConfig({
+        total: TOTAL_CLAIM_UNITS,
+        decimals: Uint64(0),
+        unitName: Bytes('CLAIM'),
+        assetName: Bytes('AlgorArt Claim'),
+        manager: Global.currentApplicationAddress,
+        fee: Uint64(0),
+      })
+      .submit()
+
+    this.claimAsa.value = created.createdAsset.id
+    this.deposit.value = payment.amount
   }
 
   /**
    * Pledge ALGO to the campaign.
    *
-   * The caller submits this app call in a group with a payment from their own account to the escrow. The pledge is appended to the Merkle
-   * tree as a leaf `(Txn.sender, amount)`.
+   * The caller submits this app call in a group with a payment from their own account to the escrow. The contract mints the same number
+   * of Claim ASA units to the caller via an inner asset transfer (the backer must already be opted in to the Claim ASA — otherwise the
+   * whole group reverts).
    *
    * @param payment Payment from the caller to the campaign escrow.
    */
   @abimethod()
   pledge(payment: gtxn.PaymentTxn): void {
     assert(Global.latestTimestamp < this.deadline.value, 'pledging is closed')
+    assert(this.status.value === STATUS_OPEN, 'campaign is not open')
     assert(payment.receiver === Global.currentApplicationAddress, 'payment must be made to the campaign escrow')
     assert(payment.sender === Txn.sender, 'payment must come from the caller')
     assert(payment.amount > 0, 'pledge must be greater than zero')
     assert(Txn.sender !== this.creator.value, 'creator cannot pledge to their own campaign')
+    assert(this.claimAsa.value !== Uint64(0), 'claim asset not issued yet')
 
-    this.append(this.leafHash(Txn.sender, payment.amount), this.leafCount.value)
+    itxn
+      .assetTransfer({
+        xferAsset: this.claimAsa.value,
+        assetReceiver: Txn.sender,
+        assetAmount: payment.amount,
+        fee: Uint64(0),
+      })
+      .submit()
+
     this.raised.value = this.raised.value + payment.amount
-    this.leafCount.value = this.leafCount.value + 1
   }
 
   /**
    * Release the escrow balance to the creator.
    *
-   * Only the creator may call, only once the deadline has passed and only if the goal was reached.
+   * Only the creator may call, only once the deadline has passed and only if the goal was reached. The claim units then stop representing
+   * a refundable claim — backers may still surrender them via `closeOut()` so the escrow can be swept.
    */
   @abimethod()
   claim(): void {
@@ -228,22 +189,22 @@ export class Campaign extends Contract {
       .payment({
         receiver: this.creator.value,
         amount: this.escrowBalance(),
+        fee: Uint64(0),
       })
       .submit()
   }
 
   /**
-   * Return a backer's pledge.
+   * Return a backer's pledge after a failed campaign.
    *
-   * Only after the deadline, when the goal was not reached. The backer proves their leaf against the root; the leaf's bit in the spent
-   * bitmap makes a second refund impossible.
+   * Only after the deadline, when the goal was not reached. The backer surrenders claim units to the escrow in the same group (an asset
+   * transfer to the escrow address) and receives the same number of microAlgos back. Because the surrendered units leave the caller's
+   * balance, the same claim cannot be redeemed twice — no other anti-double-spend state exists or is needed.
    *
-   * @param proof The Merkle proof: `height × (fanout − 1)` sibling hashes concatenated, grouped by level.
-   * @param index The leaf's slot index.
-   * @param amount The pledged amount (bound to the leaf by the proof).
+   * @param axfer Asset transfer from the caller to the escrow, of the campaign's Claim ASA.
    */
   @abimethod()
-  refund(proof: bytes, index: uint64, amount: uint64): void {
+  refund(axfer: gtxn.AssetTransferTxn): void {
     assert(Global.latestTimestamp >= this.deadline.value, 'deadline has not passed')
     assert(this.raised.value < this.goal.value, 'goal was reached, no refunds')
 
@@ -252,155 +213,117 @@ export class Campaign extends Contract {
     }
     assert(this.status.value === STATUS_FAILED, 'campaign is not refundable')
 
-    this.verifyAndSpend(index, amount, proof)
+    this.verifySurrender(axfer)
 
     itxn
       .payment({
         receiver: Txn.sender,
-        amount: amount,
+        amount: axfer.assetAmount,
+        fee: Uint64(0),
       })
       .submit()
+
+    this.raised.value = this.raised.value - axfer.assetAmount
   }
 
   /**
    * Withdraw a backer's pledge before the deadline.
    *
-   * Proves the leaf, marks it spent, decrements `raised` and pays the amount back.
+   * The explicit, safe cancellation path while the campaign is open: the holder surrenders claim units and receives the same amount of
+   * ALGO back; `raised` is decremented so the goal check stays honest. With bearer claim units, any holder can cancel — which is exactly
+   * "the current holder is entitled to the refund".
    *
-   * @param proof The Merkle proof: `height × (fanout − 1)` sibling hashes concatenated, grouped by level.
-   * @param index The leaf's slot index.
-   * @param amount The pledged amount (bound to the leaf by the proof).
+   * @param axfer Asset transfer from the caller to the escrow, of the campaign's Claim ASA.
    */
   @abimethod()
-  cancelPledge(proof: bytes, index: uint64, amount: uint64): void {
+  cancelPledge(axfer: gtxn.AssetTransferTxn): void {
     assert(Global.latestTimestamp < this.deadline.value, 'pledging is closed')
     assert(this.status.value === STATUS_OPEN, 'campaign is not open')
 
-    this.verifyAndSpend(index, amount, proof)
-    this.raised.value = this.raised.value - amount
+    this.verifySurrender(axfer)
 
     itxn
       .payment({
         receiver: Txn.sender,
-        amount: amount,
+        amount: axfer.assetAmount,
+        fee: Uint64(0),
       })
       .submit()
+
+    this.raised.value = this.raised.value - axfer.assetAmount
+  }
+
+  /**
+   * Close out a claim holding on a successful campaign.
+   *
+   * After `claim()` the claim units no longer represent a refundable claim. A holder can close their Claim ASA holding back to the escrow
+   * (asset transfer with `closeRemainderTo` = the escrow), recovering their own 0.1 ALGO opt-in minimum balance. Nothing is paid out. Once
+   * every holder has closed out, the escrow again holds the entire ASA supply and the creator can `delete()` the campaign.
+   *
+   * @param axfer Asset transfer from the caller to the escrow closing the caller's Claim ASA holding.
+   */
+  @abimethod()
+  closeOut(axfer: gtxn.AssetTransferTxn): void {
+    assert(this.status.value === STATUS_CLAIMED, 'campaign is not claimed')
+    assert(axfer.sender === Txn.sender, 'claim units must come from the caller')
+    assert(axfer.assetReceiver === Global.currentApplicationAddress, 'claim units must go to the campaign escrow')
+    assert(axfer.xferAsset.id === this.claimAsa.value, 'wrong claim asset')
+    assert(axfer.assetCloseTo === Global.currentApplicationAddress, 'must close the claim holding to the escrow')
   }
 
   /**
    * Delete the campaign application and recover the residual ALGO.
    *
-   * Creator only, and only once settled with no backer funds remaining: the escrow balance may hold at most the
-   * creator's own storage deposit. Deletes the frontier and spent-bitmap boxes, then closes the escrow with
-   * `CloseRemainderTo`, returning the residual (the deposit) to the creator and freeing their sponsorship floor.
+   * Creator only, and only when settled: the campaign may not have live pledges (an open campaign with `raised == 0` is deletable — nobody
+   * is owed anything). The Claim ASA may only be destroyed when the escrow holds the entire supply, which is checked directly against the
+   * escrow's own asset balance, so a delete can never strand a backer's units. The ASA is destroyed first (freeing its minimum balance),
+   * then the escrow is closed with `CloseRemainderTo`, returning the residual (the deposit) to the creator and freeing their sponsorship
+   * floor.
    */
   @abimethod({ allowActions: 'DeleteApplication' })
   delete(): void {
     assert(Txn.sender === this.creator.value, 'only the creator can delete')
-    assert(this.status.value !== STATUS_OPEN, 'cannot delete an open campaign')
-    assert(Global.currentApplicationAddress.balance <= this.deposit.value, 'cannot delete with funds remaining')
+    assert(this.status.value !== STATUS_OPEN || this.raised.value === Uint64(0), 'cannot delete a campaign with live pledges')
 
-    this.frontier.delete()
+    /* v8 ignore next 9 — the supply check + destroy only run when the escrow holds the whole supply; the offline ledger can't
+     * emulate asset holdings, so this path is covered by the LocalNet integration tests (contract.integration.test.ts). */
+    if (this.claimAsa.value !== Uint64(0)) {
+      const held = op.AssetHolding.assetBalance(Global.currentApplicationAddress, Asset(this.claimAsa.value))[0]
+      assert(held === TOTAL_CLAIM_UNITS, 'claim units outstanding')
 
-    const shardCount: uint64 = (this.leafCount.value + Uint64(BITMAP_SHARD_BYTES * 8 - 1)) >> Uint64(BITMAP_SHARD_BITS)
-    for (let shard = Uint64(0); shard < shardCount; shard = shard + 1) {
-      this.spent(shard).delete()
+      itxn
+        .assetConfig({
+          configAsset: this.claimAsa.value,
+          fee: Uint64(0),
+        })
+        .submit()
     }
 
     itxn
       .payment({
         receiver: this.creator.value,
-        amount: 0,
+        amount: Uint64(0),
         closeRemainderTo: this.creator.value,
+        fee: Uint64(0),
       })
       .submit()
   }
 
-  // Append a leaf hash to the tree: update the MMR frontier and the root. `n` is the leaf count before this append.
-  private append(leaf: bytes, n: uint64): void {
-    let frontier = this.frontier.get({ default: op.bzero(FRONTIER_BYTES) })
-    let node: bytes = leaf
-    let k = Uint64(0)
-    // Merge: while the k-th base-FANOUT digit of `n` is FANOUT-1, the level carries — combine its FANOUT-1 completed
-    // subtrees with `node` into one subtree at the next level.
-    while (k < Uint64(TREE_HEIGHT)) {
-      const digit: uint64 = (n >> (k * Uint64(3))) & Uint64(FANOUT - 1)
-      if (digit !== Uint64(FANOUT - 1)) break
-      // The FANOUT-1 slots are contiguous: extract them as one range.
-      const group = op.extract(frontier, k * Uint64(FANOUT - 1) * Uint64(32), Uint64((FANOUT - 1) * 32))
-      node = op.sha256(op.concat(group, node))
-      k = k + 1
-    }
-    // Store the new subtree in the first free slot at the first non-carrying level.
-    const slotIndex: uint64 = (n >> (k * Uint64(3))) & Uint64(FANOUT - 1)
-    frontier = op.replace(frontier, (k * Uint64(FANOUT - 1) + slotIndex) * Uint64(32), node)
-    this.frontier.value = frontier
-    this.root.value = this.fold(frontier, n + 1)
-  }
-
-  // Compute the empty-padded fold of the frontier for `count` leaves (the root).
-  private fold(frontier: bytes, count: uint64): bytes {
-    /* v8 ignore next 3 — a fully-loaded tree (32,768 leaves) collapses into one subtree; untestable without that many pledges. */
-    if (count === Uint64(32768)) {
-      return op.extract(frontier, Uint64(TREE_HEIGHT * (FANOUT - 1)) * Uint64(32), 32)
-    }
-    let partial: bytes = op.bzero(0)
-    let hasPartial = false
-    let k = Uint64(0)
-    while (k < Uint64(TREE_HEIGHT)) {
-      const occupied: uint64 = (count >> (k * Uint64(3))) & Uint64(FANOUT - 1)
-      // Start from EMPTY[k] × FANOUT, then overwrite the occupied slots and the partial with `replace`.
-      let buffer: bytes = this.emptyGroup(k)
-      if (occupied > 0) {
-        const group = op.extract(frontier, k * Uint64(FANOUT - 1) * Uint64(32), occupied * Uint64(32))
-        buffer = op.replace(buffer, 0, group)
-      }
-      if (hasPartial) {
-        buffer = op.replace(buffer, occupied * Uint64(32), partial)
-      }
-      partial = op.sha256(buffer)
-      hasPartial = true
-      k = k + 1
-    }
-    return partial
-  }
-
-  // Verify the caller's proof and mark the leaf spent, atomically.
-  private verifyAndSpend(index: uint64, amount: uint64, proof: bytes): void {
-    let node: bytes = op.sha256(op.concat(Txn.sender.bytes, op.itob(amount)))
-    let siblingOffset = Uint64(0)
-    let k = Uint64(0)
-    while (k < Uint64(TREE_HEIGHT)) {
-      const digit: uint64 = (index >> (k * Uint64(3))) & Uint64(FANOUT - 1)
-      // children = siblings[0..digit-1] ++ node ++ siblings[digit..FANOUT-2]
-      const left = op.extract(proof, siblingOffset, digit * Uint64(32))
-      const right = op.extract(proof, siblingOffset + digit * Uint64(32), (Uint64(FANOUT - 1) - digit) * Uint64(32))
-      node = op.sha256(op.concat(op.concat(left, node), right))
-      siblingOffset = siblingOffset + Uint64(FANOUT - 1) * Uint64(32)
-      k = k + 1
-    }
-    assert(node.equals(this.root.value), 'invalid proof')
-
-    const shardIndex: uint64 = index >> Uint64(BITMAP_SHARD_BITS)
-    const bitIndex: uint64 = index & Uint64(BITMAP_SHARD_BYTES * 8 - 1)
-    const shard = this.spent(shardIndex).get({ default: op.bzero(BITMAP_SHARD_BYTES) })
-    assert(!op.getBit(shard, bitIndex), 'already spent')
-    this.spent(shardIndex).value = op.setBit(shard, bitIndex, 1)
-  }
-
-  // The hash of a pledge leaf: sha256(address(32) || amount(8)).
-  private leafHash(account: Account, amount: uint64): bytes {
-    return op.sha256(op.concat(account.bytes, op.itob(amount)))
-  }
-
-  // The root of an empty subtree of height k (a precomputed constant).
-  private emptyNode(k: uint64): bytes {
-    return op.extract(EMPTY, k * 32, 32)
-  }
-
-  // The preimage of an empty level-k subtree: EMPTY[k] repeated FANOUT times (256 bytes), for the fold's padding.
-  private emptyGroup(k: uint64): bytes {
-    return op.extract(PREIMAGE, k * 256, 256)
+  /**
+   * Validate a surrender asset transfer for `refund`/`cancelPledge`: from the caller to the escrow, of the Claim ASA, a positive amount,
+   * and without `closeRemainderTo` (so the exact amount received equals `assetAmount` and the payout is exact).
+   *
+   * @param axfer The asset transfer to validate.
+   */
+  private verifySurrender(axfer: gtxn.AssetTransferTxn): void {
+    assert(axfer.sender === Txn.sender, 'claim units must come from the caller')
+    assert(axfer.assetReceiver === Global.currentApplicationAddress, 'claim units must go to the campaign escrow')
+    assert(axfer.xferAsset.id === this.claimAsa.value, 'wrong claim asset')
+    assert(axfer.assetAmount > 0, 'claim amount must be greater than zero')
+    assert(
+      axfer.assetCloseTo === Account(Bytes.fromHex('0000000000000000000000000000000000000000000000000000000000000000')),
+      'close-out is not allowed here',
+    )
   }
 
   /** The spendable ALGO held at the escrow address (total minus the minimum balance). */

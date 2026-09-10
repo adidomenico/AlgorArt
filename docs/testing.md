@@ -71,18 +71,29 @@ class as it does not extend Contract or BaseContract".
 
 ## LocalNet integration notes
 
-- Integration tests live in `contract.integration.test.ts` — a **plain `.test.ts`**
-  file, so the puya transformer skips it (no AVM emulation; it talks to real algod).
+- Integration tests live in `contract.integration.test.ts` and
+  `factory.integration.test.ts` — **plain `.test.ts`** files, so the puya
+  transformer skips them (no AVM emulation; they talk to real algod).
 - Uses `algorandFixture()` to fund throwaway accounts from the LocalNet dispenser.
-- Loads `Campaign.arc56.json` at runtime via `fs.readFileSync` with the generic
-  `AppFactory` — avoids statically importing the gitignored `CampaignClient.ts`,
+- Loads the ARC-56 specs at runtime via `fs.readFileSync` with the generic
+  `AppFactory` — avoids statically importing the gitignored `*Client.ts`,
   which would break `tsc --noEmit` in CI (artifacts aren't checked in).
 - LocalNet algod runs in **dev mode**: block timestamp = previous tip timestamp +
   offset. `advanceTime(n)` sets the offset, produces any transaction (a self-payment
   "time bump"), then resets the offset in a `finally`.
-- `claim`/`refund` issue an inner payment, so they need `extraFee: (1000).microAlgo()`.
-- Box references for `pledge`/`refund` are auto-populated (`populateAppCallResources`
-  defaults to true).
+- Inner transactions need fee pooling via `extraFee: (1000).microAlgo()` per
+  inner txn (`fund`/`pledge`/`claim`/`refund`/`cancelPledge` → 1000; `delete`
+  with the ASA → 2000).
+- `pledge(pay)void` mints claim units via an inner asset transfer, so the call
+  must carry `assetReferences: [claimAsa]`. `refund(axfer)void` /
+  `cancelPledge(axfer)void` / `closeOut(axfer)void` take the backer's own asset
+  transfer as the ABI argument — the group pools its asset, no explicit
+  reference needed. `delete()void` needs `assetReferences: [claimAsa]` for the
+  supply check and destroy.
+- Backers must `assetOptIn` to the Claim ASA before pledging (the mint inner
+  txn fails otherwise and the whole group reverts).
+- `closeOut` uses the `closeAssetTo` parameter on `createTransaction.assetTransfer`
+  (not `closeRemainderTo`, which is the payment field).
 - Do **not** pass `updatable`/`deletable` to `factory.send.create` — the contract TEAL
   has no deploy-time templates for them.
 
@@ -116,10 +127,14 @@ class as it does not extend Contract or BaseContract".
   `ctx.ledger.patchAccountData(appAddress, { account: { balance: N } })`
   (`balance` is nested under `account`). Default min balance is `100_000`, so
   `escrowBalance() = balance - 100_000`.
-- Box state: `contract.pledges(account)` returns a `Box<uint64>`; use `.exists`,
-  `.value`, `.get({ default: 0 })`.
-- Inner payments (from `claim`/`refund`): assert via
+- Asset effects are **not** applied offline: the inner `assetConfig`/`assetTransfer`
+  txns execute but don't move balances, so mint/surrender/double-spend behavior is
+  proven on LocalNet instead. Capture the issued Claim ASA for gtxn assertions with
+  `ctx.txn.lastGroup.lastItxnGroup().getAssetConfigInnerTxn().createdAsset`.
+- Inner payments (from `claim`/`refund`/`cancelPledge`/`delete`): assert via
   `ctx.txn.lastGroup.lastItxnGroup().getPaymentInnerTxn()`.
+- ABI asset-transfer arguments come from `ctx.any.txn.assetTransfer({ sender, xferAsset,
+  assetReceiver, assetAmount, assetCloseTo })`, created inside the `createScope` block.
 - Failure assertions: `assert` throws `AssertError` with the message, so
   `expect(() => ...).toThrowError('...')` works verbatim.
 - `vitest.config.mts` must override `compilerOptions.module: 'esnext'` (the contract
@@ -142,10 +157,15 @@ class as it does not extend Contract or BaseContract".
       create → pledge → claim and → refund end-to-end.
 - [x] **M5 — `cancelPledge`.** Contract method + offline behavioral tests +
       frontend wiring (helper, detail-page action, unit tests).
-- [x] **M6 — guarded `delete(backers)`.** Contract method + offline guard tests +
-      LocalNet integration covering the full money flow with three backers
-      (pledge → claim → delete, and pledge → refund → delete), asserting balances,
-      minimum balances (MBR), fees, and the sponsorship-floor free on every step.
+- [x] **M6 — guarded `delete()`.** Contract method + offline guard tests +
+      LocalNet integration covering the full money flow with three backers,
+      asserting balances, minimum balances (MBR), fees, and the sponsorship-floor
+      free on every step.
+- [x] **M7 — Claim ASA redesign.** Replaced the Merkle/spent-bitmap machinery with
+      the per-campaign Claim ASA (`fund` issues it, `pledge` mints, refunds
+      surrender), added `closeOut`, the Factory registry contract, and full
+      offline + LocalNet coverage of the new lifecycle, MBR accounting, and the
+      double-refund invariants.
 
 ## Coverage matrix (every method × every branch)
 
@@ -154,35 +174,52 @@ class as it does not extend Contract or BaseContract".
 | `create` | success | ✅ |
 | `create` | `goal == 0` | ✅ |
 | `create` | `deadline <= latestTimestamp` | ✅ |
-| `create` | called again (not app-create) | ✅ |
-| `pledge` | success (first pledge) | ✅ |
+| `create` | empty title | ✅ |
+| `fund` | success (issues the Claim ASA, records the deposit) | ✅ |
+| `fund` | second fund (`claimAsa != 0`) | ✅ |
+| `fund` | non-creator | ✅ |
+| `fund` | `amount < MIN_DEPOSIT` | ✅ |
+| `fund` | settled campaign | ✅ |
+| `pledge` | success (mints units, bumps `raised`) | ✅ |
 | `pledge` | re-pledge accumulates | ✅ |
+| `pledge` | before `fund()` (no Claim ASA yet) | ✅ |
+| `pledge` | creator self-pledge | ✅ |
 | `pledge` | `amount == 0` | ✅ |
-| `pledge` | wrong receiver | ✅ |
-| `pledge` | payer ≠ caller | ✅ |
 | `pledge` | after deadline | ✅ |
 | `claim` | success | ✅ |
 | `claim` | non-creator | ✅ |
 | `claim` | before deadline | ✅ |
 | `claim` | `raised < goal` | ✅ |
 | `claim` | double claim (`status != Open`) | ✅ |
-| `refund` | success | ✅ |
+| `refund` | success (full surrender, exact payout) | ✅ |
+| `refund` | partial refund | ✅ |
 | `refund` | before deadline | ✅ |
 | `refund` | `raised >= goal` | ✅ |
-| `refund` | non-backer (no box) | ✅ |
-| `refund` | double refund (box deleted) | ✅ |
-| `refund` | second backer after first (status already `Failed`) | ✅ |
-| `cancelPledge` | success | ✅ |
-| `cancelPledge` | re-pledged box returns full accumulated amount | ✅ |
-| `cancelPledge` | only removes the caller's pledge | ✅ |
+| `refund` | claimed campaign | ✅ |
+| `refund` | surrender with `closeRemainderTo` set | ✅ |
+| `refund` | wrong asset | ✅ |
+| `refund` | zero amount | ✅ |
+| `refund` | wrong receiver | ✅ |
+| `refund` | double refund (units gone — LocalNet) | ✅ |
+| `refund` | non-holder (no units — LocalNet) | ✅ |
+| `cancelPledge` | success (decrements `raised`) | ✅ |
 | `cancelPledge` | after deadline | ✅ |
-| `cancelPledge` | non-backer (no box) | ✅ |
-| `cancelPledge` | double cancel (box deleted) | ✅ |
-| `delete` | success (claimed — deletes listed boxes + `CloseRemainderTo`) | ✅ |
-| `delete` | success (failed, fully refunded — `CloseRemainderTo` on empty account) | ✅ |
+| `cancelPledge` | settled campaign | ✅ |
+| `cancelPledge` | surrender with `closeRemainderTo` set | ✅ |
+| `cancelPledge` | double cancel (units gone — LocalNet) | ✅ |
+| `closeOut` | success (claimed campaign) | ✅ |
+| `closeOut` | not claimed | ✅ |
+| `closeOut` | without `closeRemainderTo` | ✅ |
+| `closeOut` | wrong receiver | ✅ |
+| `delete` | success (failed, fully refunded — destroy ASA + close) | ✅ |
+| `delete` | success (claimed, all units closed out — destroy ASA + close) | ✅ |
+| `delete` | never-funded open campaign | ✅ |
 | `delete` | non-creator | ✅ |
-| `delete` | open campaign | ✅ |
-| `delete` | failed with outstanding boxes (ignores the list, `CloseRemainderTo` fails) | ✅ |
+| `delete` | open campaign with live pledges | ✅ |
+| `delete` | outstanding claim units | ✅ |
+| `Factory.create` / `setApprovalHash` | owner + length guards | ✅ |
+| `Factory.register` | success / unconfigured hash / non-creator / impostor program / low deposit / wrong payer / wrong receiver / double registration | ✅ |
+| `Factory.unregister` | success (deposit back) / unregistered / non-creator | ✅ |
 
 ## Browser E2E / acceptance tests
 
@@ -212,7 +249,7 @@ Browser E2E tests close this gap.
 - **Create** — fill the form, submit, assert the new campaign appears.
 - **Pledge** — enter an amount, submit, assert `raised` and "Your pledge" update.
 - **Cancel pledge** — assert the button appears only while `open` with a pledge,
-  and that clicking it returns the pledge (raised drops back, box disappears).
+  and that clicking it returns the pledge (raised drops back, units are gone).
 - **Claim / refund** — after fast-forwarding the deadline, assert the creator /
   backer flows complete.
 

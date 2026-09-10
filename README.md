@@ -8,11 +8,12 @@ from their own wallet into an **on-chain escrow contract**. The smart contract �
 server — holds the funds and enforces the rules: if the goal is met by the deadline, the
 creator can claim the funds; if not, every backer can reclaim their pledge.
 
-> Technical details live in [`docs/`](docs/): contract internals, on-chain state,
-> and design decisions in [the contract docs](docs/campaign.md), the
-> [frontend design](docs/frontend.md), [the CI plan](docs/ci.md), the
-> [roadmap](docs/roadmap.md) (what's left to do), and
-> [product design & open questions](docs/design.md).
+> Technical details live in [`docs/`](docs/): contract internals in
+> [the contract docs](docs/campaign.md) and the
+> [Claim ASA redesign rationale](docs/claim-asa-redesign.md), the
+> [frontend design](docs/frontend.md), the [Factory & architecture](docs/architecture.md),
+> [the CI plan](docs/ci.md), the [roadmap](docs/roadmap.md) (what's left to do),
+> and [product design & open questions](docs/design.md).
 
 ## The idea
 
@@ -41,19 +42,24 @@ The app never sees a secret — only signed transactions.
 
 ## Contract design
 
-One **stateful Algorand application** per campaign. Funds are held at the app's escrow
-address; pledge records live in **boxes** (one per backer).
+One **stateful Algorand application** per campaign, plus a per-campaign **Claim ASA**.
+Funds are held at the app's escrow address; a backer's refundable claim is their
+**balance of the Claim ASA** — 1 unit = 1 microAlgo. Refunding surrenders the units
+back to the escrow, so the same claim cannot be redeemed twice. A separate **Factory**
+registry app proves which campaigns are official AlgorArt.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Open: create(goal, deadline)
-    Open --> Open: pledge() — send ALGO, record in box
-    Open --> Funded: deadline passed & raised >= goal
-    Open --> Failed: deadline passed & raised < goal
-    Funded --> Claimed: creator calls claim()
-    Failed --> Refunded: backer calls refund()
-    Claimed --> [*]
-    Refunded --> [*]
+    [*] --> Open: create()
+    Open --> Open: fund() — issues the Claim ASA
+    Open --> Open: pledge() — mints claim units to the backer
+    Open --> Open: cancelPledge() — backer surrenders units, gets ALGO back
+    Open --> Claimed: claim() — deadline passed & raised >= goal
+    Open --> Failed: refund() — deadline passed & raised < goal
+    Failed --> Failed: refund() — remaining backers reclaim
+    Claimed --> Claimed: closeOut() — backers dump worthless units
+    Claimed --> [*]: delete() — all units home
+    Failed --> [*]: delete() — all units home
 ```
 
 ### ABI methods
@@ -61,16 +67,21 @@ stateDiagram-v2
 | Method | Caller | Conditions | Effect |
 | --- | --- | --- | --- |
 | `create(title, metadataUri, goal, deadline)` | creator | — | Deploys the app, sets global state |
-| `pledge()` | backer | before deadline | Payment tx into escrow; records backer's amount in a box; bumps `raised` |
-| `claim()` | creator | after deadline **and** `raised >= goal` | Sends escrow balance to the creator |
-| `refund()` | backer | after deadline **and** `raised < goal` | Returns the backer's pledge from escrow |
-| `cancelPledge()` | backer | before deadline | Returns the backer's pledge, decrements `raised` |
-| `delete(backers)` | creator | settled (`Failed` / `Claimed`) | Deletes listed boxes (claimed only) and closes the escrow to the creator, freeing all minimum balances |
+| `fund()` | creator | once, ≥ 0.2 ALGO | Funds the escrow's fixed MBR; issues the Claim ASA |
+| `pledge()` | backer | before deadline, opted in | Payment tx into escrow; mints equal claim units; bumps `raised` |
+| `claim()` | creator | after deadline **and** `raised >= goal` | Sends the spendable escrow balance to the creator |
+| `refund()` | backer | after deadline **and** `raised < goal` | Surrenders claim units; pays the same µA back |
+| `cancelPledge()` | backer | before deadline | Surrenders claim units; pays back; decrements `raised` |
+| `closeOut()` | backer | claimed | Returns worthless units; frees the backer's opt-in MBR |
+| `delete()` | creator | settled & no outstanding units | Destroys the Claim ASA, closes the escrow, frees all MBR |
 
 ### Key on-chain state
 
-- **Global:** `creator`, `title`, `metadataUri`, `goal`, `deadline`, `raised`, `status` (`Open` / `Funded` / `Failed` / `Claimed`).
-- **Per-backer (boxes):** `amount` pledged.
+- **Global (per campaign):** `creator`, `title`, `metadataUri`, `goal`, `deadline`,
+  `raised`, `status` (`Open` / `Failed` / `Claimed`), `claimAsa`, `deposit`.
+- **Per backer:** nothing on the campaign — the backer's Claim ASA balance *is* their pledge.
+- **Factory (one app):** `owner`, the official Campaign approval-program hash,
+  `registered` boxes (app id → creator).
 
 ## Tech stack
 
@@ -80,9 +91,9 @@ stateDiagram-v2
 | Frontend | **React + Vite + TypeScript** |
 | Wallet (non-custodial) | **`@txnlab/use-wallet`** → Pera Wallet / Defly |
 | SDK / reads | **`algosdk`**, **Algorand Indexer** |
-| Testing | **AVM simulator** (`algokit project test`) |
+| Testing | **AVM simulator** (offline) + **LocalNet** integration (Vitest) |
 | Tooling | **AlgoKit CLI** + local sandbox (Docker) |
-| Backend | **None required** — contract + indexer replace it |
+| Backend | **None required** — contract + indexer + Factory replace it |
 
 ## Project structure (target)
 
@@ -94,9 +105,12 @@ AlgorArt/
 ├── projects/
 │   ├── contracts/                # AlgoKit contract project (TypeScript)
 │   │   └── smart_contracts/
-│   │       ├── campaign/         # the escrow app (create/pledge/claim/refund)
+│   │       ├── campaign/         # the escrow app + Claim ASA (create/fund/pledge/claim/refund)
 │   │       │   ├── contract.algo.ts
 │   │       │   ├── contract.algo.spec.ts   # offline AVM tests (Vitest)
+│   │       │   └── deploy-config.ts
+│   │       ├── factory/          # the canonical campaign registry
+│   │       │   ├── contract.algo.ts
 │   │       │   └── deploy-config.ts
 │   │       └── index.ts          # deploy orchestrator
 │   └── frontend/                 # AlgoKit frontend project (React + Vite + TS)
@@ -105,7 +119,7 @@ AlgorArt/
 │           │   ├── campaigns/    # create, browse, details
 │           │   └── wallet/       # connect button + provider
 │           ├── contracts/        # generated typed clients (from ABI)
-│           └── lib/              # algod/indexer config
+│           └── lib/              # algod/indexer config + campaign/transaction helpers
 ├── README.md
 └── .github/                      # branch protection / security config (added manually)
 ```
@@ -117,10 +131,12 @@ Two docs carry the plan:
 - [`docs/roadmap.md`](docs/roadmap.md) — a living checklist of what's left, organized by area.
 - [`docs/design.md`](docs/design.md) — product design & open questions (identity, backend, notifications, UI).
 
-Done so far: setup; the core contract (`create`/`pledge`/`claim`/`refund` with full
-tests); and the core frontend (wallet connect, browse, create, pledge, claim/refund).
-Next up: a TestNet smoke test, the contract-shape decisions (`updateMetadata`,
-cancel/batch refunds), then styling and the later product features.
+Done so far: setup; the core contract (`create`/`fund`/`pledge`/`claim`/`refund` with full
+tests); the Claim ASA redesign (replacing the Merkle/spent-bitmap machinery) and the
+Factory registry; and the core frontend (wallet connect, browse, create, pledge,
+claim/refund/cancel, close-out, delete).
+Next up: a TestNet smoke test, the contract-shape decisions (`updateMetadata`),
+then styling and the later product features.
 
 > **CI.** One consolidated [`build-and-test`](.github/workflows/build-and-test.yml) workflow with four
 > jobs (`build` → lint/format/type-check, unit-test, integration-test), plus a
@@ -152,15 +168,22 @@ a static frontend that talks directly to the Algorand network.
 algokit project bootstrap all    # install deps for contracts/ + frontend/
 algokit localnet start           # start algod + indexer in Docker (the "chain")
 algokit project run build        # compile contracts + generate typed clients
+
+cd projects/contracts
+npm run deploy:ci -- factory     # deploy the Factory (prints the app id)
+npm run deploy:ci -- campaign    # optional demo campaign
+FACTORY_APP_ID=<factory app id> npx ts-node --transpile-only scripts/seed-demo.ts  # demo data
+
+cd ../frontend
+# set VITE_FACTORY_APP_ID=<factory app id> in .env
+npm run dev                      # frontend on http://localhost:5173
+
 algokit project run lint         # ESLint across all projects
 algokit project run format       # Prettier check across all projects
 algokit project run check-types  # type-check across all projects
 algokit project run test         # contract unit tests (offline AVM, via Vitest)
 
 npx --yes markdownlint-cli2@0.23.2        # markdownlint across all docs (add --fix to autofix)
-
-cd projects/frontend
-npm run dev                      # frontend on http://localhost:5173
 ```
 
 ### Checks
@@ -186,11 +209,11 @@ The goal is near-total coverage, measured two ways:
 
 - **Smart contract — 100% behavioral coverage.** AVM bytecode has no mature line-coverage
   tool, so coverage is defined by the test matrix: every method × every branch (caller
-  checks, deadline checks, goal checks, re-pledge). Each `[success]` / `[failure]` case
-  gets an explicit offline AVM test in `contract.algo.spec.ts` (via
-  `@algorandfoundation/algorand-typescript-testing` + Vitest), plus a LocalNet
-  integration test in `contract.integration.test.ts` that exercises the compiled TEAL
-  end-to-end.
+  checks, deadline checks, goal checks, surrender validation, re-pledge). Each case gets
+  an explicit offline AVM test in `contract.algo.spec.ts` / `factory/contract.algo.spec.ts`
+  (via `algorand-typescript-testing` + Vitest), plus LocalNet integration tests
+  (`*.integration.test.ts`) that exercise the compiled TEAL end-to-end with real balances
+  and MBR assertions.
 - **Frontend — line coverage.** Vitest + `@vitest/coverage-v8` over components and utils
   (`ellipseAddress`, `getAlgoClientConfigs`, feature components). Target ≥ 90%, enforced
   as a CI gate.
@@ -201,7 +224,7 @@ The only hard Docker requirement is the **LocalNet sandbox** — `algokit localn
 runs algod + indexer (+ kmd) as containers. The frontend and contracts themselves are
 plain Node projects and run without Docker.
 
-For end users, nothing runs locally at all: once the contract is deployed and the
+For end users, nothing runs locally at all: once the contracts are deployed and the
 frontend is served from a static host, the dApp is just a URL in a browser. Packaging
 the frontend as a container image is a possible later nicety, not a requirement.
 

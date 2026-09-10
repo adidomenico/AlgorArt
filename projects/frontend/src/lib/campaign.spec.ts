@@ -1,6 +1,6 @@
 import algosdk from 'algosdk'
 import { describe, expect, it } from 'vitest'
-import { decodeGlobalState, deriveStatus, isCampaignApp, toCampaignViewModel } from './campaign'
+import { decodeGlobalState, deriveStatus, factoryAppId, isCampaignApp, toCampaignViewModel } from './campaign'
 
 const ZERO_ADDRESS = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ'
 
@@ -24,7 +24,7 @@ function appParams(globalState: algosdk.indexerModels.TealKeyValue[]): algosdk.i
   })
 }
 
-function campaignApp(overrides: { status?: bigint; raised?: bigint } = {}): algosdk.indexerModels.Application {
+function campaignApp(overrides: { status?: bigint; raised?: bigint; claimAsa?: bigint } = {}): algosdk.indexerModels.Application {
   const globalState = [
     kv('creator', tealBytes(algosdk.decodeAddress(ZERO_ADDRESS).publicKey)),
     kv('title', tealBytes(new TextEncoder().encode('My first novel'))),
@@ -33,13 +33,19 @@ function campaignApp(overrides: { status?: bigint; raised?: bigint } = {}): algo
     kv('deadline', tealUint(2_000n)),
     kv('raised', tealUint(overrides.raised ?? 5_000_000n)),
     kv('status', tealUint(overrides.status ?? 0n)),
-    kv('leafCount', tealUint(0n)),
+    kv('claimAsa', tealUint(overrides.claimAsa ?? 777n)),
   ]
   return new algosdk.indexerModels.Application({ id: 42n, params: appParams(globalState) })
 }
 
+describe('factoryAppId', () => {
+  it('reads the Factory app id from the environment', () => {
+    expect(factoryAppId()).toBe(1001n)
+  })
+})
+
 describe('decodeGlobalState', () => {
-  it('decodes creator, title, metadata uri, goal, deadline, raised, status, and leafCount', () => {
+  it('decodes creator, title, metadata uri, goal, deadline, raised, status, and claimAsa', () => {
     const app = campaignApp()
     const state = decodeGlobalState(app)
     expect(state.creator).toBe(ZERO_ADDRESS)
@@ -49,7 +55,7 @@ describe('decodeGlobalState', () => {
     expect(state.deadline).toBe(2_000n)
     expect(state.raised).toBe(5_000_000n)
     expect(state.status).toBe(0n)
-    expect(state.leafCount).toBe(0n)
+    expect(state.claimAsa).toBe(777n)
   })
 
   it('ignores unknown keys', () => {
@@ -78,7 +84,7 @@ describe('isCampaignApp', () => {
     expect(isCampaignApp(campaignApp())).toBe(true)
   })
 
-  it('returns false when the leafCount key is missing', () => {
+  it('returns false when the claimAsa key is missing', () => {
     const app = new algosdk.indexerModels.Application({
       id: 1n,
       params: appParams([
@@ -131,10 +137,6 @@ describe('deriveStatus', () => {
     expect(deriveStatus(10n, 5n, 1_000n, 0n, 2_000n)).toBe('failed')
   })
 
-  it('returns failed when the status uint is 1', () => {
-    expect(deriveStatus(10n, 5n, 1_000n, 1n, 2_000n)).toBe('failed')
-  })
-
   it('returns open while before the deadline', () => {
     expect(deriveStatus(10n, 10n, 3_000n, 0n, 2_000n)).toBe('open')
   })
@@ -151,7 +153,13 @@ describe('toCampaignViewModel', () => {
     expect(vm.raisedMicroAlgos).toBe(10_000_000n)
     expect(vm.deadlineSeconds).toBe(2_000n)
     expect(vm.status).toBe('funded')
+    expect(vm.claimAsaId).toBe(777n)
     expect(vm.myPledgeMicroAlgos).toBe(250_000n)
+  })
+
+  it('omits the claim ASA id when it is not issued yet', () => {
+    const vm = toCampaignViewModel(campaignApp({ claimAsa: 0n }), 3_000n)
+    expect(vm.claimAsaId).toBeUndefined()
   })
 
   it('defaults missing goal/raised to zero', () => {

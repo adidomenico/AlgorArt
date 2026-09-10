@@ -11,11 +11,15 @@ workspace: an Algorand TypeScript smart contract plus a React + Vite frontend.
 
 - `projects/contracts/` — AlgoKit contract project (Algorand TypeScript → AVM)
   - `smart_contracts/campaign/contract.algo.ts` — the `Campaign` escrow app
-    (`create`, `pledge`, `claim`, `refund`)
+    (`create`, `fund`, `pledge`, `claim`, `refund`, `cancelPledge`, `closeOut`,
+    `delete`), with a per-campaign **Claim ASA** (backers' refundable claims)
+  - `smart_contracts/factory/contract.algo.ts` — the on-chain `Factory`
+    registry (owner-configured approval hash, `register`/`unregister`)
   - `smart_contracts/artifacts/` — **generated** (compiled TEAL, ARC-32/56 specs, clients)
 - `projects/frontend/` — React + Vite + TypeScript dApp
 - [`docs/`](docs/) — technical docs: [`campaign.md`](docs/campaign.md)
-  (internals), [`testing.md`](docs/testing.md),
+  (internals), [`claim-asa-redesign.md`](docs/claim-asa-redesign.md)
+  (design rationale), [`testing.md`](docs/testing.md),
   [`frontend.md`](docs/frontend.md), [`ci.md`](docs/ci.md),
   [`conventions.md`](docs/conventions.md) (lint/format/tsconfig rules),
   [`roadmap.md`](docs/roadmap.md) (checklist), [`design.md`](docs/design.md) (product plan)
@@ -77,8 +81,17 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
   - Create-time methods use `@abimethod({ onCreate: 'require' })`.
   - Reading a `BoxMap` entry `.value` fails if the box is missing — use
     `.get({ default: 0 })` for first-write patterns.
-  - ABI payment arguments are `gtxn.PaymentTxn`; the escrow address is
+  - ABI payment arguments are `gtxn.PaymentTxn`; asset-transfer arguments are
+    `gtxn.AssetTransferTxn`; the escrow address is
     `Global.currentApplicationAddress`.
+  - An asset id is stored in global state as a plain `uint64` (`GlobalState<uint64>`)
+    and wrapped with `Asset(...)` where a reference type is needed.
+  - Inner asset transactions (`itxn.assetTransfer`/`itxn.assetConfig`) and
+    `op.AssetHolding.assetBalance` require the asset to be in the **outer call's
+    foreign assets** — the frontend passes `assetReferences: [assetId]` (grouped
+    gtxn transfers pool their own assets, so `refund(axfer)` needs none).
+  - Destroy an ASA with `itxn.assetConfig({ configAsset, fee: Uint64(0) })` (no
+    other fields) — only valid when the creator account holds the full supply.
 - **Keep docs aligned.** Whenever a change affects behavior, structure, commands, or
   conventions, update the relevant docs in the same change set:
   - `docs/` for technical details and design decisions

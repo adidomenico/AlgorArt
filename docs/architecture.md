@@ -1,126 +1,103 @@
 # Architecture
 
-How AlgorArt moves from "a contract that works" to "a Kickstarter that does not
-lose its history". This doc explains the split between the **escrow** and the
-**catalog**, and why a minimal backend is the right call for discovery and
-archival.
+How AlgorArt is put together: the **escrow** (Campaign + Claim ASA), the
+**Factory** (canonical registration), and the optional **catalog** for
+discovery and archival.
 
-> **Decision (settled):** the catalog lives in a minimal backend (API + DB),
-> not an on-chain registry app. It is a design plan, not implemented code.
->
-> Contract internals: [`campaign.md`](campaign.md). Frontend design:
+> Contract internals: [`campaign.md`](campaign.md) and
+> [`claim-asa-redesign.md`](claim-asa-redesign.md). Frontend design:
 > [`frontend.md`](frontend.md). Product design & open questions:
 > [`design.md`](design.md). Roadmap: [`roadmap.md`](roadmap.md).
 
-## The core split: escrow vs record
+## The pieces
 
-Today one Algorand application plays two roles, and that coupling is what makes
-"how do we keep ended campaigns?" feel uncomfortable:
+| | Escrow (per campaign) | Factory (one, platform-owned) | Catalog (optional backend) |
+| --- | --- | --- | --- |
+| What it is | Campaign app + app account + Claim ASA | On-chain registry app | API + DB |
+| Funds it holds | Pledged ALGO + the creator's deposit | Registration deposits | none |
+| Lifecycle | Created per campaign; deleted after settlement | Permanent | Permanent |
+| Job | Enforce crowdfunding rules | Prove a campaign is official AlgorArt | Browse/search/archive |
 
-| | The escrow | The campaign record |
-| --- | --- | --- |
-| What it is | Pledged ALGO + enforcement rules | Title, story, image, goal, deadline, outcome, stats, history |
-| Where it lives today | On-chain (app + boxes) | On-chain (title/global state) + off-chain (IPFS metadata) |
-| Lifecycle | Temporary — should be swept after settlement | Permanent — must outlive settlement |
+### The escrow: one app + one Claim ASA per campaign
 
-Once those are separated, the answer is clean: **the escrow can be deleted and
-swept, because the record lives elsewhere.**
+Each campaign is an isolated application with its own account and its own Claim
+ASA. Backers hold claim units on their own wallets; the campaign's own storage
+never grows with the backer count. Full internals:
+[`campaign.md`](campaign.md).
 
-## The hidden problem: discovery, not just archival
+### The Factory: canonical registration, not shared custody
 
-Even ignoring deletion, a Kickstarter-style browse page is hard on a pure
-indexer. The Algorand indexer is keyed by **account** and **app id**. There is no
-cheap "list every app whose approval program is X" query.
+The Factory is an **on-chain registry** (`smart_contracts/factory/contract.algo.ts`),
+not an escrow: it holds no campaign funds, takes no part in pledging, refunding,
+or cleanup, and is never a per-backer bottleneck. It does three things:
 
-So "show all campaigns" requires the catalog — a database the frontend writes
-to at creation — rather than indexer gymnastics.
+1. **Authenticity.** The platform owner configures the SHA-256 of the official
+   Campaign approval program. `register(app, payment)` verifies a newly created
+   campaign app against that hash and its creator, then records
+   `app id → creator` in a box. Copies of the contract cannot register.
+2. **Refundable registration deposit.** Registration pays ≈ 0.019 ALGO (the
+   registration box's MBR) to the Factory account; `unregister(app)` deletes
+   the box and pays it back to the creator when the campaign is deleted.
+3. **The canonical id source for the frontend.** The browse page lists only
+   Factory-registered campaigns (one box search), so official campaigns are
+   distinguishable from arbitrary copies without any backend.
 
-And search/filter/sort ("art", "games", "ending soon", "most funded") cannot be
-done by the indexer at all — it is not a text-search or analytics engine.
-Kickstarter's browse experience needs a real query layer, which is what the
-catalog (API + DB) provides.
+The Factory is the on-chain counterpart of the frontend's generated
+`CampaignFactory` *client* — the client is tooling; the Factory app is the
+registry.
 
-**The catalog is the real reason a backend exists. Archival is a consequence of
-having one.**
+### The catalog: optional, and thinner than before
 
-## Chosen architecture: minimal backend
+The Claim ASA removed the last hard reason for a backend:
 
-```mermaid
-flowchart LR
-    W[Wallet] -->|1. submit txn| C[Algorand chain]
-    F[Frontend] -->|2. register metadata + app id| A[API + DB catalog]
-    F -->|browse / detail pages| A
-    W -->|pledge / claim / refund| C
-    C -->|reads| I[Indexer]
-    I -->|watcher observes transitions| Wt[Chain watcher]
-    Wt -->|updates status, outcome, stats| A
-    C -.contract is source of truth; DB is a projection.-> A
-```
+- **Discovery** — the Factory registration boxes give the official campaign
+  list without a catalog.
+- **Refund proofs** — gone; refunds are asset transfers, so there is no
+  backend proof endpoint.
+- **Archival** — a deleted campaign's global state remains queryable on the
+  indexer (with `deleted` / `deleted-at-round`), and backers' balances of a
+  *destroyed* ASA are not needed by anyone afterwards, so there is no
+  box-MBR residue to snapshot around.
 
-Four pieces:
+What a catalog still buys is **search, filtering, and history UX** (the
+indexer has no text search and no "list apps by approval program"). If one is
+built, it stays a projection: one row per campaign, written at creation and
+finalized by a watcher, rebuildable by re-syncing the indexer. It never holds
+keys, funds, or authority.
 
-1. **Contract** — unchanged in role: holds funds, enforces the outcome. It is the
-   *escrow*, not the record. (It can then freely add `delete()` to sweep residue,
-   because nothing depends on the app surviving.)
-2. **Indexer** — live read model for on-chain truth (balances, boxes, status), as
-   today.
-3. **Minimal backend (API + DB)** — the **catalog**: a `campaigns` table with app
-   id, creator, title, metadata/IPFS URI, goal, deadline, status, outcome, raised,
-   backer count, timestamps. Serves browse/detail/history pages forever.
-4. **Chain watcher** — a small service that observes the indexer (polling, or a
-   hosted-indexer webhook) and updates the DB when campaigns are created, pledged,
-   claimed, refunded, or deleted. The DB is a **projection**; the chain is
-   authoritative and the DB is rebuildable by re-syncing.
+## Creation flow
 
-### Creation flow
+1. The creator signs the Campaign `create()` (frontend, generated
+   `CampaignFactory` client) — one app-create transaction.
+2. The creator calls `fund()` with the 0.2 ALGO storage deposit — the same
+   call issues the Claim ASA.
+3. The creator calls the Factory's `register(app, payment)` with the
+   ≈ 0.019 ALGO deposit. From then on the campaign appears in the official
+   browse list.
 
-1. Frontend signs + submits the `create()` transaction.
-2. Gets back the app id + escrow address.
-3. POSTs `{ appId, creator, title, metadataUri, goal, deadline }` to the API.
-4. The API validates against the indexer that the app exists and the creator
-   matches (prevents junk/forged listings).
-5. The watcher later confirms `status` transitions and finalizes the record.
+The frontend chains 1–3 into a single user action
+([`frontend.md`](frontend.md)).
 
-## Archived vs live data (the verified caveat)
+## Settlement flows (no backend involved)
 
-What the chain and indexer actually retain after an app is deleted, per the
-official Algorand docs:
+- **Success:** creator calls `claim()`; backers `closeOut()` their claim units
+  when convenient; the creator `delete()`s (ASA destroyed, escrow swept,
+  Factory deposit returned) once all units are home.
+- **Failure:** each backer calls `refund()` themselves; the creator `delete()`s
+  once the escrow is empty.
+- **Abandoned (never funded):** the creator can `delete()` immediately.
 
-- A deleted application is **not erased** from the indexer. Lookups still return
-  the app with a `deleted` flag and `deleted-at-round`, and `include-all` includes
-  deleted applications.
-- A deleted app's **global state remains queryable** via the indexer.
-- **Boxes are not deleted when the app is deleted.** They become non-modifiable
-  but remain queryable, and their minimum balance stays **locked** on the account
-  forever. The only way to recover box MBR is to delete each box before deleting
-  the app (see [`campaign.md`](campaign.md)).
-
-So indexer history alone is *mostly* survivable for global state, but the
-per-backer pledge data (boxes) is exactly what becomes non-modifiable dead data.
-This is why the catalog should **snapshot the outcome while the boxes still
-exist**, then let the chain forget. Archiving into our own DB at the moment of
-finalization is safer than relying on indexer history.
-
-## Scope of the minimal backend
-
-Keep it tiny: one table, two read endpoints (create-listing, list/detail), one
-watcher loop. It is a **catalog + archive**, never a second source of truth. It
-holds no keys and no funds, and it never decides outcomes — those remain on-chain.
-This aligns with what [`design.md`](design.md) already anticipates: a minimal
-backend arrives with notifications and profiles; archival and discovery are
-earlier, stronger reasons for it.
+None of these paths iterate backers on the platform's behalf.
 
 ## References
 
 Official Algorand docs backing the claims in this file (verify against these
 when in doubt):
 
-- [Box Storage](https://dev.algorand.co/concepts/smart-contracts/storage/box/) —
-  "If an app is deleted, its boxes are not deleted" and box MBR is locked.
-- [Indexer REST API](https://dev.algorand.co/reference/rest-api/indexer/) —
-  application `deleted` / `deleted-at-round` fields, `include-all`, box lookup
-  endpoints.
 - [Applications](https://dev.algorand.co/concepts/smart-contracts/apps/) — app
   lifecycle and deletion.
-- [Transaction Types](https://dev.algorand.co/concepts/transactions/types/) —
-  application call transactions, including `DeleteApplication`.
+- [Asset Operations](https://developer.algorand.org/docs/get-details/asa/) —
+  ASA deletion and opt-in/out semantics.
+- [Indexer REST API](https://dev.algorand.co/reference/rest-api/indexer/) —
+  application `deleted` / `deleted-at-round` fields, `include-all`, box and
+  asset-balance lookups.

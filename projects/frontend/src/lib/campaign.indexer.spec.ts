@@ -1,12 +1,12 @@
 import algosdk from 'algosdk'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchMyPledge, fetchPledgeLeaves, fetchSpentShards, getCampaign, isLeafSpent, listCampaigns } from './campaign'
+import { fetchClaimAsaId, fetchClaimHolding, fetchMyPledge, fetchRegisteredCampaignIds, getCampaign, listCampaigns } from './campaign'
 
 const indexerMock = vi.hoisted(() => ({
   lookupApplications: vi.fn(),
+  lookupAccountAssets: vi.fn(),
   searchForApplications: vi.fn(),
-  searchForTransactions: vi.fn(),
-  lookupApplicationBoxByIDandName: vi.fn(),
+  searchForApplicationBoxes: vi.fn(),
 }))
 
 vi.mock('./algorand', () => ({
@@ -27,7 +27,7 @@ function kv(key: string, value: algosdk.indexerModels.TealValue): algosdk.indexe
   return new algosdk.indexerModels.TealKeyValue({ key: new TextEncoder().encode(key), value })
 }
 
-function campaignApp(leafCount: bigint): algosdk.indexerModels.Application {
+function campaignApp(overrides: { claimAsa?: bigint; id?: bigint } = {}): algosdk.indexerModels.Application {
   const globalState = [
     kv('creator', tealBytes(algosdk.decodeAddress(ZERO_ADDRESS).publicKey)),
     kv('title', tealBytes(new TextEncoder().encode('My first novel'))),
@@ -36,10 +36,10 @@ function campaignApp(leafCount: bigint): algosdk.indexerModels.Application {
     kv('deadline', tealUint(2_000n)),
     kv('raised', tealUint(5_000_000n)),
     kv('status', tealUint(0n)),
-    kv('leafCount', tealUint(leafCount)),
+    kv('claimAsa', tealUint(overrides.claimAsa ?? 777n)),
   ]
   return new algosdk.indexerModels.Application({
-    id: 42n,
+    id: overrides.id ?? 42n,
     params: new algosdk.indexerModels.ApplicationParams({
       approvalProgram: new Uint8Array(),
       clearStateProgram: new Uint8Array(),
@@ -48,260 +48,154 @@ function campaignApp(leafCount: bigint): algosdk.indexerModels.Application {
   })
 }
 
-// A fake indexer transaction with just the fields the read model touches.
-interface FakeTx {
-  group: Uint8Array | undefined
-  sender: string
-  paymentTransaction?: { amount: bigint }
-}
-
-function appCall(sender: string, group?: Uint8Array): FakeTx {
-  return { sender, group }
-}
-
-function payment(sender: string, amount: bigint, group: Uint8Array): FakeTx {
-  return { sender, group, paymentTransaction: { amount } }
-}
-
-// A chainable `searchForTransactions` builder whose `.do()` routes to app-calls or payments based on which filter ran first.
-function searchTxBuilder(getAppCalls: () => FakeTx[], getPayments: () => FakeTx[]): unknown {
-  let mode: 'app' | 'pay' | null = null
-  const query = {
-    applicationID: () => {
-      mode = 'app'
-      return query
-    },
-    address: () => {
-      mode = 'pay'
-      return query
-    },
-    addressRole: () => query,
-    txType: () => query,
-    limit: () => query,
-    nextToken: () => query,
-    do: () => ({ transactions: mode === 'pay' ? getPayments() : getAppCalls(), nextToken: undefined }),
+// A chainable indexer builder for lookup endpoints.
+function lookupBuilder(response: unknown, throws = false): unknown {
+  return {
+    assetId: () => lookupBuilder(response, throws),
+    do: () => (throws ? Promise.reject(new Error('not found')) : Promise.resolve(response)),
   }
-  return query
 }
 
-function mockTransactions(appCalls: FakeTx[], payments: FakeTx[]) {
-  indexerMock.searchForTransactions.mockImplementation(() =>
-    searchTxBuilder(
-      () => appCalls,
-      () => payments,
-    ),
-  )
+function searchBuilder(getApplications: () => algosdk.indexerModels.Application[]): unknown {
+  return {
+    limit: () => searchBuilder(getApplications),
+    do: () => ({ applications: getApplications() }),
+  }
+}
+
+function boxSearchBuilder(getBoxes: () => { name: Uint8Array }[]): unknown {
+  return {
+    limit: () => boxSearchBuilder(getBoxes),
+    nextToken: () => boxSearchBuilder(getBoxes),
+    do: () => ({ boxes: getBoxes(), nextToken: undefined }),
+  }
+}
+
+/**
+ * A Factory registration box name: 'r' + the 8-byte big-endian app id.
+ *
+ * @param appId The campaign app id to encode.
+ * @returns The 9-byte box name.
+ */
+function registrationBoxName(appId: bigint): Uint8Array {
+  const name = new Uint8Array(9)
+  name[0] = 0x72
+  for (let i = 8; i >= 1; i--) {
+    name[i] = Number(appId & 0xffn)
+    appId >>= 8n
+  }
+  return name
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('fetchPledgeLeaves', () => {
-  const GROUP_A = new Uint8Array([1, 2, 3, 4])
-  const GROUP_B = new Uint8Array([5, 6, 7, 8])
-  const GROUP_FUND = new Uint8Array([9, 9, 9, 9])
-
-  it('reconstructs leaves in app-call order, filtering out fund and ungrouped calls', async () => {
-    mockTransactions(
-      [appCall('BACKER_A', GROUP_A), appCall('CREATOR', GROUP_FUND), appCall('CREATOR'), appCall('BACKER_B', GROUP_B)],
-      [payment('BACKER_A', 100n, GROUP_A), payment('CREATOR', 2_303_300n, GROUP_FUND), payment('BACKER_B', 200n, GROUP_B)],
-    )
-
-    const leaves = await fetchPledgeLeaves(42n, 'CREATOR')
-
-    expect(leaves).toEqual([
-      { address: 'BACKER_A', amount: 100n },
-      { address: 'BACKER_B', amount: 200n },
-    ])
+describe('fetchClaimAsaId', () => {
+  it('returns the Claim ASA id from global state', async () => {
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp() }))
+    expect(await fetchClaimAsaId(42n)).toBe(777n)
   })
 
-  it('ignores a stray payment with no matching app call', async () => {
-    mockTransactions([appCall('BACKER_A', GROUP_A)], [payment('BACKER_A', 100n, GROUP_A), payment('STRANGER', 999n, GROUP_B)])
-
-    const leaves = await fetchPledgeLeaves(42n, 'CREATOR')
-
-    expect(leaves).toEqual([{ address: 'BACKER_A', amount: 100n }])
+  it('returns undefined when the campaign has not been funded', async () => {
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp({ claimAsa: 0n }) }))
+    expect(await fetchClaimAsaId(42n)).toBeUndefined()
   })
 
-  it('skips a group whose payment sender does not match the app caller', async () => {
-    mockTransactions([appCall('BACKER_A', GROUP_A)], [payment('SOMEONE_ELSE', 100n, GROUP_A)])
-
-    const leaves = await fetchPledgeLeaves(42n, 'CREATOR')
-
-    expect(leaves).toEqual([])
+  it('returns undefined when the app is missing', async () => {
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: undefined }))
+    expect(await fetchClaimAsaId(42n)).toBeUndefined()
   })
 })
 
-describe('isLeafSpent', () => {
-  it('reads set bits from the most significant bit of the first byte', () => {
-    const shard = new Uint8Array(1024)
-    shard[0] = 0xc0 // bits 0 and 1
-    expect(isLeafSpent([shard], 0)).toBe(true)
-    expect(isLeafSpent([shard], 1)).toBe(true)
-    expect(isLeafSpent([shard], 2)).toBe(false)
+describe('fetchClaimHolding', () => {
+  it('returns the opted-in balance', async () => {
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp() }))
+    indexerMock.lookupAccountAssets.mockImplementation(() => lookupBuilder({ assets: [{ amount: 250_000n }] }))
+    expect(await fetchClaimHolding(42n, 'ADDRESS')).toEqual({ optedIn: true, balance: 250_000n })
   })
 
-  it('returns false for an absent shard', () => {
-    expect(isLeafSpent([], 8192)).toBe(false)
+  it('returns opted out when the asset lookup 404s', async () => {
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp() }))
+    indexerMock.lookupAccountAssets.mockImplementation(() => lookupBuilder({}, true))
+    expect(await fetchClaimHolding(42n, 'ADDRESS')).toEqual({ optedIn: false, balance: 0n })
   })
 
-  it('returns false when the shard is too short to hold the bit', () => {
-    expect(isLeafSpent([new Uint8Array(1)], 8)).toBe(false)
-  })
-})
-
-describe('fetchSpentShards', () => {
-  it('reads shards by name and defaults missing shards to zero bytes', async () => {
-    const shard0 = new Uint8Array(1024)
-    shard0[0] = 0xff
-    indexerMock.lookupApplicationBoxByIDandName.mockImplementation((_appId: unknown, name: Uint8Array) => {
-      const nameHex = Buffer.from(name).toString('hex')
-      if (nameHex === '73' + '00'.repeat(8)) {
-        return { do: () => ({ value: shard0 }) }
-      }
-      return { do: () => Promise.reject(new Error('missing')) }
-    })
-
-    const shards = await fetchSpentShards(42n, 20_000n) // 3 shards
-
-    expect(shards).toHaveLength(3)
-    expect(shards[0]?.[0]).toBe(0xff)
-    expect(shards[1]).toEqual(new Uint8Array(1024))
-  })
-
-  it('reads no shards when the leaf count is zero', async () => {
-    const shards = await fetchSpentShards(42n, 0n)
-    expect(shards).toEqual([])
-    expect(indexerMock.lookupApplicationBoxByIDandName).not.toHaveBeenCalled()
+  it('returns opted out when the campaign has no Claim ASA', async () => {
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp({ claimAsa: 0n }) }))
+    expect(await fetchClaimHolding(42n, 'ADDRESS')).toEqual({ optedIn: false, balance: 0n })
   })
 })
 
 describe('fetchMyPledge', () => {
-  const GROUP_A = new Uint8Array([1, 2, 3, 4])
-  const GROUP_B = new Uint8Array([5, 6, 7, 8])
-
-  function mockCampaignAndLeaves(leafCount: bigint, appCalls: FakeTx[], payments: FakeTx[]) {
-    indexerMock.lookupApplications.mockReturnValue({ do: () => ({ application: campaignApp(leafCount) }) })
-    mockTransactions(appCalls, payments)
-    indexerMock.lookupApplicationBoxByIDandName.mockReturnValue({ do: () => Promise.reject(new Error('missing')) })
-  }
-
-  it('sums the backer live leaves', async () => {
-    mockCampaignAndLeaves(
-      2n,
-      [appCall('BACKER_A', GROUP_A), appCall('BACKER_B', GROUP_B)],
-      [payment('BACKER_A', 100n, GROUP_A), payment('BACKER_B', 200n, GROUP_B)],
-    )
-
-    const result = await fetchMyPledge(42n, 'BACKER_A')
-
-    expect(result).toBe(100n)
+  it('returns the claim balance when positive', async () => {
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp() }))
+    indexerMock.lookupAccountAssets.mockImplementation(() => lookupBuilder({ assets: [{ amount: 1_000_000n }] }))
+    expect(await fetchMyPledge(42n, 'ADDRESS')).toBe(1_000_000n)
   })
 
-  it('returns undefined when the backer has no live leaves', async () => {
-    mockCampaignAndLeaves(1n, [appCall('BACKER_A', GROUP_A)], [payment('BACKER_A', 100n, GROUP_A)])
-
-    const result = await fetchMyPledge(42n, 'BACKER_B')
-
-    expect(result).toBeUndefined()
+  it('returns undefined when the backer holds no units', async () => {
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp() }))
+    indexerMock.lookupAccountAssets.mockImplementation(() => lookupBuilder({}, true))
+    expect(await fetchMyPledge(42n, 'ADDRESS')).toBeUndefined()
   })
+})
 
-  it('excludes spent leaves', async () => {
-    mockCampaignAndLeaves(
-      2n,
-      [appCall('BACKER_A', GROUP_A), appCall('BACKER_A', GROUP_B)],
-      [payment('BACKER_A', 100n, GROUP_A), payment('BACKER_A', 200n, GROUP_B)],
+describe('fetchRegisteredCampaignIds', () => {
+  it('decodes registration box names into app ids', async () => {
+    indexerMock.searchForApplicationBoxes.mockImplementation(() =>
+      boxSearchBuilder(() => [
+        { name: registrationBoxName(7n) },
+        { name: registrationBoxName(1_234_567_890n) },
+        { name: new Uint8Array([0x72, 1, 2, 3]) }, // malformed: too short
+        { name: new Uint8Array([0x71, 1, 2, 3, 4, 5, 6, 7, 8]) }, // wrong prefix
+      ]),
     )
-
-    // Mark leaf 0 spent: shard 0, bit 0 (0x80).
-    const shard = new Uint8Array(1024)
-    shard[0] = 0x80
-    indexerMock.lookupApplicationBoxByIDandName.mockReturnValue({ do: () => ({ value: shard }) })
-
-    const result = await fetchMyPledge(42n, 'BACKER_A')
-
-    expect(result).toBe(200n)
+    const ids = await fetchRegisteredCampaignIds(1001n)
+    expect([...ids]).toEqual([7n, 1_234_567_890n])
   })
 })
 
 describe('listCampaigns', () => {
-  it('maps campaigns, skips non-campaign apps, and fetches the viewer pledge', async () => {
-    indexerMock.searchForApplications.mockReturnValue({
-      limit: () => ({
-        do: () => ({
-          applications: [
-            campaignApp(0n),
-            new algosdk.indexerModels.Application({
-              id: 99n,
-              params: new algosdk.indexerModels.ApplicationParams({
-                approvalProgram: new Uint8Array(),
-                clearStateProgram: new Uint8Array(),
-                globalState: [kv('other', tealUint(1n))],
-              }),
-            }),
-          ],
-        }),
+  it('lists campaigns filtered to the Factory registrations', async () => {
+    const official = campaignApp({ id: 42n })
+    const unregistered = campaignApp({ id: 43n })
+    const unrelated = new algosdk.indexerModels.Application({
+      id: 44n,
+      params: new algosdk.indexerModels.ApplicationParams({
+        approvalProgram: new Uint8Array(),
+        clearStateProgram: new Uint8Array(),
+        globalState: [kv('nope', tealUint(1n))],
       }),
     })
-    mockTransactions([], [])
-    indexerMock.lookupApplications.mockReturnValue({ do: () => ({ application: campaignApp(0n) }) })
 
-    const result = await listCampaigns(1_000n, ZERO_ADDRESS)
+    indexerMock.searchForApplicationBoxes.mockImplementation(() => boxSearchBuilder(() => [{ name: registrationBoxName(42n) }]))
+    indexerMock.searchForApplications.mockImplementation(() => searchBuilder(() => [official, unregistered, unrelated]))
 
-    expect(result).toHaveLength(1)
-    expect(result[0]?.id).toBe(42n)
-  })
-
-  it('does not fetch the pledge when no viewer is connected', async () => {
-    indexerMock.searchForApplications.mockReturnValue({
-      limit: () => ({ do: () => ({ applications: [campaignApp(0n)] }) }),
-    })
-
-    const result = await listCampaigns(1_000n)
-
-    expect(result).toHaveLength(1)
-    expect(indexerMock.lookupApplications).not.toHaveBeenCalled()
+    const campaigns = await listCampaigns(1_000n)
+    expect(campaigns.map((c) => c.id)).toEqual([42n])
   })
 })
 
 describe('getCampaign', () => {
-  it('returns a campaign by id', async () => {
-    indexerMock.lookupApplications.mockReturnValue({ do: () => ({ application: campaignApp(0n) }) })
-    const result = await getCampaign(7n, 1_000n)
-    expect(result?.id).toBe(42n)
+  it('returns the campaign with the viewer pledge', async () => {
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp() }))
+    indexerMock.lookupAccountAssets.mockImplementation(() => lookupBuilder({ assets: [{ amount: 250_000n }] }))
+    const vm = await getCampaign(42n, 3_000n, 'ADDRESS')
+    expect(vm?.id).toBe(42n)
+    expect(vm?.myPledgeMicroAlgos).toBe(250_000n)
   })
 
-  it('returns undefined for non-campaign apps', async () => {
-    indexerMock.lookupApplications.mockReturnValue({
-      do: () => ({
-        application: new algosdk.indexerModels.Application({
-          id: 8n,
-          params: new algosdk.indexerModels.ApplicationParams({
-            approvalProgram: new Uint8Array(),
-            clearStateProgram: new Uint8Array(),
-            globalState: [],
-          }),
-        }),
+  it('returns undefined for a non-campaign app', async () => {
+    const unrelated = new algosdk.indexerModels.Application({
+      id: 44n,
+      params: new algosdk.indexerModels.ApplicationParams({
+        approvalProgram: new Uint8Array(),
+        clearStateProgram: new Uint8Array(),
+        globalState: [kv('nope', tealUint(1n))],
       }),
     })
-    const result = await getCampaign(8n, 1_000n)
-    expect(result).toBeUndefined()
-  })
-
-  it('returns undefined when the app is absent', async () => {
-    indexerMock.lookupApplications.mockReturnValue({ do: () => ({ application: undefined }) })
-    const result = await getCampaign(8n, 1_000n)
-    expect(result).toBeUndefined()
-  })
-
-  it('fetches the viewer pledge when an address is provided', async () => {
-    const GROUP_A = new Uint8Array([1, 2, 3, 4])
-    indexerMock.lookupApplications.mockReturnValue({ do: () => ({ application: campaignApp(1n) }) })
-    mockTransactions([appCall('BACKER_A', GROUP_A)], [payment('BACKER_A', 7n, GROUP_A)])
-    indexerMock.lookupApplicationBoxByIDandName.mockReturnValue({ do: () => Promise.reject(new Error('missing')) })
-
-    const result = await getCampaign(7n, 1_000n, 'BACKER_A')
-    expect(result?.myPledgeMicroAlgos).toBe(7n)
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: unrelated }))
+    expect(await getCampaign(44n, 3_000n)).toBeUndefined()
   })
 })

@@ -1,4 +1,4 @@
-import { AlgorandClient } from '@algorandfoundation/algokit-utils'
+import { AlgorandClient, microAlgos } from '@algorandfoundation/algokit-utils'
 import type { Arc56Contract } from '@algorandfoundation/algokit-utils/types/app-arc56'
 import { AppFactory } from '@algorandfoundation/algokit-utils/types/app-factory'
 import fs from 'node:fs'
@@ -7,9 +7,9 @@ import path from 'node:path'
 /**
  * Deploys a single `Campaign` application instance.
  *
- * This is an example deployer: it loads the compiled ARC-56 spec and deploys one campaign. A real dApp would create campaigns from a
- * frontend (Phase 2), so this script is primarily an M4 milestone — proof that the compiled TEAL deploys and runs on a live network
- * (LocalNet / TestNet).
+ * This is an example deployer: it loads the compiled ARC-56 spec, deploys one campaign and funds its storage deposit (which issues the
+ * Claim ASA). A real dApp creates campaigns from the frontend, so this script is primarily a LocalNet sanity check that the compiled TEAL
+ * deploys and runs.
  *
  * @returns The deployed campaign's app id.
  */
@@ -36,6 +36,20 @@ export async function deploy() {
     method: 'create(byte[],byte[],uint64,uint64)void',
     args: [new TextEncoder().encode('Demo campaign'), new TextEncoder().encode('ipfs://demo'), goal, deadline],
     sender: deployer.addr,
+  })
+
+  // Fund the storage deposit: 0.2 ALGO covers the escrow's fixed minimum balance (base + the Claim ASA) and issues the Claim ASA.
+  const appClient = factory.getAppClientById({ appId: result.appId })
+  const payment = await algorand.createTransaction.payment({
+    sender: deployer.addr,
+    receiver: result.appAddress,
+    amount: microAlgos(200_000n),
+  })
+  await appClient.send.call({
+    method: 'fund(pay)void',
+    args: [payment],
+    sender: deployer.addr,
+    extraFee: microAlgos(1000),
   })
 
   console.log(`Deployed Campaign app ${result.appId.toString()} at ${result.appAddress.toString()}`)

@@ -6,6 +6,8 @@ export default defineConfig({
   esbuild: {},
   test: {
     setupFiles: 'vitest.setup.ts',
+    // LocalNet integration tests deploy apps and fast-forward blocks, which occasionally exceeds the default 5s test timeout.
+    testTimeout: 120_000,
     // Coverage measures the contract source only (tests and generated
     // artifacts are excluded). The offline AVM tests exercise the contract
     // through the puya transformer, and V8's line/branch coverage over the

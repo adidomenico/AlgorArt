@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { CampaignViewModel } from '../../lib/campaign'
 import { getCampaign } from '../../lib/campaign'
 import { formatAlgo, formatCountdown, formatDeadline } from '../../lib/format'
-import { cancelPledge, claim, refund } from '../../lib/transaction'
+import { cancelPledge, claim, closeOut, deleteCampaign, refund } from '../../lib/transaction'
 import PledgeForm from './PledgeForm'
 
 interface CampaignDetailProps {
@@ -53,6 +53,8 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   const canClaim = campaign.status === 'funded' && isCreator
   const canRefund = campaign.status === 'failed' && connected && hasPledge
   const canCancelPledge = campaign.status === 'open' && connected && hasPledge
+  const canCloseOut = campaign.status === 'claimed' && connected && hasPledge
+  const canDelete = isCreator && (campaign.status !== 'open' || campaign.raisedMicroAlgos === 0n)
 
   const runAction = async (action: () => Promise<void>, success: string) => {
     setBusy(true)
@@ -81,6 +83,16 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   const handleCancelPledge = () => {
     if (!activeAddress) return
     void runAction(() => cancelPledge(appId, { address: activeAddress, signer: transactionSigner }), 'Pledge withdrawn!')
+  }
+
+  const handleCloseOut = () => {
+    if (!activeAddress) return
+    void runAction(() => closeOut(appId, { address: activeAddress, signer: transactionSigner }), 'Claim closed out!')
+  }
+
+  const handleDelete = () => {
+    if (!activeAddress) return
+    void runAction(() => deleteCampaign(appId, { address: activeAddress, signer: transactionSigner }), 'Campaign deleted!')
   }
 
   return (
@@ -151,6 +163,22 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
           <div className="detail__actions">
             <button type="button" className="btn" disabled={busy} onClick={handleCancelPledge}>
               {busy ? 'Withdrawing…' : 'Cancel my pledge'}
+            </button>
+          </div>
+        )}
+
+        {canCloseOut && (
+          <div className="detail__actions">
+            <button type="button" className="btn" disabled={busy} onClick={handleCloseOut}>
+              {busy ? 'Closing…' : 'Close out my claim'}
+            </button>
+          </div>
+        )}
+
+        {canDelete && (
+          <div className="detail__actions">
+            <button type="button" className="btn btn--danger" disabled={busy} onClick={handleDelete}>
+              {busy ? 'Deleting…' : 'Delete campaign'}
             </button>
           </div>
         )}
