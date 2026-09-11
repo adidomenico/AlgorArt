@@ -11,9 +11,10 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 
 /**
  * LocalNet integration tests for the split-vault architecture: deploy the Factory + ClaimsVault + Campaign TEAL to a live algod and
- * exercise the full lifecycle end-to-end, checking every balance, minimum balance (MBR), ASA configuration, fee, and the attack matrix
- * (cross-campaign isolation, pooled solvency, settlement-after-deletion, counterfeit assets, double claims, pledge→cancel→refund
- * sequences, direct vault-call hijacking).
+ * exercise the full lifecycle end-to-end with **complete ledger accounting** — every test asserts each actor's balance and minimum
+ * balance deltas (µA-exact), the fee totals of every operation, the vault pool movement, claim-unit ownership, and the parked/released
+ * MBRs, plus the attack matrix (cross-campaign isolation, pooled solvency, settlement-after-deletion, counterfeit assets, double claims,
+ * pledge→cancel→refund sequences, payout-authority hijacking, stray ALGO).
  *
  * Requires `algokit localnet start` and a build (`npm run build`) so the ARC-56 artifacts exist.
  */
@@ -23,7 +24,32 @@ const BASE = 100_000n
 const MIN_DEPOSIT = 200_000n
 const ESCROW_MIN_BALANCE = BASE + 100_000n
 const TOTAL_CLAIM_UNITS = 2n ** 64n - 1n
-const TXN_FEE = 1_000n
+const FEE = 1_000n
+
+// The campaign sponsorship floor on the creator's account while the app lives: app base + 7 uint64 keys + 3 bytes keys.
+const CREATOR_FLOOR = BASE + 28_500n * 7n + 50_000n * 3n
+
+// The vault's parked MBR per issued campaign: 100,000 (created asset) + 47,100 (mapping boxes: 9,300 + 18,900 + 18,900).
+const VAULT_PARKED_AT_ISSUE = 147_100n
+// The settled box (9,300) is written at settlement, so the GC destroy releases 156,400 in total.
+const VAULT_PARKED_RELEASED_AT_DESTROY = 156_400n
+
+// Measured fee totals per operation (µA), verified by the µA-exact assertions below.
+const FEE_CREATE = FEE
+const FEE_FUND = 3n * FEE // payment + app call + inner payment pool
+const FEE_ISSUE = 2n * FEE // app call + inner asset-config pool
+const FEE_ATTACH = 2n * FEE // app call + inner self-opt-in pool
+const FEE_SEED = 2n * FEE // app call + inner supply-transfer pool
+const FEE_PLEDGE = 3n * FEE // payment + app call + inner mint pool
+const FEE_OPT_IN = FEE
+const FEE_CANCEL_REFUND_CAMPAIGN = 4n * FEE // axfer + app call + inner app call + inner payment pools
+const FEE_REFUND_VAULT = 3n * FEE // axfer + vault call + inner payment pool
+const FEE_CLAIM = 3n * FEE // app call + inner app call + inner payment pools
+const FEE_DELETE_FAILED = 4n * FEE // app call + settle + holding close + escrow close pools
+const FEE_DELETE_CLAIMED = 3n * FEE // app call + holding close + escrow close pools
+const FEE_DELETE_BARE = 2n * FEE // app call + escrow close pool
+const FEE_CLOSE_OUT = 2n * FEE // axfer + app call
+const FEE_DESTROY = 2n * FEE // app call + inner asset-config pool
 
 const CAMPAIGN_SPEC_PATH = path.resolve(__dirname, '../artifacts/campaign/Campaign.arc56.json')
 const FACTORY_SPEC_PATH = path.resolve(__dirname, '../artifacts/factory/Factory.arc56.json')
@@ -113,13 +139,49 @@ describe('Campaign + ClaimsVault (localnet)', () => {
     return block.block.header.timestamp
   }
 
-  async function accountInfo(address: string) {
+  type Ledger = Map<string, { balance: bigint; minBalance: bigint }>
+
+  /**
+   * Read an account's balance and minimum balance, in microAlgos.
+   *
+   * @param address The account address.
+   */
+  async function accountInfoOf(address: string) {
     const info = await algorand.account.getInformation(address)
     return { balance: info.balance.microAlgo, minBalance: info.minBalance.microAlgo }
   }
 
   /**
-   * Deploy a full campaign: create → fund → issueClaimAsa (vault) → attachClaimAsa.
+   * Snapshot the balance and minimum balance of every listed account.
+   *
+   * @param addresses The account addresses to snapshot.
+   */
+  async function snapshot(addresses: (string | undefined)[]): Promise<Ledger> {
+    const ledger: Ledger = new Map()
+    for (const address of addresses) {
+      if (address === undefined) continue
+      const info = await algorand.account.getInformation(address)
+      ledger.set(address, { balance: info.balance.microAlgo, minBalance: info.minBalance.microAlgo })
+    }
+    return ledger
+  }
+
+  /**
+   * The balance and minimum-balance deltas of one account between two snapshots.
+   *
+   * @param before The earlier snapshot.
+   * @param after The later snapshot.
+   * @param address The account to diff.
+   */
+  function delta(before: Ledger, after: Ledger, address: string) {
+    const from = before.get(address)
+    const to = after.get(address)
+    if (from === undefined || to === undefined) throw new Error(`missing snapshot for ${address}`)
+    return { balance: to.balance - from.balance, minBalance: to.minBalance - from.minBalance }
+  }
+
+  /**
+   * Deploy a full campaign: create → fund → issueClaimAsa (vault) → attachClaimAsa → seedSupply.
    *
    * @param creatorAddr The creator's address.
    * @param title The campaign title.
@@ -156,7 +218,7 @@ describe('Campaign + ClaimsVault (localnet)', () => {
       args: [appClient.appId],
       sender: creatorAddr,
       appReferences: [appClient.appId, factoryId],
-      extraFee: (3000).microAlgo(),
+      extraFee: (1000).microAlgo(),
       suppressLog: true,
     })
 
@@ -183,15 +245,6 @@ describe('Campaign + ClaimsVault (localnet)', () => {
     return { appClient, claimAsa }
   }
 
-  function vaultClientFor(sender: string): AppClient {
-    return new AppClient({
-      algorand,
-      appSpec: vaultSpec,
-      appId: vaultId,
-      defaultSender: sender,
-    })
-  }
-
   /**
    * The vault's box names for a campaign (prefix + 8-byte app id) — inner app calls require them declared on the outer txn.
    *
@@ -202,6 +255,15 @@ describe('Campaign + ClaimsVault (localnet)', () => {
     const appIdBytes = Buffer.alloc(8)
     appIdBytes.writeBigUInt64BE(appId)
     return prefixes.map((prefix) => ({ appId: vaultId, name: Buffer.concat([Buffer.from(prefix), appIdBytes]) }))
+  }
+
+  function vaultClientFor(sender: string): AppClient {
+    return new AppClient({
+      algorand,
+      appSpec: vaultSpec,
+      appId: vaultId,
+      defaultSender: sender,
+    })
   }
 
   async function optInAs(backerAddr: string, claimAsa: bigint) {
@@ -316,8 +378,28 @@ describe('Campaign + ClaimsVault (localnet)', () => {
 
   test('setup: the vault issues the Claim ASA and seeds the escrow; creator capital is the escrow constant', async () => {
     const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const creatorBefore = await snapshot([creator.addr.toString(), vaultAddress])
     const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Setup', (10).algo().microAlgo)
+    const creatorAfter = await snapshot([creator.addr.toString(), vaultAddress, appClient.appAddress.toString()])
 
+    // The creator paid: create fee + fund (payment + fees) + issue + attach + seed fees + the 0.2 ALGO deposit; the floor appeared.
+    const creatorDelta = delta(creatorBefore, creatorAfter, creator.addr.toString())
+    expect(creatorDelta.balance).toEqual(-(FEE_CREATE + FEE_FUND + FEE_ISSUE + FEE_ATTACH + FEE_SEED) - MIN_DEPOSIT)
+    expect(creatorDelta.minBalance).toEqual(CREATOR_FLOOR)
+
+    // The vault parked exactly this campaign's created-asset MBR + mapping boxes; no pledge ALGO moved yet.
+    const vaultDelta = delta(creatorBefore, creatorAfter, vaultAddress)
+    expect(vaultDelta.balance).toEqual(0n)
+    expect(vaultDelta.minBalance).toEqual(VAULT_PARKED_AT_ISSUE)
+
+    // The escrow holds exactly the deposit and the whole seeded supply; its MBR is base + the asset opt-in.
+    const escrowInfo = await accountInfoOf(appClient.appAddress.toString())
+    expect(escrowInfo.balance).toEqual(MIN_DEPOSIT)
+    expect(escrowInfo.minBalance).toEqual(ESCROW_MIN_BALANCE)
+    const escrowHolding = await algorand.asset.getAccountInformation(appClient.appAddress.toString(), claimAsa)
+    expect(escrowHolding.balance).toEqual(TOTAL_CLAIM_UNITS)
+
+    // The asset's identity and authorities.
     const asset = await algorand.asset.getById(claimAsa)
     expect(asset.creator).toEqual(vaultAddress)
     expect(asset.manager).toEqual(vaultAddress)
@@ -325,42 +407,45 @@ describe('Campaign + ClaimsVault (localnet)', () => {
     expect(asset.reserve).toEqual(vaultAddress)
     expect(asset.total).toEqual(TOTAL_CLAIM_UNITS)
     expect(asset.decimals).toEqual(0)
-
-    // The escrow holds the whole supply and exactly the deposit.
-    const escrow = await accountInfo(appClient.appAddress.toString())
-    expect(escrow.balance).toEqual(MIN_DEPOSIT)
-    expect(escrow.minBalance).toEqual(ESCROW_MIN_BALANCE)
-    const escrowHolding = await algorand.asset.getAccountInformation(appClient.appAddress.toString(), claimAsa)
-    expect(escrowHolding.balance).toEqual(TOTAL_CLAIM_UNITS)
-
-    // The vault parks its created-asset MBR (accepted platform cost).
-    const vault = await accountInfo(vaultAddress)
-    expect(vault.minBalance).toBeGreaterThan(BASE)
   })
 
   test('pledge: pays the vault (escrow untouched), mints claim units, accumulates', async () => {
     const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Pledge', (100).algo().microAlgo)
+    const escrowAddress = appClient.appAddress.toString()
+
+    const before = await snapshot([backer.addr.toString(), vaultAddress, escrowAddress])
     await optInAs(backer.addr.toString(), claimAsa)
-
-    const vaultBefore = await accountInfo(vaultAddress)
-    const escrowBefore = await accountInfo(appClient.appAddress.toString())
-
     await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
     await pledgeAs(appClient, backer.addr.toString(), claimAsa, 2n * ALGO)
+    const after = await snapshot([backer.addr.toString(), vaultAddress, escrowAddress])
 
+    // The backer paid 3 ALGO plus the opt-in fee and two pledge fees; their opt-in MBR appeared.
+    const backerDelta = delta(before, after, backer.addr.toString())
+    expect(backerDelta.balance).toEqual(-3n * ALGO - FEE_OPT_IN - 2n * FEE_PLEDGE)
+    expect(backerDelta.minBalance).toEqual(100_000n)
+
+    // The vault gained exactly the pledged ALGO; no MBR change (no new campaign here).
+    const vaultDelta = delta(before, after, vaultAddress)
+    expect(vaultDelta.balance).toEqual(3n * ALGO)
+    expect(vaultDelta.minBalance).toEqual(0n)
+
+    // The escrow is untouched by pledges: same balance and MBR.
+    const escrowDelta = delta(before, after, escrowAddress)
+    expect(escrowDelta.balance).toEqual(0n)
+    expect(escrowDelta.minBalance).toEqual(0n)
+
+    // The claim units mirror the pledges exactly.
     expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(3n * ALGO)
-    const vaultAfter = await accountInfo(vaultAddress)
-    expect(vaultAfter.balance - vaultBefore.balance).toEqual(3n * ALGO)
-    const escrowAfter = await accountInfo(appClient.appAddress.toString())
-    expect(escrowAfter.balance).toEqual(escrowBefore.balance) // escrow untouched by pledges
   })
 
-  test('pledge guards: no claim asset, wrong receiver, creator self-pledge', async () => {
+  test('pledge guards: wrong receiver, creator self-pledge — rejected atomically at zero cost', async () => {
     const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Guards', (100).algo().microAlgo)
+
+    const before = await snapshot([backer.addr.toString(), creator.addr.toString(), vaultAddress])
 
     // A payment to the escrow (not the vault) is rejected.
     const wrongPayment = await algorand.createTransaction.payment({
@@ -397,9 +482,17 @@ describe('Campaign + ClaimsVault (localnet)', () => {
         suppressLog: true,
       }),
     ).rejects.toThrow(/creator cannot pledge to their own campaign/)
+
+    // Failed atomic groups move nothing: no balance, MBR, or pool changes for any party.
+    const after = await snapshot([backer.addr.toString(), creator.addr.toString(), vaultAddress])
+    for (const address of [backer.addr.toString(), creator.addr.toString(), vaultAddress]) {
+      const d = delta(before, after, address)
+      expect(d.balance).toEqual(0n)
+      expect(d.minBalance).toEqual(0n)
+    }
   })
 
-  test('attachClaimAsa rejects a counterfeit asset (wrong creator)', async () => {
+  test('attachClaimAsa rejects a counterfeit asset (wrong creator) — the campaign stays inert and untouched', async () => {
     const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
 
     // A bare campaign: created + funded + issued, but NOT attached yet.
@@ -431,7 +524,8 @@ describe('Campaign + ClaimsVault (localnet)', () => {
       suppressLog: true,
     })
 
-    // A decoy ASA created by a random account (not the vault) is rejected outright.
+    // A decoy ASA created by a random account (not the vault) is rejected outright — and costs nothing beyond the decoy creation.
+    const before = await snapshot([creator.addr.toString()])
     const decoy = await algorand.send.assetCreate({
       sender: creator.addr.toString(),
       total: TOTAL_CLAIM_UNITS,
@@ -451,6 +545,13 @@ describe('Campaign + ClaimsVault (localnet)', () => {
         suppressLog: true,
       }),
     ).rejects.toThrow(/not issued by the vault/)
+    const after = await snapshot([creator.addr.toString()])
+
+    // The decoy creation cost one fee and parked the created-asset MBR on the creator; the rejected attach moved nothing.
+    const creatorDelta = delta(before, after, creator.addr.toString())
+    expect(creatorDelta.balance).toEqual(-FEE)
+    expect(creatorDelta.minBalance).toEqual(100_000n)
+    expect(await claimAsaOf(appClient)).toEqual(0n)
   })
 
   test('cancelPledge: the vault pays, raised decrements, units are consumed once', async () => {
@@ -460,15 +561,25 @@ describe('Campaign + ClaimsVault (localnet)', () => {
     await optInAs(backer.addr.toString(), claimAsa)
     await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
 
-    const before = await accountInfo(backer.addr.toString())
+    const before = await snapshot([backer.addr.toString(), vaultAddress, appClient.appAddress.toString()])
     await surrenderViaCampaign(appClient, backer.addr.toString(), claimAsa, 'cancelPledge')
-    const after = await accountInfo(backer.addr.toString())
+    const after = await snapshot([backer.addr.toString(), vaultAddress, appClient.appAddress.toString()])
 
-    // Refund paid by the vault: pledge back minus the axfer, the app call, and the inner call + inner payment fees.
-    expect(after.balance - before.balance).toEqual(ALGO - 4n * TXN_FEE)
+    // The full pledge returns, minus the axfer + app call + inner call + inner payment fees.
+    expect(delta(before, after, backer.addr.toString()).balance).toEqual(ALGO - FEE_CANCEL_REFUND_CAMPAIGN)
+    expect(delta(before, after, vaultAddress).balance).toEqual(-ALGO)
+    expect(delta(before, after, appClient.appAddress.toString()).balance).toEqual(0n)
     expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(0n)
 
+    // A second cancel of the same units fails at the transfer — no state changes.
+    const beforeSecond = await snapshot([backer.addr.toString(), vaultAddress])
     await expect(surrenderViaCampaign(appClient, backer.addr.toString(), claimAsa, 'cancelPledge')).rejects.toThrow()
+    const afterSecond = await snapshot([backer.addr.toString(), vaultAddress])
+    for (const address of [backer.addr.toString(), vaultAddress]) {
+      const d = delta(beforeSecond, afterSecond, address)
+      expect(d.balance).toEqual(0n)
+      expect(d.minBalance).toEqual(0n)
+    }
   })
 
   test(
@@ -488,29 +599,37 @@ describe('Campaign + ClaimsVault (localnet)', () => {
 
       await advanceTime(60)
 
-      // Backer1 refunds through the campaign (vault pays).
+      // Backer1 refunds through the campaign (vault pays); fees = axfer + app call + inner call + inner payment.
+      const beforeRefund = await snapshot([backer1.addr.toString(), vaultAddress])
       await surrenderViaCampaign(appClient, backer1.addr.toString(), claimAsa, 'refund')
+      const afterRefund = await snapshot([backer1.addr.toString(), vaultAddress])
+      expect(delta(beforeRefund, afterRefund, backer1.addr.toString()).balance).toEqual(ALGO - FEE_CANCEL_REFUND_CAMPAIGN)
+      expect(delta(beforeRefund, afterRefund, vaultAddress).balance).toEqual(-ALGO)
       expect(await claimBalanceOf(backer1.addr.toString(), claimAsa)).toEqual(0n)
 
       // Backer2 (the straggler) never acts. The creator deletes in ONE call: settle → holding close → escrow close.
-      const creatorBefore = await accountInfo(creator.addr.toString())
+      const beforeDelete = await snapshot([creator.addr.toString(), vaultAddress])
       await deleteAs(appClient, creator.addr.toString(), claimAsa, 3000)
-      const creatorAfter = await accountInfo(creator.addr.toString())
+      const afterDelete = await snapshot([creator.addr.toString(), vaultAddress])
 
-      // The deposit comes back (minus the delete call's own + inner fees); the floor is freed; the escrow is empty.
-      expect(creatorAfter.balance - creatorBefore.balance).toEqual(MIN_DEPOSIT - 4n * TXN_FEE)
-      expect(creatorAfter.minBalance).toEqual(BASE)
+      // The deposit comes back minus the delete fees; the sponsorship floor is freed.
+      expect(delta(beforeDelete, afterDelete, creator.addr.toString()).balance).toEqual(MIN_DEPOSIT - FEE_DELETE_FAILED)
+      expect(delta(beforeDelete, afterDelete, creator.addr.toString()).minBalance).toEqual(-CREATOR_FLOOR)
+      // The settle wrote a vault box: no ALGO moved, but the settlement box MBR is already counted in the parked total.
+      expect(delta(beforeDelete, afterDelete, vaultAddress).balance).toEqual(0n)
 
       // The straggler still refunds — directly from the vault, after the campaign is gone.
       expect(await claimBalanceOf(backer2.addr.toString(), claimAsa)).toEqual(ALGO)
-      const stragglerBefore = await accountInfo(backer2.addr.toString())
+      const beforeStraggler = await snapshot([backer2.addr.toString(), vaultAddress])
       await refundViaVault(backer2.addr.toString(), appClient.appId, claimAsa)
-      const stragglerAfter = await accountInfo(backer2.addr.toString())
-      expect(stragglerAfter.balance - stragglerBefore.balance).toEqual(ALGO - 3n * TXN_FEE)
+      const afterStraggler = await snapshot([backer2.addr.toString(), vaultAddress])
+      expect(delta(beforeStraggler, afterStraggler, backer2.addr.toString()).balance).toEqual(ALGO - FEE_REFUND_VAULT)
+      expect(delta(beforeStraggler, afterStraggler, vaultAddress).balance).toEqual(-ALGO)
       expect(await claimBalanceOf(backer2.addr.toString(), claimAsa)).toEqual(0n)
 
-      // All units are home again: the vault can garbage-collect the ASA and free its parked MBR.
-      const vaultBefore = await accountInfo(vaultAddress)
+      // Net ledger: the backers netted their pledges minus their own fees; the creator recovered the deposit minus fees; the vault's
+      // pool is back to exactly the platform reserve, and GC releases the parked MBR.
+      const beforeGc = await snapshot([vaultAddress, creator.addr.toString()])
       const vaultClient = vaultClientFor(creator.addr.toString())
       await vaultClient.send.call({
         method: 'destroyClaimAsa(uint64)void',
@@ -520,14 +639,16 @@ describe('Campaign + ClaimsVault (localnet)', () => {
         extraFee: (1000).microAlgo(),
         suppressLog: true,
       })
-      const vaultAfter = await accountInfo(vaultAddress)
-      // destroyClaimAsa frees exactly this campaign's created-asset MBR + mapping boxes (100,000 + 56,400 µA).
-      expect(vaultBefore.minBalance - vaultAfter.minBalance).toEqual(156_400n)
+      const afterGc = await snapshot([vaultAddress, creator.addr.toString()])
+      // The creator (the caller) pays the destroy fees; the vault releases its parked MBR and moves no ALGO.
+      expect(delta(beforeGc, afterGc, creator.addr.toString()).balance).toEqual(-FEE_DESTROY)
+      expect(delta(beforeGc, afterGc, vaultAddress).balance).toEqual(0n)
+      expect(delta(beforeGc, afterGc, vaultAddress).minBalance).toEqual(-VAULT_PARKED_RELEASED_AT_DESTROY)
       await expect(algorand.asset.getById(claimAsa)).rejects.toThrow()
     },
   )
 
-  test('vault refund guards: unsettled campaign, wrong asset, zero amount, close-out forbidden', async () => {
+  test('vault refund guards: unsettled campaign, wrong asset, zero amount — all rejected with no state changes', async () => {
     const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Refund guards', (10).algo().microAlgo)
@@ -537,7 +658,7 @@ describe('Campaign + ClaimsVault (localnet)', () => {
     // Unsettled (campaign alive): the vault refuses.
     await expect(refundViaVault(backer.addr.toString(), appClient.appId, claimAsa)).rejects.toThrow(/campaign is not refundable/)
 
-    // A counterfeit asset resolves to no campaign.
+    // A counterfeit asset fails at the transfer itself (the vault is not opted into it).
     const decoy = await algorand.send.assetCreate({
       sender: creator.addr.toString(),
       total: TOTAL_CLAIM_UNITS,
@@ -554,17 +675,16 @@ describe('Campaign + ClaimsVault (localnet)', () => {
       amount: 1n,
       suppressLog: true,
     })
-    const vaultClient = vaultClientFor(backer.addr.toString())
+
+    const before = await snapshot([backer.addr.toString(), vaultAddress])
     const decoyAxfer = await algorand.createTransaction.assetTransfer({
       sender: backer.addr.toString(),
       assetId: decoy.assetId,
       receiver: vaultAddress,
       amount: 1n,
     })
-    // The vault is not opted into the decoy, so the surrender transfer itself fails at apply (receiver must opt in) — the first line of
-    // defense. The vault's own `unknown claim asset` branch is covered offline and via the cross-campaign test's real-asset path.
     await expect(
-      vaultClient.send.call({
+      vaultClientFor(backer.addr.toString()).send.call({
         method: 'refund(uint64,axfer)void',
         args: [appClient.appId, decoyAxfer],
         sender: backer.addr,
@@ -573,7 +693,7 @@ describe('Campaign + ClaimsVault (localnet)', () => {
       }),
     ).rejects.toThrow()
 
-    // Zero-amount surrender is rejected.
+    // Zero-amount surrender is rejected by the vault.
     const zeroAxfer = await algorand.createTransaction.assetTransfer({
       sender: backer.addr.toString(),
       assetId: claimAsa,
@@ -581,7 +701,7 @@ describe('Campaign + ClaimsVault (localnet)', () => {
       amount: 0n,
     })
     await expect(
-      vaultClient.send.call({
+      vaultClientFor(backer.addr.toString()).send.call({
         method: 'refund(uint64,axfer)void',
         args: [appClient.appId, zeroAxfer],
         sender: backer.addr,
@@ -589,9 +709,18 @@ describe('Campaign + ClaimsVault (localnet)', () => {
         suppressLog: true,
       }),
     ).rejects.toThrow(/claim amount must be greater than zero/)
+
+    // Nothing moved: the backer's claim is intact and the pool is untouched.
+    const after = await snapshot([backer.addr.toString(), vaultAddress])
+    for (const address of [backer.addr.toString(), vaultAddress]) {
+      const d = delta(before, after, address)
+      expect(d.balance).toEqual(0n)
+      expect(d.minBalance).toEqual(0n)
+    }
+    expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(ALGO)
   })
 
-  test('claim guards: below goal, non-creator', async () => {
+  test('claim guards: below goal, non-creator — rejected at zero cost', async () => {
     const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Claim guards', (10).algo().microAlgo)
@@ -600,8 +729,16 @@ describe('Campaign + ClaimsVault (localnet)', () => {
 
     await advanceTime(60)
 
+    const before = await snapshot([creator.addr.toString(), backer.addr.toString(), vaultAddress])
     await expect(claimAs(appClient, creator.addr.toString())).rejects.toThrow(/goal not reached/)
     await expect(claimAs(appClient, backer.addr.toString())).rejects.toThrow(/only the creator can claim/)
+    const after = await snapshot([creator.addr.toString(), backer.addr.toString(), vaultAddress])
+
+    for (const address of [creator.addr.toString(), backer.addr.toString(), vaultAddress]) {
+      const d = delta(before, after, address)
+      expect(d.balance).toEqual(0n)
+      expect(d.minBalance).toEqual(0n)
+    }
   })
 
   test('cross-campaign isolation: units of one campaign can never redeem on another', async () => {
@@ -609,6 +746,8 @@ describe('Campaign + ClaimsVault (localnet)', () => {
     const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const a = await deployCampaign(creator.addr.toString(), 'Campaign A', (1).algo().microAlgo)
     const b = await deployCampaign(creator.addr.toString(), 'Campaign B', (10).algo().microAlgo)
+
+    const before = await snapshot([backer.addr.toString(), vaultAddress])
 
     await optInAs(backer.addr.toString(), a.claimAsa)
     await pledgeAs(a.appClient, backer.addr.toString(), a.claimAsa, ALGO)
@@ -622,10 +761,20 @@ describe('Campaign + ClaimsVault (localnet)', () => {
     // Presenting A's units (an open campaign) to the vault resolves to campaign A → not refundable.
     await expect(refundViaVault(backer.addr.toString(), a.appClient.appId, a.claimAsa)).rejects.toThrow(/campaign is not refundable/)
 
-    // Presenting B's own units refunds B's own pledge — A's balance is untouched.
+    // Presenting B's own units refunds B's own pledge — A's units are untouched.
     const aUnitsBefore = await claimBalanceOf(backer.addr.toString(), a.claimAsa)
     await refundViaVault(backer.addr.toString(), b.appClient.appId, b.claimAsa)
+    const after = await snapshot([backer.addr.toString(), vaultAddress])
+
+    // The backer: two opt-ins (2 × 0.1 MBR, 2 fees), two pledges (2 × 1 ALGO + fees), one vault refund (+1 ALGO − vault-refund fees).
+    expect(delta(before, after, backer.addr.toString()).balance).toEqual(
+      -2n * ALGO + ALGO - 2n * FEE_OPT_IN - 2n * FEE_PLEDGE - FEE_REFUND_VAULT,
+    )
+    expect(delta(before, after, backer.addr.toString()).minBalance).toEqual(2n * 100_000n)
+    // The vault: two pledges in, one refund out — net one ALGO in the pool.
+    expect(delta(before, after, vaultAddress).balance).toEqual(ALGO)
     expect(await claimBalanceOf(backer.addr.toString(), a.claimAsa)).toEqual(aUnitsBefore)
+    expect(await claimBalanceOf(backer.addr.toString(), b.claimAsa)).toEqual(0n)
   })
 
   test('insolvency attack: payouts never exceed contributions across two campaigns', async () => {
@@ -645,26 +794,27 @@ describe('Campaign + ClaimsVault (localnet)', () => {
       await pledgeAs(camp.appClient, backer.addr.toString(), camp.claimAsa, ALGO)
     }
 
-    const vaultBefore = await accountInfo(vaultAddress)
+    const before = await snapshot([vaultAddress, backerA.addr.toString(), backerB.addr.toString()])
 
-    // A fails and is settled with straggler A; B fails too.
+    // Both campaigns fail and settle with stragglers.
     await advanceTime(60)
     await deleteAs(a.appClient, creator.addr.toString(), a.claimAsa, 3000)
     await deleteAs(b.appClient, creator.addr.toString(), b.claimAsa, 3000)
 
-    // Both stragglers refund everything. The vault pays exactly the pledged amounts (minus nothing) and never goes below its reserve.
+    // Both stragglers refund everything. The vault pays exactly the pledged amounts and never goes below its reserve.
     for (const [backer, camp] of [
       [backerA, a],
       [backerB, b],
     ] as const) {
-      const before = await accountInfo(backer.addr.toString())
+      const beforeRefund = await snapshot([backer.addr.toString()])
       await refundViaVault(backer.addr.toString(), camp.appClient.appId, camp.claimAsa)
-      const after = await accountInfo(backer.addr.toString())
-      expect(after.balance - before.balance).toEqual(ALGO - 3n * TXN_FEE)
+      const afterRefund = await snapshot([backer.addr.toString()])
+      expect(delta(beforeRefund, afterRefund, backer.addr.toString()).balance).toEqual(ALGO - FEE_REFUND_VAULT)
     }
 
-    const vaultAfter = await accountInfo(vaultAddress)
-    expect(vaultAfter.balance).toEqual(vaultBefore.balance - 2n * ALGO)
+    const after = await snapshot([vaultAddress])
+    // The pool dropped by exactly the two refunds — no cross-campaign drain.
+    expect(delta(before, after, vaultAddress).balance).toEqual(-2n * ALGO)
   })
 
   test(
@@ -689,26 +839,24 @@ describe('Campaign + ClaimsVault (localnet)', () => {
       await advanceTime(60)
 
       // The vault pays the derived amount (total − vault holding − campaign holding = 2 ALGO).
-      const creatorBefore = await accountInfo(creator.addr.toString())
-      const vaultBefore = await accountInfo(vaultAddress)
+      const beforeClaim = await snapshot([creator.addr.toString(), vaultAddress])
       await claimAs(appClient, creator.addr.toString())
-      const creatorAfter = await accountInfo(creator.addr.toString())
-      expect(creatorAfter.balance - creatorBefore.balance).toEqual(2n * ALGO - 3n * TXN_FEE)
-      const vaultAfter = await accountInfo(vaultAddress)
-      expect(vaultAfter.balance).toEqual(vaultBefore.balance - 2n * ALGO)
+      const afterClaim = await snapshot([creator.addr.toString(), vaultAddress])
+      expect(delta(beforeClaim, afterClaim, creator.addr.toString()).balance).toEqual(2n * ALGO - FEE_CLAIM)
+      expect(delta(beforeClaim, afterClaim, vaultAddress).balance).toEqual(-2n * ALGO)
 
       // Double claim and refunds are rejected.
       await expect(claimAs(appClient, creator.addr.toString())).rejects.toThrow(/already claimed/)
       await expect(refundViaVault(backer1.addr.toString(), appClient.appId, claimAsa)).rejects.toThrow(/campaign is not refundable/)
 
       // The creator deletes in O(1): holding close + escrow close; deposit + floor recovered.
-      const creatorBeforeDelete = await accountInfo(creator.addr.toString())
+      const beforeDelete = await snapshot([creator.addr.toString()])
       await deleteAs(appClient, creator.addr.toString(), claimAsa, 2000)
-      const creatorAfterDelete = await accountInfo(creator.addr.toString())
-      expect(creatorAfterDelete.balance - creatorBeforeDelete.balance).toEqual(MIN_DEPOSIT - 3n * TXN_FEE)
-      expect(creatorAfterDelete.minBalance).toEqual(BASE)
+      const afterDelete = await snapshot([creator.addr.toString()])
+      expect(delta(beforeDelete, afterDelete, creator.addr.toString()).balance).toEqual(MIN_DEPOSIT - FEE_DELETE_CLAIMED)
+      expect(delta(beforeDelete, afterDelete, creator.addr.toString()).minBalance).toEqual(-CREATOR_FLOOR)
 
-      // GC: sweep the worthless units from both holders, then destroy the ASA and free the vault's parked MBR.
+      // GC: sweep the worthless units from both holders (the creator pays the sweep fees), then destroy the ASA.
       const vaultClient = vaultClientFor(creator.addr.toString())
       await vaultClient.send.call({
         method: 'sweepClaimAsa(uint64,address)void',
@@ -733,7 +881,6 @@ describe('Campaign + ClaimsVault (localnet)', () => {
         }),
       ).rejects.toThrow(/claim units outstanding/)
 
-      // Sweeping a settled-claimed campaign is permissionless; after the last holder, the destroy succeeds.
       await vaultClient.send.call({
         method: 'sweepClaimAsa(uint64,address)void',
         args: [appClient.appId, backer2.addr.toString()],
@@ -745,7 +892,7 @@ describe('Campaign + ClaimsVault (localnet)', () => {
       })
       expect(await claimBalanceOf(backer2.addr.toString(), claimAsa)).toEqual(0n)
 
-      const vaultBeforeGc = await accountInfo(vaultAddress)
+      const beforeGc = await snapshot([vaultAddress, creator.addr.toString()])
       await vaultClient.send.call({
         method: 'destroyClaimAsa(uint64)void',
         args: [appClient.appId],
@@ -754,20 +901,28 @@ describe('Campaign + ClaimsVault (localnet)', () => {
         extraFee: (1000).microAlgo(),
         suppressLog: true,
       })
-      const vaultAfterGc = await accountInfo(vaultAddress)
-      // destroyClaimAsa frees exactly this campaign's created-asset MBR + mapping boxes (100,000 + 56,400 µA).
-      expect(vaultBeforeGc.minBalance - vaultAfterGc.minBalance).toEqual(156_400n)
+      const afterGc = await snapshot([vaultAddress, creator.addr.toString()])
+      // destroyClaimAsa frees exactly this campaign's MBR (created asset + boxes + settled); the caller pays the destroy fees.
+      expect(delta(beforeGc, afterGc, vaultAddress).minBalance).toEqual(-VAULT_PARKED_RELEASED_AT_DESTROY)
+      expect(delta(beforeGc, afterGc, vaultAddress).balance).toEqual(0n)
+      expect(delta(beforeGc, afterGc, creator.addr.toString()).balance).toEqual(-FEE_DESTROY)
       await expect(algorand.asset.getById(claimAsa)).rejects.toThrow()
+
+      // The backers' own opt-ins are parked (clawback cannot close a holding) — their own 0.1 ALGO each, untouched by the sweeps.
+      for (const backer of backers) {
+        const info = await accountInfoOf(backer.addr.toString())
+        expect(info.minBalance).toEqual(BASE + 100_000n)
+      }
     },
   )
 
-  test('vault payout methods reject non-campaign callers (no hijacking)', async () => {
+  test('vault payout methods reject non-campaign callers (no hijacking) — and nothing moves', async () => {
     const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const attacker = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Hijack target', (10).algo().microAlgo)
+    const { appClient } = await deployCampaign(creator.addr.toString(), 'Hijack target', (10).algo().microAlgo)
     const vaultClient = vaultClientFor(attacker.addr.toString())
+    const before = await snapshot([attacker.addr.toString(), creator.addr.toString(), vaultAddress])
 
-    // A random account cannot trigger payBack (which would pay itself).
     await expect(
       vaultClient.send.call({
         method: 'payBack(uint64,address,uint64)void',
@@ -777,8 +932,6 @@ describe('Campaign + ClaimsVault (localnet)', () => {
         suppressLog: true,
       }),
     ).rejects.toThrow(/not the campaign app/)
-
-    // Nor payClaim (stealing the pool), nor settle (forcing refunds on a live campaign).
     await expect(
       vaultClient.send.call({
         method: 'payClaim(uint64)void',
@@ -797,7 +950,13 @@ describe('Campaign + ClaimsVault (localnet)', () => {
         suppressLog: true,
       }),
     ).rejects.toThrow(/not the campaign app/)
-    void claimAsa
+
+    const after = await snapshot([attacker.addr.toString(), creator.addr.toString(), vaultAddress])
+    for (const address of [attacker.addr.toString(), creator.addr.toString(), vaultAddress]) {
+      const d = delta(before, after, address)
+      expect(d.balance).toEqual(0n)
+      expect(d.minBalance).toEqual(0n)
+    }
   })
 
   test('stray ALGO sent to the vault cannot be extracted by anyone', async () => {
@@ -805,16 +964,16 @@ describe('Campaign + ClaimsVault (localnet)', () => {
     const stranger = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Stray', (10).algo().microAlgo)
 
+    const before = await snapshot([stranger.addr.toString(), vaultAddress])
     await algorand.send.payment({ sender: stranger.addr, receiver: vaultAddress, amount: microAlgos(ALGO), suppressLog: true })
-    const vaultBefore = await accountInfo(vaultAddress)
 
     // The stranger has no units; no payout path exists for them.
     await expect(refundViaVault(stranger.addr.toString(), appClient.appId, claimAsa)).rejects.toThrow()
+    const after = await snapshot([stranger.addr.toString(), vaultAddress])
 
-    // The stray ALGO stays in the vault: no payout path references it.
-    const vaultAfter = await accountInfo(vaultAddress)
-    expect(vaultAfter.balance).toEqual(vaultBefore.balance)
-    void appClient
+    // The stray ALGO sits in the vault (+1 ALGO); the stranger lost exactly the payment + fee.
+    expect(delta(before, after, vaultAddress).balance).toEqual(ALGO)
+    expect(delta(before, after, stranger.addr.toString()).balance).toEqual(-ALGO - FEE)
   })
 
   test('an abandoned campaign (created, funded, never issued) can be deleted by its creator', async () => {
@@ -829,11 +988,12 @@ describe('Campaign + ClaimsVault (localnet)', () => {
       suppressLog: true,
     })
 
-    const creatorBefore = await accountInfo(creator.addr.toString())
+    const before = await snapshot([creator.addr.toString()])
     await deleteAs(appClient, creator.addr.toString(), undefined, 1000)
-    const creatorAfter = await accountInfo(creator.addr.toString())
-    expect(creatorAfter.minBalance).toEqual(BASE)
-    expect(creatorAfter.balance - creatorBefore.balance).toEqual(-2n * TXN_FEE)
+    const after = await snapshot([creator.addr.toString()])
+
+    expect(delta(before, after, creator.addr.toString()).balance).toEqual(-FEE_DELETE_BARE)
+    expect(delta(before, after, creator.addr.toString()).minBalance).toEqual(-CREATOR_FLOOR)
   })
 
   test('the clawback authority is inert on open and failed campaigns — live claims are untouchable', async () => {
@@ -845,9 +1005,7 @@ describe('Campaign + ClaimsVault (localnet)', () => {
     await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
 
     const vaultClient = vaultClientFor(attacker.addr.toString())
-
-    // Open campaign: the sweep is refused outright (the claim is live).
-    await expect(
+    const sweep = async () =>
       vaultClient.send.call({
         method: 'sweepClaimAsa(uint64,address)void',
         args: [appClient.appId, backer.addr.toString()],
@@ -856,36 +1014,18 @@ describe('Campaign + ClaimsVault (localnet)', () => {
         assetReferences: [claimAsa],
         extraFee: (1000).microAlgo(),
         suppressLog: true,
-      }),
-    ).rejects.toThrow(/campaign not claimed/)
+      })
+
+    // Open campaign: the sweep is refused outright (the claim is live).
+    await expect(sweep()).rejects.toThrow(/campaign not claimed/)
 
     // Failed in fact but still open: still refused.
     await advanceTime(60)
-    await expect(
-      vaultClient.send.call({
-        method: 'sweepClaimAsa(uint64,address)void',
-        args: [appClient.appId, backer.addr.toString()],
-        sender: attacker.addr,
-        appReferences: [appClient.appId],
-        assetReferences: [claimAsa],
-        extraFee: (1000).microAlgo(),
-        suppressLog: true,
-      }),
-    ).rejects.toThrow(/campaign not claimed/)
+    await expect(sweep()).rejects.toThrow(/campaign not claimed/)
 
     // Settled FAILED with the backer's live claim outstanding: still refused — the clawback cannot steal refundable claims.
     await deleteAs(appClient, creator.addr.toString(), claimAsa, 3000)
-    await expect(
-      vaultClient.send.call({
-        method: 'sweepClaimAsa(uint64,address)void',
-        args: [appClient.appId, backer.addr.toString()],
-        sender: attacker.addr,
-        appReferences: [appClient.appId],
-        assetReferences: [claimAsa],
-        extraFee: (1000).microAlgo(),
-        suppressLog: true,
-      }),
-    ).rejects.toThrow(/campaign not claimed/)
+    await expect(sweep()).rejects.toThrow(/campaign not claimed/)
 
     // Nor can the ASA be destroyed while the claim is outstanding.
     await expect(
@@ -899,12 +1039,17 @@ describe('Campaign + ClaimsVault (localnet)', () => {
       }),
     ).rejects.toThrow(/claim units outstanding/)
 
+    // The attacker moved nothing across all attempts.
+    const attackerInfo = await accountInfoOf(attacker.addr.toString())
+    expect(attackerInfo.balance).toEqual((10).algo().microAlgo)
+
     // The backer's claim is fully intact: it refunds from the vault as usual.
     expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(ALGO)
-    const before = await accountInfo(backer.addr.toString())
+    const before = await snapshot([backer.addr.toString(), vaultAddress])
     await refundViaVault(backer.addr.toString(), appClient.appId, claimAsa)
-    const after = await accountInfo(backer.addr.toString())
-    expect(after.balance - before.balance).toEqual(ALGO - 3n * TXN_FEE)
+    const after = await snapshot([backer.addr.toString(), vaultAddress])
+    expect(delta(before, after, backer.addr.toString()).balance).toEqual(ALGO - FEE_REFUND_VAULT)
+    expect(delta(before, after, vaultAddress).balance).toEqual(-ALGO)
   })
 
   test('claim payout derives correctly with cancelled pledges mixed in', async () => {
@@ -935,13 +1080,11 @@ describe('Campaign + ClaimsVault (localnet)', () => {
     await advanceTime(60)
 
     // The vault pays exactly the remaining outstanding unit value (1 ALGO): total − vault holding − campaign holding.
-    const creatorBefore = await accountInfo(creator.addr.toString())
-    const vaultBefore = await accountInfo(vaultAddress)
+    const before = await snapshot([creator.addr.toString(), vaultAddress])
     await claimAs(appClient, creator.addr.toString())
-    const creatorAfter = await accountInfo(creator.addr.toString())
-    expect(creatorAfter.balance - creatorBefore.balance).toEqual(ALGO - 3n * TXN_FEE)
-    const vaultAfter = await accountInfo(vaultAddress)
-    expect(vaultAfter.balance).toEqual(vaultBefore.balance - ALGO)
+    const after = await snapshot([creator.addr.toString(), vaultAddress])
+    expect(delta(before, after, creator.addr.toString()).balance).toEqual(ALGO - FEE_CLAIM)
+    expect(delta(before, after, vaultAddress).balance).toEqual(-ALGO)
   })
 
   test('closeOut on-chain: a claimed campaign backer closes their holding and frees their opt-in MBR', async () => {
@@ -955,7 +1098,7 @@ describe('Campaign + ClaimsVault (localnet)', () => {
     await claimAs(appClient, creator.addr.toString())
 
     // The cooperative path: the backer closes their worthless holding to the vault and frees their own 0.1 ALGO opt-in.
-    const before = await accountInfo(backer.addr.toString())
+    const before = await snapshot([backer.addr.toString(), vaultAddress])
     const axfer = await algorand.createTransaction.assetTransfer({
       sender: backer.addr.toString(),
       assetId: claimAsa,
@@ -970,14 +1113,16 @@ describe('Campaign + ClaimsVault (localnet)', () => {
       appReferences: [vaultId],
       suppressLog: true,
     })
-    const after = await accountInfo(backer.addr.toString())
+    const after = await snapshot([backer.addr.toString(), vaultAddress])
     expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(0n)
-    expect(after.minBalance).toEqual(before.minBalance - 100_000n)
+    expect(delta(before, after, backer.addr.toString()).balance).toEqual(-FEE_CLOSE_OUT)
+    expect(delta(before, after, backer.addr.toString()).minBalance).toEqual(-100_000n)
+    expect(delta(before, after, vaultAddress).balance).toEqual(0n)
 
     // With the whole supply home again, the creator deletes and the vault's GC completes.
     await deleteAs(appClient, creator.addr.toString(), claimAsa, 2000)
     const vaultClient = vaultClientFor(creator.addr.toString())
-    const vaultBefore = await accountInfo(vaultAddress)
+    const beforeGc = await snapshot([vaultAddress, creator.addr.toString()])
     await vaultClient.send.call({
       method: 'destroyClaimAsa(uint64)void',
       args: [appClient.appId],
@@ -986,8 +1131,9 @@ describe('Campaign + ClaimsVault (localnet)', () => {
       extraFee: (1000).microAlgo(),
       suppressLog: true,
     })
-    const vaultAfter = await accountInfo(vaultAddress)
-    expect(vaultBefore.minBalance - vaultAfter.minBalance).toEqual(156_400n)
+    const afterGc = await snapshot([vaultAddress, creator.addr.toString()])
+    expect(delta(beforeGc, afterGc, vaultAddress).minBalance).toEqual(-VAULT_PARKED_RELEASED_AT_DESTROY)
+    expect(delta(beforeGc, afterGc, creator.addr.toString()).balance).toEqual(-FEE_DESTROY)
   })
 
   test('delete on an open campaign with everything cancelled: no settlement needed', async () => {
@@ -999,12 +1145,13 @@ describe('Campaign + ClaimsVault (localnet)', () => {
     await surrenderViaCampaign(appClient, backer.addr.toString(), claimAsa, 'cancelPledge') // raised back to 0
 
     // Open, raised == 0, asset attached: deletable without settling the vault.
-    const creatorBefore = await accountInfo(creator.addr.toString())
+    const before = await snapshot([creator.addr.toString()])
     await deleteAs(appClient, creator.addr.toString(), claimAsa, 2000)
-    const creatorAfter = await accountInfo(creator.addr.toString())
-    expect(creatorAfter.balance - creatorBefore.balance).toEqual(MIN_DEPOSIT - 3n * TXN_FEE)
-    expect(creatorAfter.minBalance).toEqual(BASE)
+    const after = await snapshot([creator.addr.toString()])
+    expect(delta(before, after, creator.addr.toString()).balance).toEqual(MIN_DEPOSIT - FEE_DELETE_CLAIMED)
+    expect(delta(before, after, creator.addr.toString()).minBalance).toEqual(-CREATOR_FLOOR)
 
+    // No settlement record was written (the getMapValue lookup 404s).
     const vaultClient = vaultClientFor(backer.addr.toString())
     await expect(vaultClient.state.box.getMapValue('settled', appClient.appId)).rejects.toThrow()
   })
@@ -1073,12 +1220,17 @@ describe('Campaign + ClaimsVault (localnet)', () => {
         suppressLog: true,
       }),
     ).rejects.toThrow(/unknown claim asset/)
+
+    // The backer's claim survived every rejected attempt.
+    expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(ALGO)
   })
 
-  test('fund guards on-chain: non-creator and below-minimum deposits are rejected', async () => {
+  test('fund guards on-chain: non-creator and double funding are rejected at zero cost', async () => {
     const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const stranger = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const { appClient } = await deployCampaign(creator.addr.toString(), 'Fund guards', (10).algo().microAlgo)
+
+    const before = await snapshot([stranger.addr.toString(), creator.addr.toString(), appClient.appAddress.toString()])
 
     const strangerPayment = await algorand.createTransaction.payment({
       sender: stranger.addr.toString(),
@@ -1110,5 +1262,12 @@ describe('Campaign + ClaimsVault (localnet)', () => {
         suppressLog: true,
       }),
     ).rejects.toThrow(/claim asset already attached/)
+
+    const after = await snapshot([stranger.addr.toString(), creator.addr.toString(), appClient.appAddress.toString()])
+    for (const address of [stranger.addr.toString(), creator.addr.toString(), appClient.appAddress.toString()]) {
+      const d = delta(before, after, address)
+      expect(d.balance).toEqual(0n)
+      expect(d.minBalance).toEqual(0n)
+    }
   })
 })

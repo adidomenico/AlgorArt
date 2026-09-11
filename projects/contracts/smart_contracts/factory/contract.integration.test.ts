@@ -135,9 +135,10 @@ describe('Factory (localnet)', () => {
       suppressLog: true,
     })
 
-    // The deposit landed on the Factory account; the registration box exists.
+    // The deposit landed on the Factory account and the registration box parked its MBR on it.
     const factoryAfterRegister = await accountInfo(factoryAddress)
     expect(factoryAfterRegister.balance - factoryBefore.balance).toEqual(REGISTER_MBR)
+    expect(factoryAfterRegister.minBalance - factoryBefore.minBalance).toEqual(REGISTER_MBR) // box MBR == deposit, by design
     expect(await isRegistered(factoryClient, campaignId, owner.addr.toString())).toBe(true)
 
     // Double registration fails.
@@ -172,6 +173,8 @@ describe('Factory (localnet)', () => {
     expect(creatorAfter.balance - creatorBefore.balance).toEqual(-4n * TXN_FEE)
     const factoryAfterUnregister = await accountInfo(factoryAddress)
     expect(factoryAfterUnregister.balance).toEqual(factoryAfterRegister.balance - REGISTER_MBR)
+    // The registration box is gone: its MBR is released back to the account base.
+    expect(factoryAfterUnregister.minBalance).toEqual(factoryBefore.minBalance)
   })
 
   test('an impostor copy of the Campaign contract cannot register', { timeout: 120_000 }, async () => {

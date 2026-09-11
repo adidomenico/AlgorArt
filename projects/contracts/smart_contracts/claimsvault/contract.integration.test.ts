@@ -28,6 +28,15 @@ describe('ClaimsVault (localnet)', () => {
   let vaultSpec: Arc56Contract
   let factoryId: bigint
   let vaultId: bigint
+  let vaultAddress: string
+
+  // Vault MBR parked per issued campaign: 100,000 (created asset) + 47,100 (asaOf + addressOf + creatorOf boxes).
+  const VAULT_PARKED_AT_ISSUE = 147_100n
+
+  async function accountInfo(address: string) {
+    const info = await algorand.account.getInformation(address)
+    return { balance: info.balance.microAlgo, minBalance: info.minBalance.microAlgo }
+  }
 
   beforeAll(async () => {
     await fixture.newScope()
@@ -62,6 +71,7 @@ describe('ClaimsVault (localnet)', () => {
       })
     ).appClient
     vaultId = vaultClient.appId
+    vaultAddress = vaultClient.appAddress.toString()
     await algorand.send.payment({
       sender: owner.addr,
       receiver: vaultClient.appAddress,
@@ -104,6 +114,8 @@ describe('ClaimsVault (localnet)', () => {
     const stranger = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const campaignClient = await deployBareCampaign(creator.addr.toString())
     const vaultClient = vaultClientFor(stranger.addr.toString())
+    const vaultBefore = await accountInfo(vaultAddress)
+    const strangerBefore = await accountInfo(stranger.addr.toString())
 
     // A stranger cannot issue for someone else's campaign.
     await expect(
@@ -149,6 +161,14 @@ describe('ClaimsVault (localnet)', () => {
         suppressLog: true,
       }),
     ).rejects.toThrow(/claim asset already issued/)
+
+    // The rejected attempts moved nothing for the stranger.
+    expect((await accountInfo(stranger.addr.toString())).balance).toEqual(strangerBefore.balance)
+
+    // The issue parked exactly the campaign's MBR on the vault (created asset + three mapping boxes) and moved no pool ALGO.
+    const vaultAfterIssue = await accountInfo(vaultAddress)
+    expect(vaultAfterIssue.minBalance - vaultBefore.minBalance).toEqual(VAULT_PARKED_AT_ISSUE)
+    expect(vaultAfterIssue.balance).toEqual(vaultBefore.balance)
 
     // The supply can only be seeded once: the campaign first attaches (self-opts in), then the first seed succeeds and the second is
     // rejected.

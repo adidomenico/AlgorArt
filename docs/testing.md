@@ -114,6 +114,16 @@ class as it does not extend Contract or BaseContract".
 All LocalNet integration tests in the repo (run with `npm run test:integration`; 25
 tests across 3 files). Each file deploys its own fixture chain to a live algod.
 
+**Full ledger accounting.** Every integration test asserts the complete money
+ledger, µA-exact, for every actor involved: balance and minimum-balance deltas
+per account (via `snapshot`/`delta` helpers), the fee totals of each operation
+(the `FEE_*` constants, measured on LocalNet), the vault pool movement, claim-unit
+ownership, the parked MBRs (147,100 µA per issued campaign on the vault, released
+as 156,400 µA — including the settled box — by `destroyClaimAsa`), the creator's
+sponsorship floor (449,500 µA while the app lives), and the backer's 0.1 ALGO
+opt-in. Rejected transactions are asserted to move **nothing** (atomic failure
+charges no fee).
+
 ### `smart_contracts/campaign/contract.integration.test.ts` (20 tests)
 
 The full split-vault lifecycle plus the attack matrix, deployed against a real
