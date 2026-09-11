@@ -1270,4 +1270,178 @@ describe('Campaign + ClaimsVault (localnet)', () => {
       expect(d.minBalance).toEqual(0n)
     }
   })
+
+  test(
+    'A: N backers — the creator deletes once, then every backer refunds independently from the vault',
+    { timeout: 120_000 },
+    async () => {
+      const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+      const backers = await Promise.all([
+        fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+        fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+        fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+      ])
+      const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'N backers', (10).algo().microAlgo)
+      for (const backer of backers) {
+        await optInAs(backer.addr.toString(), claimAsa)
+        await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
+      }
+
+      await advanceTime(60)
+
+      // The creator's single cancellation action: one O(1) delete that settles the vault and closes the escrow.
+      const creatorBefore = await snapshot([creator.addr.toString()])
+      await deleteAs(appClient, creator.addr.toString(), claimAsa, 3000)
+      const creatorAfter = await snapshot([creator.addr.toString()])
+      expect(delta(creatorBefore, creatorAfter, creator.addr.toString()).balance).toEqual(MIN_DEPOSIT - FEE_DELETE_FAILED)
+      expect(delta(creatorBefore, creatorAfter, creator.addr.toString()).minBalance).toEqual(-CREATOR_FLOOR)
+
+      // Every backer refunds their own pledge independently, straight from the vault — no order, no dependency on anyone else.
+      const vaultBefore = await snapshot([vaultAddress])
+      for (const backer of backers) {
+        expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(ALGO)
+        const before = await snapshot([backer.addr.toString()])
+        await refundViaVault(backer.addr.toString(), appClient.appId, claimAsa)
+        const after = await snapshot([backer.addr.toString()])
+        expect(delta(before, after, backer.addr.toString()).balance).toEqual(ALGO - FEE_REFUND_VAULT)
+        expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(0n)
+      }
+      const vaultAfter = await snapshot([vaultAddress])
+      expect(delta(vaultBefore, vaultAfter, vaultAddress).balance).toEqual(-3n * ALGO)
+    },
+  )
+
+  test(
+    'B: two campaigns live simultaneously — one claimed and drained, the other still refunds in full',
+    { timeout: 120_000 },
+    async () => {
+      const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+      const [backerA, backerB] = await Promise.all([
+        fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+        fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+      ])
+      const funded = await deployCampaign(creator.addr.toString(), 'Funded twin', (1).algo().microAlgo)
+      const failing = await deployCampaign(creator.addr.toString(), 'Failing twin', (10).algo().microAlgo)
+      await optInAs(backerA.addr.toString(), funded.claimAsa)
+      await pledgeAs(funded.appClient, backerA.addr.toString(), funded.claimAsa, ALGO)
+      await optInAs(backerB.addr.toString(), failing.claimAsa)
+      await pledgeAs(failing.appClient, backerB.addr.toString(), failing.claimAsa, ALGO)
+
+      await advanceTime(60)
+
+      // The pool before this scenario (earlier tests in the suite leave their own settled-but-unclaimed funds — only deltas matter).
+      const poolBefore = await snapshot([vaultAddress])
+
+      // The funded twin drains the pool via the claim...
+      const claimBefore = await snapshot([creator.addr.toString(), vaultAddress])
+      await claimAs(funded.appClient, creator.addr.toString())
+      const claimAfter = await snapshot([creator.addr.toString(), vaultAddress])
+      expect(delta(claimBefore, claimAfter, creator.addr.toString()).balance).toEqual(ALGO - FEE_CLAIM)
+      expect(delta(claimBefore, claimAfter, vaultAddress).balance).toEqual(-ALGO)
+      await deleteAs(funded.appClient, creator.addr.toString(), funded.claimAsa, 2000)
+
+      // ...and the failing twin's backer still refunds in full afterwards.
+      await deleteAs(failing.appClient, creator.addr.toString(), failing.claimAsa, 3000)
+      const refundBefore = await snapshot([backerB.addr.toString(), vaultAddress])
+      await refundViaVault(backerB.addr.toString(), failing.appClient.appId, failing.claimAsa)
+      const refundAfter = await snapshot([backerB.addr.toString(), vaultAddress])
+      expect(delta(refundBefore, refundAfter, backerB.addr.toString()).balance).toEqual(ALGO - FEE_REFUND_VAULT)
+      expect(delta(refundBefore, refundAfter, vaultAddress).balance).toEqual(-ALGO)
+
+      // The pool dropped by exactly the claim + the refund — neither campaign's settlement touched the other's funds.
+      const poolAfter = await snapshot([vaultAddress])
+      expect(delta(poolBefore, poolAfter, vaultAddress).balance).toEqual(-2n * ALGO)
+    },
+  )
+
+  test('C: claim and refund interleaved in arbitrary order across the pool', { timeout: 120_000 }, async () => {
+    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const [backerA, backerB1, backerB2] = await Promise.all([
+      fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+      fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+      fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+    ])
+    const claimed = await deployCampaign(creator.addr.toString(), 'Interleave A', (1).algo().microAlgo)
+    const failed = await deployCampaign(creator.addr.toString(), 'Interleave B', (10).algo().microAlgo)
+    for (const [backer, camp] of [
+      [backerA, claimed],
+      [backerB1, failed],
+      [backerB2, failed],
+    ] as const) {
+      await optInAs(backer.addr.toString(), camp.claimAsa)
+      await pledgeAs(camp.appClient, backer.addr.toString(), camp.claimAsa, ALGO)
+    }
+
+    await advanceTime(60)
+
+    // The pool before this scenario (earlier tests in the suite leave their own settled-but-unclaimed funds — only deltas matter).
+    const poolBefore = await snapshot([vaultAddress])
+
+    // Interleaving: claim A → refund B1 (campaign path) → double-claim A rejected → double-refund B1 rejected → settle B →
+    // refund B2 (vault path) → delete A.
+    await claimAs(claimed.appClient, creator.addr.toString())
+    await surrenderViaCampaign(failed.appClient, backerB1.addr.toString(), failed.claimAsa, 'refund')
+    await expect(claimAs(claimed.appClient, creator.addr.toString())).rejects.toThrow(/already claimed/)
+    await expect(surrenderViaCampaign(failed.appClient, backerB1.addr.toString(), failed.claimAsa, 'refund')).rejects.toThrow()
+    await deleteAs(failed.appClient, creator.addr.toString(), failed.claimAsa, 3000)
+    await refundViaVault(backerB2.addr.toString(), failed.appClient.appId, failed.claimAsa)
+    await deleteAs(claimed.appClient, creator.addr.toString(), claimed.claimAsa, 2000)
+
+    // The ledger: backerA's pledge went to the creator via the claim; backerB1 and backerB2 got their full pledges back — the pool
+    // dropped by exactly those three payouts.
+    const poolAfter = await snapshot([vaultAddress])
+    expect(delta(poolBefore, poolAfter, vaultAddress).balance).toEqual(-3n * ALGO)
+    expect(await claimBalanceOf(backerA.addr.toString(), claimed.claimAsa)).toEqual(ALGO) // worthless but untouched units
+    expect(await claimBalanceOf(backerB1.addr.toString(), failed.claimAsa)).toEqual(0n)
+    expect(await claimBalanceOf(backerB2.addr.toString(), failed.claimAsa)).toEqual(0n)
+  })
+
+  test('D: the derived claim amount (T − U_i − H_i) always equals raised', async () => {
+    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const [backer1, backer2, backer3] = await Promise.all([
+      fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+      fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+      fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+    ])
+    const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Formula', (2).algo().microAlgo)
+    for (const backer of [backer1, backer2, backer3]) {
+      await optInAs(backer.addr.toString(), claimAsa)
+      await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
+    }
+
+    // One cancellation returns 1 ALGO of units to the vault: raised = 2 ALGO (the goal).
+    const cancelAxfer = await algorand.createTransaction.assetTransfer({
+      sender: backer3.addr.toString(),
+      assetId: claimAsa,
+      receiver: vaultAddress,
+      amount: ALGO,
+    })
+    await appClient.send.call({
+      method: 'cancelPledge(axfer)void',
+      args: [cancelAxfer],
+      sender: backer3.addr,
+      appReferences: [vaultId],
+      boxReferences: vaultBoxes(appClient.appId, ['a', 'd']),
+      extraFee: (2000).microAlgo(),
+      suppressLog: true,
+    })
+
+    await advanceTime(60)
+
+    // Evaluate the formula from live on-chain holdings, immediately before the claim.
+    const vaultHolding = await algorand.asset.getAccountInformation(vaultAddress, claimAsa)
+    const escrowHolding = await algorand.asset.getAccountInformation(appClient.appAddress.toString(), claimAsa)
+    const outstanding = TOTAL_CLAIM_UNITS - vaultHolding.balance - escrowHolding.balance
+    const raised = (await appClient.state.global.getValue('raised')) as bigint
+
+    // T − U_i − H_i equals raised, exactly — the claim pays precisely that.
+    expect(outstanding).toEqual(raised)
+    expect(raised).toEqual(2n * ALGO)
+
+    const before = await snapshot([creator.addr.toString(), vaultAddress])
+    await claimAs(appClient, creator.addr.toString())
+    const after = await snapshot([creator.addr.toString(), vaultAddress])
+    expect(delta(before, after, creator.addr.toString()).balance).toEqual(outstanding - FEE_CLAIM)
+    expect(delta(before, after, vaultAddress).balance).toEqual(-outstanding)
+  })
 })
