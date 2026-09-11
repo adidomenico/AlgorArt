@@ -109,6 +109,48 @@ class as it does not extend Contract or BaseContract".
 - Do **not** pass `updatable`/`deletable` to `factory.send.create` — the contract TEAL
   has no deploy-time templates for them.
 
+## Integration test inventory
+
+All LocalNet integration tests in the repo (run with `npm run test:integration`; 19
+tests across 3 files). Each file deploys its own fixture chain to a live algod.
+
+### `smart_contracts/campaign/contract.integration.test.ts` (14 tests)
+
+The full split-vault lifecycle plus the attack matrix, deployed against a real
+Factory + ClaimsVault + Campaign.
+
+| # | Test | Verifies |
+| --- | --- | --- |
+| 1 | setup: the vault issues the Claim ASA and seeds the escrow; creator capital is the escrow constant | ASA config (creator/manager/clawback/reserve = vault, total 2⁶⁴−1, 0 decimals); the escrow holds the whole supply and exactly the 0.2 ALGO deposit; the vault parks its created-asset MBR |
+| 2 | pledge: pays the vault (escrow untouched), mints claim units, accumulates | Payments land in the vault (escrow balance unchanged); the mint equals the payment; repeated pledges accumulate on the backer |
+| 3 | pledge guards: no claim asset, wrong receiver, creator self-pledge | `claim asset not issued yet`; a payment to the escrow instead of the vault is rejected; the creator cannot self-pledge |
+| 4 | attachClaimAsa rejects a counterfeit asset (wrong creator) | Provenance verification: a decoy ASA created by a random account cannot be attached (fake-vault campaigns are inert) |
+| 5 | cancelPledge: the vault pays, raised decrements, units are consumed once | Pre-deadline withdrawal pays from the vault, decrements `raised`, consumes the units; a second cancel of the same units fails |
+| 6 | **FLAGSHIP** — failed campaign with a straggler: creator deletes in O(1), the straggler refunds from the vault afterwards | The failed settlement is recorded inside `delete()`; the creator recovers deposit + sponsorship floor in one call; the never-acting backer then refunds **directly from the vault after the campaign is deleted**; after the last refund the vault destroys the ASA and frees its parked MBR |
+| 7 | vault refund guards: unsettled campaign, wrong asset, zero amount, close-out forbidden | The vault refuses refunds before settlement; a decoy asset fails the surrender (receiver must opt in); zero-amount surrenders are rejected |
+| 8 | claim guards: below goal, non-creator | `goal not reached`; `only the creator can claim` |
+| 9 | cross-campaign isolation: units of one campaign can never redeem on another | Campaign A's units resolve to A's settlement (rejected when A is open); B's units refund only B's pledge — A's balance untouched |
+| 10 | insolvency attack: payouts never exceed contributions across two campaigns | Both campaigns refund in full after deletion; the vault's balance drops by exactly the two pledges — no cross-campaign drain |
+| 11 | funded flow: vault pays the claim from unit conservation; closeOut, sweep, destroy, full cleanup | The vault pays the derived amount (total − holdings); double claim and refunds rejected; O(1) delete recovers deposit + floor; `sweepClaimAsa` claws worthless units; `destroyClaimAsa` is refused while units are outstanding, then frees exactly 156,400 µA of vault MBR |
+| 12 | vault payout methods reject non-campaign callers (no hijacking) | Direct `payBack`/`payClaim`/`settle` calls by strangers fail with `not the campaign app` — the payout authority is unusable off the campaign path |
+| 13 | stray ALGO sent to the vault cannot be extracted by anyone | A random deposit inflates the pool but no payout path references it |
+| 14 | an abandoned campaign (created, funded, never issued) can be deleted by its creator | The no-asset delete path frees the sponsorship floor with no residual |
+
+### `smart_contracts/claimsvault/contract.integration.test.ts` (1 test)
+
+| # | Test | Verifies |
+| --- | --- | --- |
+| 15 | issueClaimAsa guards: non-creator, non-official program, double issue; seedSupply is one-shot | Only the campaign creator can issue; a program that does not hash to the Factory's official hash is refused; a second issue is rejected; the supply can be seeded exactly once (second seed → `supply already seeded`) |
+
+### `smart_contracts/factory/contract.integration.test.ts` (4 tests)
+
+| # | Test | Verifies |
+| --- | --- | --- |
+| 16 | register/isRegistered/unregister round trip with a real Campaign | Registration against the real deployed program hash; the deposit lands on the Factory and returns on unregister; `isRegistered` reflects the state |
+| 17 | an impostor copy of the Campaign contract cannot register | The program-hash check rejects a non-official program |
+| 18 | a non-creator cannot register someone else's campaign, and registration is refused before the hash is configured | Creator gating; unconfigured-hash refusal |
+| 19 | only the owner can set the official hash, and only the registered creator can unregister | Factory ownership and deposit protection |
+
 ## API cheat sheet (learned the hard way)
 
 - `const ctx = new TestExecutionContext()`; **create the context once per suite and
