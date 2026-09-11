@@ -55,7 +55,20 @@ export interface ClaimHolding {
  * @returns The Factory app id, or 0 when not configured (registration filter disabled).
  */
 export function factoryAppId(): bigint {
-  const raw = import.meta.env.VITE_FACTORY_APP_ID as string | undefined
+  return envAppId('VITE_FACTORY_APP_ID')
+}
+
+/**
+ * The ClaimsVault app id the frontend pays pledges into and refunds from, from the environment.
+ *
+ * @returns The vault app id, or 0 when not configured.
+ */
+export function vaultAppId(): bigint {
+  return envAppId('VITE_VAULT_APP_ID')
+}
+
+function envAppId(key: string): bigint {
+  const raw = import.meta.env[key] as string | undefined
   if (raw === undefined || raw === '') return 0n
   const id = BigInt(raw)
   return id > 0n ? id : 0n

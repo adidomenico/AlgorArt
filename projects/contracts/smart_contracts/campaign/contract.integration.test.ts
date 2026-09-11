@@ -2,52 +2,95 @@ import type { AlgorandClient } from '@algorandfoundation/algokit-utils'
 import { microAlgos } from '@algorandfoundation/algokit-utils'
 import { algorandFixture } from '@algorandfoundation/algokit-utils/testing'
 import type { Arc56Contract } from '@algorandfoundation/algokit-utils/types/app-arc56'
-import type { AppClient } from '@algorandfoundation/algokit-utils/types/app-client'
+import { AppClient } from '@algorandfoundation/algokit-utils/types/app-client'
 import { AppFactory } from '@algorandfoundation/algokit-utils/types/app-factory'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 
 /**
- * LocalNet integration tests: deploy the compiled Campaign TEAL to a live algod and exercise the full Claim-ASA lifecycle end-to-end,
- * checking every balance, minimum balance (MBR), ASA configuration and fee along the way.
+ * LocalNet integration tests for the split-vault architecture: deploy the Factory + ClaimsVault + Campaign TEAL to a live algod and
+ * exercise the full lifecycle end-to-end, checking every balance, minimum balance (MBR), ASA configuration, fee, and the attack matrix
+ * (cross-campaign isolation, pooled solvency, settlement-after-deletion, counterfeit assets, double claims, pledge→cancel→refund
+ * sequences, direct vault-call hijacking).
  *
- * Requires `algokit localnet start` and a build (`npm run build`) so the ARC-56 artifact exists.
+ * Requires `algokit localnet start` and a build (`npm run build`) so the ARC-56 artifacts exist.
  */
 
-// --- protocol / contract constants (see docs/campaign.md "Minimum balances") ---
-const ALGO = 1_000_000n // microAlgos in one ALGO
-const BASE = 100_000n // network-wide account base minimum balance
-const MIN_DEPOSIT = 200_000n // escrow MBR: base + created asset (the creator's supply holding is implicit, no opt-in cost)
+const ALGO = 1_000_000n
+const BASE = 100_000n
+const MIN_DEPOSIT = 200_000n
 const ESCROW_MIN_BALANCE = BASE + 100_000n
 const TOTAL_CLAIM_UNITS = 2n ** 64n - 1n
 const TXN_FEE = 1_000n
 
-describe('Campaign (localnet)', () => {
+const CAMPAIGN_SPEC_PATH = path.resolve(__dirname, '../artifacts/campaign/Campaign.arc56.json')
+const FACTORY_SPEC_PATH = path.resolve(__dirname, '../artifacts/factory/Factory.arc56.json')
+const VAULT_SPEC_PATH = path.resolve(__dirname, '../artifacts/claimsvault/ClaimsVault.arc56.json')
+
+describe('Campaign + ClaimsVault (localnet)', () => {
   const fixture = algorandFixture()
   let algorand: AlgorandClient
-  let appSpec: Arc56Contract
+  let campaignSpec: Arc56Contract
+  let factorySpec: Arc56Contract
+  let vaultSpec: Arc56Contract
+  let factoryId: bigint
+  let vaultId: bigint
+  let vaultAddress: string
 
   beforeAll(async () => {
     await fixture.newScope()
     algorand = fixture.context.algorand
-    appSpec = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../artifacts/campaign/Campaign.arc56.json'), 'utf8')) as Arc56Contract
+    campaignSpec = JSON.parse(fs.readFileSync(CAMPAIGN_SPEC_PATH, 'utf8')) as Arc56Contract
+    factorySpec = JSON.parse(fs.readFileSync(FACTORY_SPEC_PATH, 'utf8')) as Arc56Contract
+    vaultSpec = JSON.parse(fs.readFileSync(VAULT_SPEC_PATH, 'utf8')) as Arc56Contract
+
+    // Deploy the Factory, configure the official Campaign approval hash.
+    const owner = await fixture.context.generateAccount({ initialFunds: (50).algo(), suppressLog: true })
+    const factoryFactory = new AppFactory({ appSpec: factorySpec, algorand, defaultSender: owner.addr })
+    const factoryClient = (await factoryFactory.send.create({ method: 'create()void', args: [], sender: owner.addr, suppressLog: true }))
+      .appClient
+    factoryId = factoryClient.appId
+
+    const campaignTeal = fs.readFileSync(path.resolve(__dirname, '../artifacts/campaign/Campaign.approval.teal'), 'utf8')
+    const compiled = await algorand.app.compileTeal(campaignTeal)
+    const approvalHash = createHash('sha256').update(compiled.compiledBase64ToBytes).digest()
+    await factoryClient.send.call({
+      method: 'setApprovalHash(byte[])void',
+      args: [approvalHash],
+      sender: owner.addr,
+      suppressLog: true,
+    })
+
+    // Deploy the vault, fund its account (platform storage reserve: 1 ALGO).
+    const vaultFactory = new AppFactory({ appSpec: vaultSpec, algorand, defaultSender: owner.addr })
+    const vaultClient = (
+      await vaultFactory.send.create({
+        method: 'create(uint64)void',
+        args: [factoryId],
+        sender: owner.addr,
+        appReferences: [factoryId],
+        suppressLog: true,
+      })
+    ).appClient
+    vaultId = vaultClient.appId
+    vaultAddress = vaultClient.appAddress.toString()
+    await algorand.send.payment({
+      sender: owner.addr,
+      receiver: vaultClient.appAddress,
+      amount: microAlgos(ALGO),
+      suppressLog: true,
+    })
   })
 
   afterAll(async () => {
-    // Leave the localnet block timestamp offset reset.
-    const algod = algorand.client.algod
-    await algod
+    await algorand.client.algod
       .setBlockOffsetTimestamp(0)
       .do()
       .catch(() => undefined)
   })
 
-  /**
-   * Advance the dev-mode block timestamp by `seconds` and confirm a new block.
-   *
-   * @param seconds Offset to add to the current block timestamp.
-   */
   async function advanceTime(seconds: number) {
     const algod = algorand.client.algod
     try {
@@ -70,50 +113,34 @@ describe('Campaign (localnet)', () => {
     return block.block.header.timestamp
   }
 
-  /**
-   * Read an account's balance and minimum balance, in microAlgos.
-   *
-   * @param address The account address.
-   */
   async function accountInfo(address: string) {
     const info = await algorand.account.getInformation(address)
     return { balance: info.balance.microAlgo, minBalance: info.minBalance.microAlgo }
   }
 
-  async function createCampaign(creatorAddr: string, title: string, goal: bigint) {
+  /**
+   * Deploy a full campaign: create → fund → issueClaimAsa (vault) → attachClaimAsa.
+   *
+   * @param creatorAddr The creator's address.
+   * @param title The campaign title.
+   * @param goal The funding goal in microAlgos.
+   * @returns The campaign client and its Claim ASA id.
+   */
+  async function deployCampaign(creatorAddr: string, title: string, goal: bigint): Promise<{ appClient: AppClient; claimAsa: bigint }> {
     const deadline = (await latestBlockTimestamp()) + 30n
-    const factory = new AppFactory({ appSpec, algorand, defaultSender: creatorAddr })
+    const factory = new AppFactory({ appSpec: campaignSpec, algorand, defaultSender: creatorAddr })
     const { appClient } = await factory.send.create({
-      method: 'create(byte[],byte[],uint64,uint64)void',
-      args: [new TextEncoder().encode(title), new TextEncoder().encode('ipfs://test'), goal, deadline],
+      method: 'create(uint64,byte[],byte[],uint64,uint64)void',
+      args: [vaultId, new TextEncoder().encode(title), new TextEncoder().encode('ipfs://test'), goal, deadline],
       sender: creatorAddr,
+      appReferences: [vaultId],
       suppressLog: true,
     })
-    return appClient
-  }
 
-  /**
-   * The id of the campaign's Claim ASA, read from global state.
-   *
-   * @param appClient The deployed campaign client.
-   */
-  async function claimAsaOf(appClient: AppClient): Promise<bigint> {
-    const value = await appClient.state.global.getValue('claimAsa')
-    return value as bigint
-  }
-
-  /**
-   * The creator funds the escrow's storage deposit via `fund()`, issuing the Claim ASA.
-   *
-   * @param appClient The deployed campaign client.
-   * @param creatorAddr The creator's address.
-   * @param amount Deposit amount in microAlgos.
-   */
-  async function fundAs(appClient: AppClient, creatorAddr: string, amount = MIN_DEPOSIT) {
     const payment = await algorand.createTransaction.payment({
       sender: creatorAddr,
       receiver: appClient.appAddress,
-      amount: microAlgos(amount),
+      amount: microAlgos(MIN_DEPOSIT),
     })
     await appClient.send.call({
       method: 'fund(pay)void',
@@ -122,48 +149,65 @@ describe('Campaign (localnet)', () => {
       extraFee: (1000).microAlgo(),
       suppressLog: true,
     })
-  }
 
-  /**
-   * Opt `backerAddr` into the Claim ASA (the mint on pledge requires the holding to exist).
-   *
-   * @param backerAddr The backer's address.
-   * @param claimAsa The Claim ASA id.
-   */
-  async function optInAs(backerAddr: string, claimAsa: bigint) {
-    await algorand.send.assetOptIn({ sender: backerAddr, assetId: claimAsa, suppressLog: true })
-  }
-
-  /**
-   * Pledge `amount` as `backer`.
-   *
-   * @param appClient The deployed campaign client.
-   * @param backerAddr The backer's address.
-   * @param claimAsa The Claim ASA id.
-   * @param amount Pledge amount in microAlgos.
-   */
-  async function pledgeAs(appClient: AppClient, backerAddr: string, claimAsa: bigint, amount: bigint) {
-    const payment = await algorand.createTransaction.payment({
-      sender: backerAddr,
-      receiver: appClient.appAddress,
-      amount: microAlgos(amount),
+    const vaultClient = vaultClientFor(creatorAddr)
+    await vaultClient.send.call({
+      method: 'issueClaimAsa(uint64)void',
+      args: [appClient.appId],
+      sender: creatorAddr,
+      appReferences: [appClient.appId, factoryId],
+      extraFee: (3000).microAlgo(),
+      suppressLog: true,
     })
+
+    const claimAsa = (await vaultClient.state.box.getMapValue('asaOf', appClient.appId)) as bigint
     await appClient.send.call({
-      method: 'pledge(pay)void',
-      args: [payment],
-      sender: backerAddr,
+      method: 'attachClaimAsa(uint64)void',
+      args: [claimAsa],
+      sender: creatorAddr,
+      appReferences: [vaultId],
       assetReferences: [claimAsa],
       extraFee: (1000).microAlgo(),
       suppressLog: true,
     })
+    await vaultClient.send.call({
+      method: 'seedSupply(uint64)void',
+      args: [appClient.appId],
+      sender: creatorAddr,
+      appReferences: [appClient.appId],
+      assetReferences: [claimAsa],
+      extraFee: (1000).microAlgo(),
+      suppressLog: true,
+    })
+
+    return { appClient, claimAsa }
+  }
+
+  function vaultClientFor(sender: string): AppClient {
+    return new AppClient({
+      algorand,
+      appSpec: vaultSpec,
+      appId: vaultId,
+      defaultSender: sender,
+    })
   }
 
   /**
-   * The backer's Claim ASA balance, in units (0 when not opted in).
+   * The vault's box names for a campaign (prefix + 8-byte app id) — inner app calls require them declared on the outer txn.
    *
-   * @param backerAddr The backer's address.
-   * @param claimAsa The Claim ASA id.
+   * @param appId The campaign app id.
+   * @param prefixes The vault box key prefixes.
    */
+  function vaultBoxes(appId: bigint, prefixes: string[]) {
+    const appIdBytes = Buffer.alloc(8)
+    appIdBytes.writeBigUInt64BE(appId)
+    return prefixes.map((prefix) => ({ appId: vaultId, name: Buffer.concat([Buffer.from(prefix), appIdBytes]) }))
+  }
+
+  async function optInAs(backerAddr: string, claimAsa: bigint) {
+    await algorand.send.assetOptIn({ sender: backerAddr, assetId: claimAsa, suppressLog: true })
+  }
+
   async function claimBalanceOf(backerAddr: string, claimAsa: bigint): Promise<bigint> {
     try {
       return (await algorand.asset.getAccountInformation(backerAddr, claimAsa)).balance
@@ -172,62 +216,72 @@ describe('Campaign (localnet)', () => {
     }
   }
 
-  /**
-   * Surrender `amount` claim units to the escrow via `refund`, receiving the same microAlgo amount back.
-   *
-   * @param appClient The deployed campaign client.
-   * @param backerAddr The backer's address.
-   * @param claimAsa The Claim ASA id.
-   * @param amount Claim units to surrender.
-   */
-  async function refundAs(appClient: AppClient, backerAddr: string, claimAsa: bigint, amount: bigint) {
-    const axfer = await algorand.createTransaction.assetTransfer({
+  async function pledgeAs(appClient: AppClient, backerAddr: string, claimAsa: bigint, amount: bigint) {
+    const payment = await algorand.createTransaction.payment({
       sender: backerAddr,
-      assetId: claimAsa,
-      receiver: appClient.appAddress,
-      amount: amount,
+      receiver: vaultAddress,
+      amount: microAlgos(amount),
     })
     await appClient.send.call({
-      method: 'refund(axfer)void',
-      args: [axfer],
+      method: 'pledge(pay)void',
+      args: [payment],
       sender: backerAddr,
-      extraFee: (1000).microAlgo(),
-      suppressLog: true,
-    })
-  }
-
-  async function cancelAs(appClient: AppClient, backerAddr: string, claimAsa: bigint, amount: bigint) {
-    const axfer = await algorand.createTransaction.assetTransfer({
-      sender: backerAddr,
-      assetId: claimAsa,
-      receiver: appClient.appAddress,
-      amount: amount,
-    })
-    await appClient.send.call({
-      method: 'cancelPledge(axfer)void',
-      args: [axfer],
-      sender: backerAddr,
+      appReferences: [vaultId],
+      assetReferences: [claimAsa],
       extraFee: (1000).microAlgo(),
       suppressLog: true,
     })
   }
 
   /**
-   * Close the backer's Claim ASA holding back to the escrow (post-success claim cleanup).
+   * Cancel/refund through the campaign (works while the campaign is alive).
    *
-   * @param appClient The deployed campaign client.
+   * @param appClient The campaign client.
    * @param backerAddr The backer's address.
    * @param claimAsa The Claim ASA id.
+   * @param method The campaign method to invoke.
    */
-  async function closeOutAs(appClient: AppClient, backerAddr: string, claimAsa: bigint) {
+  async function surrenderViaCampaign(appClient: AppClient, backerAddr: string, claimAsa: bigint, method: 'cancelPledge' | 'refund') {
     const axfer = await algorand.createTransaction.assetTransfer({
       sender: backerAddr,
       assetId: claimAsa,
-      receiver: appClient.appAddress,
-      amount: 0n,
-      closeAssetTo: appClient.appAddress,
+      receiver: vaultAddress,
+      amount: await claimBalanceOf(backerAddr, claimAsa),
     })
-    await appClient.send.call({ method: 'closeOut(axfer)void', args: [axfer], sender: backerAddr, suppressLog: true })
+    await appClient.send.call({
+      method: `${method}(axfer)void`,
+      args: [axfer],
+      sender: backerAddr,
+      appReferences: [vaultId],
+      boxReferences: vaultBoxes(appClient.appId, ['a', 'd']),
+      extraFee: (2000).microAlgo(),
+      suppressLog: true,
+    })
+  }
+
+  /**
+   * Refund directly from the vault (works after the campaign is deleted).
+   *
+   * @param backerAddr The backer's address.
+   * @param appId The campaign app id.
+   * @param claimAsa The Claim ASA id.
+   */
+  async function refundViaVault(backerAddr: string, appId: bigint, claimAsa: bigint) {
+    const vaultClient = vaultClientFor(backerAddr)
+    const axfer = await algorand.createTransaction.assetTransfer({
+      sender: backerAddr,
+      assetId: claimAsa,
+      receiver: vaultAddress,
+      amount: await claimBalanceOf(backerAddr, claimAsa),
+    })
+    await vaultClient.send.call({
+      method: 'refund(uint64,axfer)void',
+      args: [appId, axfer],
+      sender: backerAddr,
+      appReferences: [appId],
+      extraFee: (1000).microAlgo(),
+      suppressLog: true,
+    })
   }
 
   async function claimAs(appClient: AppClient, creatorAddr: string) {
@@ -235,99 +289,109 @@ describe('Campaign (localnet)', () => {
       method: 'claim()void',
       args: [],
       sender: creatorAddr,
-      extraFee: (1000).microAlgo(),
-      suppressLog: true,
-    })
-  }
-
-  async function deleteAs(appClient: AppClient, creatorAddr: string, claimAsa: bigint) {
-    await appClient.send.delete({
-      method: 'delete()void',
-      args: [],
-      sender: creatorAddr,
-      assetReferences: [claimAsa],
+      appReferences: [vaultId],
+      assetReferences: [await claimAsaOf(appClient)],
+      boxReferences: vaultBoxes(appClient.appId, ['a', 'd', 'o', 's']),
       extraFee: (2000).microAlgo(),
       suppressLog: true,
     })
   }
 
-  test('create + fund: the Claim ASA exists with the escrow as manager and a constant minimum balance', async () => {
+  async function claimAsaOf(appClient: AppClient): Promise<bigint> {
+    return (await appClient.state.global.getValue('claimAsa')) as bigint
+  }
+
+  async function deleteAs(appClient: AppClient, creatorAddr: string, claimAsa: bigint | undefined, extraFeeMicroAlgos: number) {
+    await appClient.send.delete({
+      method: 'delete()void',
+      args: [],
+      sender: creatorAddr,
+      appReferences: [vaultId],
+      assetReferences: claimAsa !== undefined ? [claimAsa] : [],
+      boxReferences: claimAsa !== undefined ? vaultBoxes(appClient.appId, ['a', 'd', 's']) : [],
+      extraFee: microAlgos(extraFeeMicroAlgos),
+      suppressLog: true,
+    })
+  }
+
+  test('setup: the vault issues the Claim ASA and seeds the escrow; creator capital is the escrow constant', async () => {
     const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const appClient = await createCampaign(creator.addr.toString(), 'ASA campaign', (10).algo().microAlgo)
-    const escrow = appClient.appAddress.toString()
+    const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Setup', (10).algo().microAlgo)
 
-    // Before fund: the escrow is empty; the creator carries the sponsorship floor on their own account.
-    const escrowBefore = await accountInfo(escrow)
-    expect(escrowBefore.balance).toEqual(0n)
-    const creatorBefore = await accountInfo(creator.addr.toString())
-    expect(creatorBefore.minBalance).toBeGreaterThan(BASE)
-
-    await fundAs(appClient, creator.addr.toString())
-
-    const claimAsa = await claimAsaOf(appClient)
-    expect(claimAsa).toBeGreaterThan(0n)
-
-    // The escrow minimum balance is exactly base + the created asset: 200,000 µA — constant regardless of the backer count.
-    const escrowAfter = await accountInfo(escrow)
-    expect(escrowAfter.balance).toEqual(MIN_DEPOSIT)
-    expect(escrowAfter.minBalance).toEqual(ESCROW_MIN_BALANCE)
-
-    // The Claim ASA: fixed total, 0 decimals, manager = the escrow, no reserve/freeze/clawback (bearer instrument).
     const asset = await algorand.asset.getById(claimAsa)
+    expect(asset.creator).toEqual(vaultAddress)
+    expect(asset.manager).toEqual(vaultAddress)
+    expect(asset.clawback).toEqual(vaultAddress)
+    expect(asset.reserve).toEqual(vaultAddress)
     expect(asset.total).toEqual(TOTAL_CLAIM_UNITS)
     expect(asset.decimals).toEqual(0)
-    expect(asset.manager).toEqual(escrow)
-    expect(asset.reserve).toBeUndefined()
-    expect(asset.freeze).toBeUndefined()
-    expect(asset.clawback).toBeUndefined()
+
+    // The escrow holds the whole supply and exactly the deposit.
+    const escrow = await accountInfo(appClient.appAddress.toString())
+    expect(escrow.balance).toEqual(MIN_DEPOSIT)
+    expect(escrow.minBalance).toEqual(ESCROW_MIN_BALANCE)
+    const escrowHolding = await algorand.asset.getAccountInformation(appClient.appAddress.toString(), claimAsa)
+    expect(escrowHolding.balance).toEqual(TOTAL_CLAIM_UNITS)
+
+    // The vault parks its created-asset MBR (accepted platform cost).
+    const vault = await accountInfo(vaultAddress)
+    expect(vault.minBalance).toBeGreaterThan(BASE)
   })
 
-  test('pledge: mints the exact claim units, 1 unit per microAlgo, and multiple pledges accumulate', async () => {
+  test('pledge: pays the vault (escrow untouched), mints claim units, accumulates', async () => {
     const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const appClient = await createCampaign(creator.addr.toString(), 'Mint me', (100).algo().microAlgo)
-    await fundAs(appClient, creator.addr.toString())
-    const claimAsa = await claimAsaOf(appClient)
-
+    const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Pledge', (100).algo().microAlgo)
     await optInAs(backer.addr.toString(), claimAsa)
-    const escrow = appClient.appAddress.toString()
+
+    const vaultBefore = await accountInfo(vaultAddress)
+    const escrowBefore = await accountInfo(appClient.appAddress.toString())
 
     await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
-    expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(ALGO)
-
-    // The same backer pledges again: units accumulate on the backer's account.
     await pledgeAs(appClient, backer.addr.toString(), claimAsa, 2n * ALGO)
-    expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(3n * ALGO)
 
-    // The escrow balance is the deposit + the live pledges; its minimum balance did not grow with the backers.
-    const escrowInfo = await accountInfo(escrow)
-    expect(escrowInfo.balance).toEqual(MIN_DEPOSIT + 3n * ALGO)
-    expect(escrowInfo.minBalance).toEqual(ESCROW_MIN_BALANCE)
+    expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(3n * ALGO)
+    const vaultAfter = await accountInfo(vaultAddress)
+    expect(vaultAfter.balance - vaultBefore.balance).toEqual(3n * ALGO)
+    const escrowAfter = await accountInfo(appClient.appAddress.toString())
+    expect(escrowAfter.balance).toEqual(escrowBefore.balance) // escrow untouched by pledges
   })
 
-  test('pledge guards: creator cannot self-pledge, pledging before fund() fails', async () => {
+  test('pledge guards: no claim asset, wrong receiver, creator self-pledge', async () => {
     const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
     const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const appClient = await createCampaign(creator.addr.toString(), 'Guard me', (100).algo().microAlgo)
+    const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Guards', (100).algo().microAlgo)
 
-    // No fund() yet: the Claim ASA does not exist.
-    await expect(pledgeAs(appClient, backer.addr.toString(), 999n, ALGO)).rejects.toThrow(/claim asset not issued yet/)
-
-    await fundAs(appClient, creator.addr.toString())
-    const claimAsa = await claimAsaOf(appClient)
-    await optInAs(backer.addr.toString(), claimAsa)
-
-    // The creator cannot pledge to their own campaign.
-    const selfPayment = await algorand.createTransaction.payment({
-      sender: creator.addr.toString(),
+    // A payment to the escrow (not the vault) is rejected.
+    const wrongPayment = await algorand.createTransaction.payment({
+      sender: backer.addr.toString(),
       receiver: appClient.appAddress,
       amount: microAlgos(ALGO),
     })
     await expect(
       appClient.send.call({
         method: 'pledge(pay)void',
+        args: [wrongPayment],
+        sender: backer.addr,
+        appReferences: [vaultId],
+        assetReferences: [claimAsa],
+        extraFee: (1000).microAlgo(),
+        suppressLog: true,
+      }),
+    ).rejects.toThrow(/payment must be made to the vault/)
+
+    // The creator cannot self-pledge.
+    const selfPayment = await algorand.createTransaction.payment({
+      sender: creator.addr.toString(),
+      receiver: vaultAddress,
+      amount: microAlgos(ALGO),
+    })
+    await expect(
+      appClient.send.call({
+        method: 'pledge(pay)void',
         args: [selfPayment],
-        sender: creator.addr.toString(),
+        sender: creator.addr,
+        appReferences: [vaultId],
         assetReferences: [claimAsa],
         extraFee: (1000).microAlgo(),
         suppressLog: true,
@@ -335,252 +399,440 @@ describe('Campaign (localnet)', () => {
     ).rejects.toThrow(/creator cannot pledge to their own campaign/)
   })
 
-  test('cancelPledge: a backer withdraws before the deadline and the units are surrendered', async () => {
+  test('attachClaimAsa rejects a counterfeit asset (wrong creator)', async () => {
     const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const appClient = await createCampaign(creator.addr.toString(), 'Cancel me', (10).algo().microAlgo)
-    await fundAs(appClient, creator.addr.toString())
-    const claimAsa = await claimAsaOf(appClient)
-    await optInAs(backer.addr.toString(), claimAsa)
-    await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
 
-    const before = await accountInfo(backer.addr.toString())
-    await cancelAs(appClient, backer.addr.toString(), claimAsa, ALGO)
-    const after = await accountInfo(backer.addr.toString())
-
-    // The full pledge is returned, minus the surrender transfer, app-call, and inner-payment fees; the units are gone.
-    expect(after.balance - before.balance).toEqual(ALGO - 3n * TXN_FEE)
-    expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(0n)
-
-    // A second cancel of the same units fails: the backer no longer holds them.
-    await expect(cancelAs(appClient, backer.addr.toString(), claimAsa, ALGO)).rejects.toThrow()
-  })
-
-  test('failed flow: every backer refunds their own pledge, nobody else can, and the creator sweeps the deposit', async () => {
-    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const [backer1, backer2, outsider] = await Promise.all([
-      fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
-      fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
-      fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
-    ])
-    const appClient = await createCampaign(creator.addr.toString(), 'Failed campaign', (10).algo().microAlgo)
-    await fundAs(appClient, creator.addr.toString())
-    const claimAsa = await claimAsaOf(appClient)
-    const escrow = appClient.appAddress.toString()
-
-    for (const backer of [backer1, backer2]) {
-      await optInAs(backer.addr.toString(), claimAsa)
-      await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
-    }
-
-    // Refund before the deadline fails.
-    await expect(refundAs(appClient, backer1.addr.toString(), claimAsa, ALGO)).rejects.toThrow(/deadline has not passed/)
-
-    await advanceTime(60)
-
-    // An outsider with no claim units cannot redeem anything: the surrender transfer fails at apply time.
-    await optInAs(outsider.addr.toString(), claimAsa)
-    await expect(refundAs(appClient, outsider.addr.toString(), claimAsa, ALGO)).rejects.toThrow()
-
-    // Each backer refunds their full pledge without any platform involvement.
-    for (const backer of [backer1, backer2]) {
-      const before = await accountInfo(backer.addr.toString())
-      await refundAs(appClient, backer.addr.toString(), claimAsa, ALGO)
-      const after = await accountInfo(backer.addr.toString())
-      expect(after.balance - before.balance).toEqual(ALGO - 3n * TXN_FEE)
-      expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(0n)
-    }
-
-    // The same claim cannot be redeemed twice: backer1 no longer holds units, so a second refund fails at the transfer.
-    await expect(refundAs(appClient, backer1.addr.toString(), claimAsa, ALGO)).rejects.toThrow()
-
-    // The escrow holds exactly the creator's deposit.
-    const escrowAfter = await accountInfo(escrow)
-    expect(escrowAfter.balance).toEqual(MIN_DEPOSIT)
-
-    // The creator deletes: the ASA is destroyed and the deposit comes back.
-    const creatorBefore = await accountInfo(creator.addr.toString())
-    await deleteAs(appClient, creator.addr.toString(), claimAsa)
-    const creatorAfter = await accountInfo(creator.addr.toString())
-
-    expect(creatorAfter.balance - creatorBefore.balance).toEqual(MIN_DEPOSIT - 3n * TXN_FEE)
-    expect(creatorAfter.minBalance).toEqual(BASE) // sponsorship floor freed
-    await expect(algorand.asset.getById(claimAsa)).rejects.toThrow() // the Claim ASA is gone
-  })
-
-  test('failed flow with partial refunds: refunds are pull-based and repeatable', async () => {
-    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const appClient = await createCampaign(creator.addr.toString(), 'Partial refund', (10).algo().microAlgo)
-    await fundAs(appClient, creator.addr.toString())
-    const claimAsa = await claimAsaOf(appClient)
-    await optInAs(backer.addr.toString(), claimAsa)
-    await pledgeAs(appClient, backer.addr.toString(), claimAsa, 2n * ALGO)
-
-    await advanceTime(60)
-
-    // Refund half, then the other half.
-    await refundAs(appClient, backer.addr.toString(), claimAsa, ALGO)
-    expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(ALGO)
-    await refundAs(appClient, backer.addr.toString(), claimAsa, ALGO)
-    expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(0n)
-
-    // Refunding more than the remaining claim fails.
-    await expect(refundAs(appClient, backer.addr.toString(), claimAsa, ALGO)).rejects.toThrow()
-  })
-
-  test('funded flow: the creator claims after the deadline, backers close out, delete destroys the ASA and returns everything', async () => {
-    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const [backer1, backer2] = await Promise.all([
-      fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
-      fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
-    ])
-    const backers = [backer1, backer2]
-    const appClient = await createCampaign(creator.addr.toString(), 'Funded campaign', (2).algo().microAlgo)
-    await fundAs(appClient, creator.addr.toString())
-    const claimAsa = await claimAsaOf(appClient)
-    const escrow = appClient.appAddress.toString()
-
-    for (const backer of backers) {
-      await optInAs(backer.addr.toString(), claimAsa)
-      await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
-    }
-
-    // Claim before the deadline fails.
-    await expect(claimAs(appClient, creator.addr.toString())).rejects.toThrow(/deadline has not passed/)
-
-    await advanceTime(60)
-
-    // The creator claims: balance − minBalance = pledges + deposit surplus.
-    const creatorBeforeClaim = await accountInfo(creator.addr.toString())
-    await claimAs(appClient, creator.addr.toString())
-    const creatorAfterClaim = await accountInfo(creator.addr.toString())
-
-    const expectedClaim = MIN_DEPOSIT + 2n * ALGO - ESCROW_MIN_BALANCE
-    expect(creatorAfterClaim.balance - creatorBeforeClaim.balance).toEqual(expectedClaim - 2n * TXN_FEE)
-
-    const escrowAfterClaim = await accountInfo(escrow)
-    expect(escrowAfterClaim.balance).toEqual(ESCROW_MIN_BALANCE)
-
-    // A second claim fails.
-    await expect(claimAs(appClient, creator.addr.toString())).rejects.toThrow(/already claimed/)
-
-    // Backers cannot refund a successful campaign (the goal was reached).
-    await expect(refundAs(appClient, backer1.addr.toString(), claimAsa, ALGO)).rejects.toThrow(/goal was reached, no refunds/)
-
-    // Delete fails while claim units are still outstanding (the escrow does not hold the whole supply).
-    await expect(deleteAs(appClient, creator.addr.toString(), claimAsa)).rejects.toThrow(/claim units outstanding/)
-
-    // Each backer closes out their now-worthless claim: their units return to the escrow and their 0.1 ALGO opt-in MBR is freed.
-    for (const backer of backers) {
-      const before = await accountInfo(backer.addr.toString())
-      await closeOutAs(appClient, backer.addr.toString(), claimAsa)
-      const after = await accountInfo(backer.addr.toString())
-      expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(0n)
-      expect(after.minBalance).toEqual(before.minBalance - 100_000n)
-    }
-
-    // Now the delete succeeds: ASA destroyed, residual (base + asset MBR) closed to the creator, floor freed.
-    const creatorBeforeDelete = await accountInfo(creator.addr.toString())
-    await deleteAs(appClient, creator.addr.toString(), claimAsa)
-    const creatorAfterDelete = await accountInfo(creator.addr.toString())
-
-    expect(creatorAfterDelete.balance - creatorBeforeDelete.balance).toEqual(ESCROW_MIN_BALANCE - 3n * TXN_FEE)
-    expect(creatorAfterDelete.minBalance).toEqual(BASE)
-    await expect(algorand.asset.getById(claimAsa)).rejects.toThrow()
-  })
-
-  test('claim guards: non-creator, below goal, and a never-funded campaign cannot be claimed', async () => {
-    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const appClient = await createCampaign(creator.addr.toString(), 'Unfunded campaign', (10).algo().microAlgo)
-
-    // Below goal (zero pledges): claim fails even after the deadline.
-    await advanceTime(60)
-    await expect(claimAs(appClient, creator.addr.toString())).rejects.toThrow(/goal not reached/)
-
-    // A non-creator cannot claim.
-    await expect(claimAs(appClient, backer.addr.toString())).rejects.toThrow(/only the creator can claim/)
-  })
-
-  test('delete guards: open campaigns, outstanding pledges, and non-creators are rejected', async () => {
-    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const [backer1, backer2] = await Promise.all([
-      fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
-      fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
-    ])
-    const appClient = await createCampaign(creator.addr.toString(), 'Delete guards', (10).algo().microAlgo)
-    await fundAs(appClient, creator.addr.toString())
-    const claimAsa = await claimAsaOf(appClient)
-    for (const backer of [backer1, backer2]) {
-      await optInAs(backer.addr.toString(), claimAsa)
-      await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
-    }
-
-    // Open campaign with live pledges: nobody can delete.
-    await expect(deleteAs(appClient, creator.addr.toString(), claimAsa)).rejects.toThrow(/cannot delete a campaign with live pledges/)
-
-    // Non-creator cannot delete.
-    await expect(deleteAs(appClient, backer1.addr.toString(), claimAsa)).rejects.toThrow(/only the creator can delete/)
-
-    // Failed campaign with outstanding units: delete is blocked (backer2's ALGO is still in the escrow).
-    await advanceTime(60)
-    await refundAs(appClient, backer1.addr.toString(), claimAsa, ALGO) // materializes Failed
-    await expect(deleteAs(appClient, creator.addr.toString(), claimAsa)).rejects.toThrow(/claim units outstanding/)
-
-    // After the last backer refunds, the delete succeeds.
-    await refundAs(appClient, backer2.addr.toString(), claimAsa, ALGO)
-    await deleteAs(appClient, creator.addr.toString(), claimAsa)
-  })
-
-  test('refund rejects the wrong asset', async () => {
-    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const appClient = await createCampaign(creator.addr.toString(), 'Wrong asset', (10).algo().microAlgo)
-    await fundAs(appClient, creator.addr.toString())
-    const claimAsa = await claimAsaOf(appClient)
-    await optInAs(backer.addr.toString(), claimAsa)
-    await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
-
-    // A second campaign's Claim ASA: the backer can hold it, but this escrow is not opted in, so the surrender transfer itself fails
-    // before the app call (the transfer, not the contract, is the first line of defense against foreign claim assets).
-    const other = await createCampaign(creator.addr.toString(), 'Other claim', (10).algo().microAlgo)
-    await fundAs(other, creator.addr.toString())
-    const otherClaimAsa = await claimAsaOf(other)
-    await optInAs(backer.addr.toString(), otherClaimAsa)
-
-    await advanceTime(60)
-    const wrongAxfer = await algorand.createTransaction.assetTransfer({
-      sender: backer.addr.toString(),
-      assetId: otherClaimAsa,
-      receiver: appClient.appAddress,
-      amount: 1n,
+    // A bare campaign: created + funded + issued, but NOT attached yet.
+    const deadline = (await latestBlockTimestamp()) + 30n
+    const factory = new AppFactory({ appSpec: campaignSpec, algorand, defaultSender: creator.addr })
+    const { appClient } = await factory.send.create({
+      method: 'create(uint64,byte[],byte[],uint64,uint64)void',
+      args: [
+        vaultId,
+        new TextEncoder().encode('Counterfeit target'),
+        new TextEncoder().encode('ipfs://test'),
+        (10).algo().microAlgo,
+        deadline,
+      ],
+      sender: creator.addr,
+      appReferences: [vaultId],
+      suppressLog: true,
     })
-    await expect(
-      appClient.send.call({
-        method: 'refund(axfer)void',
-        args: [wrongAxfer],
-        sender: backer.addr.toString(),
-        extraFee: (1000).microAlgo(),
-        suppressLog: true,
-      }),
-    ).rejects.toThrow()
-  })
-
-  test('an abandoned campaign (created but never funded) can be deleted by its creator', async () => {
-    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const appClient = await createCampaign(creator.addr.toString(), 'Abandoned', (10).algo().microAlgo)
-
-    const creatorBefore = await accountInfo(creator.addr.toString())
-    await appClient.send.delete({
-      method: 'delete()void',
-      args: [],
+    const payment = await algorand.createTransaction.payment({
+      sender: creator.addr.toString(),
+      receiver: appClient.appAddress,
+      amount: microAlgos(MIN_DEPOSIT),
+    })
+    await appClient.send.call({
+      method: 'fund(pay)void',
+      args: [payment],
       sender: creator.addr,
       extraFee: (1000).microAlgo(),
       suppressLog: true,
     })
+
+    // A decoy ASA created by a random account (not the vault) is rejected outright.
+    const decoy = await algorand.send.assetCreate({
+      sender: creator.addr.toString(),
+      total: TOTAL_CLAIM_UNITS,
+      decimals: 0,
+      assetName: 'Decoy',
+      unitName: 'DECOY',
+      suppressLog: true,
+    })
+    await expect(
+      appClient.send.call({
+        method: 'attachClaimAsa(uint64)void',
+        args: [decoy.assetId],
+        sender: creator.addr,
+        appReferences: [vaultId],
+        assetReferences: [decoy.assetId],
+        extraFee: (1000).microAlgo(),
+        suppressLog: true,
+      }),
+    ).rejects.toThrow(/not issued by the vault/)
+  })
+
+  test('cancelPledge: the vault pays, raised decrements, units are consumed once', async () => {
+    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Cancel', (10).algo().microAlgo)
+    await optInAs(backer.addr.toString(), claimAsa)
+    await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
+
+    const before = await accountInfo(backer.addr.toString())
+    await surrenderViaCampaign(appClient, backer.addr.toString(), claimAsa, 'cancelPledge')
+    const after = await accountInfo(backer.addr.toString())
+
+    // Refund paid by the vault: pledge back minus the axfer, the app call, and the inner call + inner payment fees.
+    expect(after.balance - before.balance).toEqual(ALGO - 4n * TXN_FEE)
+    expect(await claimBalanceOf(backer.addr.toString(), claimAsa)).toEqual(0n)
+
+    await expect(surrenderViaCampaign(appClient, backer.addr.toString(), claimAsa, 'cancelPledge')).rejects.toThrow()
+  })
+
+  test(
+    'FLAGSHIP: failed campaign with a straggler — creator deletes in O(1), the straggler refunds from the vault afterwards',
+    { timeout: 120_000 },
+    async () => {
+      const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+      const [backer1, backer2] = await Promise.all([
+        fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+        fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+      ])
+      const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Failed with straggler', (10).algo().microAlgo)
+      for (const backer of [backer1, backer2]) {
+        await optInAs(backer.addr.toString(), claimAsa)
+        await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
+      }
+
+      await advanceTime(60)
+
+      // Backer1 refunds through the campaign (vault pays).
+      await surrenderViaCampaign(appClient, backer1.addr.toString(), claimAsa, 'refund')
+      expect(await claimBalanceOf(backer1.addr.toString(), claimAsa)).toEqual(0n)
+
+      // Backer2 (the straggler) never acts. The creator deletes in ONE call: settle → holding close → escrow close.
+      const creatorBefore = await accountInfo(creator.addr.toString())
+      await deleteAs(appClient, creator.addr.toString(), claimAsa, 3000)
+      const creatorAfter = await accountInfo(creator.addr.toString())
+
+      // The deposit comes back (minus the delete call's own + inner fees); the floor is freed; the escrow is empty.
+      expect(creatorAfter.balance - creatorBefore.balance).toEqual(MIN_DEPOSIT - 4n * TXN_FEE)
+      expect(creatorAfter.minBalance).toEqual(BASE)
+
+      // The straggler still refunds — directly from the vault, after the campaign is gone.
+      expect(await claimBalanceOf(backer2.addr.toString(), claimAsa)).toEqual(ALGO)
+      const stragglerBefore = await accountInfo(backer2.addr.toString())
+      await refundViaVault(backer2.addr.toString(), appClient.appId, claimAsa)
+      const stragglerAfter = await accountInfo(backer2.addr.toString())
+      expect(stragglerAfter.balance - stragglerBefore.balance).toEqual(ALGO - 3n * TXN_FEE)
+      expect(await claimBalanceOf(backer2.addr.toString(), claimAsa)).toEqual(0n)
+
+      // All units are home again: the vault can garbage-collect the ASA and free its parked MBR.
+      const vaultBefore = await accountInfo(vaultAddress)
+      const vaultClient = vaultClientFor(creator.addr.toString())
+      await vaultClient.send.call({
+        method: 'destroyClaimAsa(uint64)void',
+        args: [appClient.appId],
+        sender: creator.addr,
+        assetReferences: [claimAsa],
+        extraFee: (1000).microAlgo(),
+        suppressLog: true,
+      })
+      const vaultAfter = await accountInfo(vaultAddress)
+      // destroyClaimAsa frees exactly this campaign's created-asset MBR + mapping boxes (100,000 + 56,400 µA).
+      expect(vaultBefore.minBalance - vaultAfter.minBalance).toEqual(156_400n)
+      await expect(algorand.asset.getById(claimAsa)).rejects.toThrow()
+    },
+  )
+
+  test('vault refund guards: unsettled campaign, wrong asset, zero amount, close-out forbidden', async () => {
+    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Refund guards', (10).algo().microAlgo)
+    await optInAs(backer.addr.toString(), claimAsa)
+    await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
+
+    // Unsettled (campaign alive): the vault refuses.
+    await expect(refundViaVault(backer.addr.toString(), appClient.appId, claimAsa)).rejects.toThrow(/campaign is not refundable/)
+
+    // A counterfeit asset resolves to no campaign.
+    const decoy = await algorand.send.assetCreate({
+      sender: creator.addr.toString(),
+      total: TOTAL_CLAIM_UNITS,
+      decimals: 0,
+      assetName: 'Decoy',
+      unitName: 'DECOY',
+      suppressLog: true,
+    })
+    await optInAs(backer.addr.toString(), decoy.assetId)
+    await algorand.send.assetTransfer({
+      sender: creator.addr.toString(),
+      assetId: decoy.assetId,
+      receiver: backer.addr.toString(),
+      amount: 1n,
+      suppressLog: true,
+    })
+    const vaultClient = vaultClientFor(backer.addr.toString())
+    const decoyAxfer = await algorand.createTransaction.assetTransfer({
+      sender: backer.addr.toString(),
+      assetId: decoy.assetId,
+      receiver: vaultAddress,
+      amount: 1n,
+    })
+    // The vault is not opted into the decoy, so the surrender transfer itself fails at apply (receiver must opt in) — the first line of
+    // defense. The vault's own `unknown claim asset` branch is covered offline and via the cross-campaign test's real-asset path.
+    await expect(
+      vaultClient.send.call({
+        method: 'refund(uint64,axfer)void',
+        args: [appClient.appId, decoyAxfer],
+        sender: backer.addr,
+        extraFee: (1000).microAlgo(),
+        suppressLog: true,
+      }),
+    ).rejects.toThrow()
+
+    // Zero-amount surrender is rejected.
+    const zeroAxfer = await algorand.createTransaction.assetTransfer({
+      sender: backer.addr.toString(),
+      assetId: claimAsa,
+      receiver: vaultAddress,
+      amount: 0n,
+    })
+    await expect(
+      vaultClient.send.call({
+        method: 'refund(uint64,axfer)void',
+        args: [appClient.appId, zeroAxfer],
+        sender: backer.addr,
+        extraFee: (1000).microAlgo(),
+        suppressLog: true,
+      }),
+    ).rejects.toThrow(/claim amount must be greater than zero/)
+  })
+
+  test('claim guards: below goal, non-creator', async () => {
+    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Claim guards', (10).algo().microAlgo)
+    await optInAs(backer.addr.toString(), claimAsa)
+    await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
+
+    await advanceTime(60)
+
+    await expect(claimAs(appClient, creator.addr.toString())).rejects.toThrow(/goal not reached/)
+    await expect(claimAs(appClient, backer.addr.toString())).rejects.toThrow(/only the creator can claim/)
+  })
+
+  test('cross-campaign isolation: units of one campaign can never redeem on another', async () => {
+    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const a = await deployCampaign(creator.addr.toString(), 'Campaign A', (1).algo().microAlgo)
+    const b = await deployCampaign(creator.addr.toString(), 'Campaign B', (10).algo().microAlgo)
+
+    await optInAs(backer.addr.toString(), a.claimAsa)
+    await pledgeAs(a.appClient, backer.addr.toString(), a.claimAsa, ALGO)
+
+    // B fails with a straggler; settle it.
+    await optInAs(backer.addr.toString(), b.claimAsa)
+    await pledgeAs(b.appClient, backer.addr.toString(), b.claimAsa, ALGO)
+    await advanceTime(60)
+    await deleteAs(b.appClient, creator.addr.toString(), b.claimAsa, 3000)
+
+    // Presenting A's units (an open campaign) to the vault resolves to campaign A → not refundable.
+    await expect(refundViaVault(backer.addr.toString(), a.appClient.appId, a.claimAsa)).rejects.toThrow(/campaign is not refundable/)
+
+    // Presenting B's own units refunds B's own pledge — A's balance is untouched.
+    const aUnitsBefore = await claimBalanceOf(backer.addr.toString(), a.claimAsa)
+    await refundViaVault(backer.addr.toString(), b.appClient.appId, b.claimAsa)
+    expect(await claimBalanceOf(backer.addr.toString(), a.claimAsa)).toEqual(aUnitsBefore)
+  })
+
+  test('insolvency attack: payouts never exceed contributions across two campaigns', async () => {
+    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const [backerA, backerB] = await Promise.all([
+      fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+      fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+    ])
+    const a = await deployCampaign(creator.addr.toString(), 'Pool A', (10).algo().microAlgo)
+    const b = await deployCampaign(creator.addr.toString(), 'Pool B', (10).algo().microAlgo)
+
+    for (const [backer, camp] of [
+      [backerA, a],
+      [backerB, b],
+    ] as const) {
+      await optInAs(backer.addr.toString(), camp.claimAsa)
+      await pledgeAs(camp.appClient, backer.addr.toString(), camp.claimAsa, ALGO)
+    }
+
+    const vaultBefore = await accountInfo(vaultAddress)
+
+    // A fails and is settled with straggler A; B fails too.
+    await advanceTime(60)
+    await deleteAs(a.appClient, creator.addr.toString(), a.claimAsa, 3000)
+    await deleteAs(b.appClient, creator.addr.toString(), b.claimAsa, 3000)
+
+    // Both stragglers refund everything. The vault pays exactly the pledged amounts (minus nothing) and never goes below its reserve.
+    for (const [backer, camp] of [
+      [backerA, a],
+      [backerB, b],
+    ] as const) {
+      const before = await accountInfo(backer.addr.toString())
+      await refundViaVault(backer.addr.toString(), camp.appClient.appId, camp.claimAsa)
+      const after = await accountInfo(backer.addr.toString())
+      expect(after.balance - before.balance).toEqual(ALGO - 3n * TXN_FEE)
+    }
+
+    const vaultAfter = await accountInfo(vaultAddress)
+    expect(vaultAfter.balance).toEqual(vaultBefore.balance - 2n * ALGO)
+  })
+
+  test(
+    'funded flow: vault pays the claim from unit conservation; closeOut, sweep, destroy, full cleanup',
+    { timeout: 120_000 },
+    async () => {
+      const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+      const [backer1, backer2] = await Promise.all([
+        fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+        fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true }),
+      ])
+      const backers = [backer1, backer2]
+      const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Funded', (2).algo().microAlgo)
+      for (const backer of backers) {
+        await optInAs(backer.addr.toString(), claimAsa)
+        await pledgeAs(appClient, backer.addr.toString(), claimAsa, ALGO)
+      }
+
+      // Claim before the deadline fails.
+      await expect(claimAs(appClient, creator.addr.toString())).rejects.toThrow(/deadline has not passed/)
+
+      await advanceTime(60)
+
+      // The vault pays the derived amount (total − vault holding − campaign holding = 2 ALGO).
+      const creatorBefore = await accountInfo(creator.addr.toString())
+      const vaultBefore = await accountInfo(vaultAddress)
+      await claimAs(appClient, creator.addr.toString())
+      const creatorAfter = await accountInfo(creator.addr.toString())
+      expect(creatorAfter.balance - creatorBefore.balance).toEqual(2n * ALGO - 3n * TXN_FEE)
+      const vaultAfter = await accountInfo(vaultAddress)
+      expect(vaultAfter.balance).toEqual(vaultBefore.balance - 2n * ALGO)
+
+      // Double claim and refunds are rejected.
+      await expect(claimAs(appClient, creator.addr.toString())).rejects.toThrow(/already claimed/)
+      await expect(refundViaVault(backer1.addr.toString(), appClient.appId, claimAsa)).rejects.toThrow(/campaign is not refundable/)
+
+      // The creator deletes in O(1): holding close + escrow close; deposit + floor recovered.
+      const creatorBeforeDelete = await accountInfo(creator.addr.toString())
+      await deleteAs(appClient, creator.addr.toString(), claimAsa, 2000)
+      const creatorAfterDelete = await accountInfo(creator.addr.toString())
+      expect(creatorAfterDelete.balance - creatorBeforeDelete.balance).toEqual(MIN_DEPOSIT - 3n * TXN_FEE)
+      expect(creatorAfterDelete.minBalance).toEqual(BASE)
+
+      // GC: sweep the worthless units from both holders, then destroy the ASA and free the vault's parked MBR.
+      const vaultClient = vaultClientFor(creator.addr.toString())
+      await vaultClient.send.call({
+        method: 'sweepClaimAsa(uint64,address)void',
+        args: [appClient.appId, backer1.addr.toString()],
+        sender: creator.addr,
+        appReferences: [appClient.appId],
+        assetReferences: [claimAsa],
+        extraFee: (1000).microAlgo(),
+        suppressLog: true,
+      })
+      expect(await claimBalanceOf(backer1.addr.toString(), claimAsa)).toEqual(0n)
+
+      // Destroy is refused while backer2 still holds units.
+      await expect(
+        vaultClient.send.call({
+          method: 'destroyClaimAsa(uint64)void',
+          args: [appClient.appId],
+          sender: creator.addr,
+          assetReferences: [claimAsa],
+          extraFee: (1000).microAlgo(),
+          suppressLog: true,
+        }),
+      ).rejects.toThrow(/claim units outstanding/)
+
+      // Sweeping a settled-claimed campaign is permissionless; after the last holder, the destroy succeeds.
+      await vaultClient.send.call({
+        method: 'sweepClaimAsa(uint64,address)void',
+        args: [appClient.appId, backer2.addr.toString()],
+        sender: creator.addr,
+        appReferences: [appClient.appId],
+        assetReferences: [claimAsa],
+        extraFee: (1000).microAlgo(),
+        suppressLog: true,
+      })
+      expect(await claimBalanceOf(backer2.addr.toString(), claimAsa)).toEqual(0n)
+
+      const vaultBeforeGc = await accountInfo(vaultAddress)
+      await vaultClient.send.call({
+        method: 'destroyClaimAsa(uint64)void',
+        args: [appClient.appId],
+        sender: creator.addr,
+        assetReferences: [claimAsa],
+        extraFee: (1000).microAlgo(),
+        suppressLog: true,
+      })
+      const vaultAfterGc = await accountInfo(vaultAddress)
+      // destroyClaimAsa frees exactly this campaign's created-asset MBR + mapping boxes (100,000 + 56,400 µA).
+      expect(vaultBeforeGc.minBalance - vaultAfterGc.minBalance).toEqual(156_400n)
+      await expect(algorand.asset.getById(claimAsa)).rejects.toThrow()
+    },
+  )
+
+  test('vault payout methods reject non-campaign callers (no hijacking)', async () => {
+    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const attacker = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Hijack target', (10).algo().microAlgo)
+    const vaultClient = vaultClientFor(attacker.addr.toString())
+
+    // A random account cannot trigger payBack (which would pay itself).
+    await expect(
+      vaultClient.send.call({
+        method: 'payBack(uint64,address,uint64)void',
+        args: [appClient.appId, attacker.addr.toString(), ALGO],
+        sender: attacker.addr,
+        extraFee: (1000).microAlgo(),
+        suppressLog: true,
+      }),
+    ).rejects.toThrow(/not the campaign app/)
+
+    // Nor payClaim (stealing the pool), nor settle (forcing refunds on a live campaign).
+    await expect(
+      vaultClient.send.call({
+        method: 'payClaim(uint64)void',
+        args: [appClient.appId],
+        sender: attacker.addr,
+        extraFee: (1000).microAlgo(),
+        suppressLog: true,
+      }),
+    ).rejects.toThrow(/not the campaign app/)
+    await expect(
+      vaultClient.send.call({
+        method: 'settle(uint64)void',
+        args: [appClient.appId],
+        sender: attacker.addr,
+        extraFee: (1000).microAlgo(),
+        suppressLog: true,
+      }),
+    ).rejects.toThrow(/not the campaign app/)
+    void claimAsa
+  })
+
+  test('stray ALGO sent to the vault cannot be extracted by anyone', async () => {
+    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const stranger = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const { appClient, claimAsa } = await deployCampaign(creator.addr.toString(), 'Stray', (10).algo().microAlgo)
+
+    await algorand.send.payment({ sender: stranger.addr, receiver: vaultAddress, amount: microAlgos(ALGO), suppressLog: true })
+    const vaultBefore = await accountInfo(vaultAddress)
+
+    // The stranger has no units; no payout path exists for them.
+    await expect(refundViaVault(stranger.addr.toString(), appClient.appId, claimAsa)).rejects.toThrow()
+
+    // The stray ALGO stays in the vault: no payout path references it.
+    const vaultAfter = await accountInfo(vaultAddress)
+    expect(vaultAfter.balance).toEqual(vaultBefore.balance)
+    void appClient
+  })
+
+  test('an abandoned campaign (created, funded, never issued) can be deleted by its creator', async () => {
+    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const deadline = (await latestBlockTimestamp()) + 30n
+    const factory = new AppFactory({ appSpec: campaignSpec, algorand, defaultSender: creator.addr })
+    const { appClient } = await factory.send.create({
+      method: 'create(uint64,byte[],byte[],uint64,uint64)void',
+      args: [vaultId, new TextEncoder().encode('Abandoned'), new TextEncoder().encode('ipfs://test'), (10).algo().microAlgo, deadline],
+      sender: creator.addr,
+      appReferences: [vaultId],
+      suppressLog: true,
+    })
+
+    const creatorBefore = await accountInfo(creator.addr.toString())
+    await deleteAs(appClient, creator.addr.toString(), undefined, 1000)
     const creatorAfter = await accountInfo(creator.addr.toString())
-    expect(creatorAfter.minBalance).toEqual(BASE) // sponsorship floor freed with no residual
+    expect(creatorAfter.minBalance).toEqual(BASE)
     expect(creatorAfter.balance - creatorBefore.balance).toEqual(-2n * TXN_FEE)
   })
 })

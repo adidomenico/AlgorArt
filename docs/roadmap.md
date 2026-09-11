@@ -22,10 +22,14 @@ item links to the doc that has the details.
 - [x] **Factory registry** — on-chain Factory app: owner-configured approval hash,
       `register`/`unregister` with a refundable deposit, program-hash verification against
       impostor copies. See [`architecture.md`](architecture.md).
+- [x] **Split vault** — the ClaimsVault holds the backers' pooled pledges and issues each
+      campaign's Claim ASA; the campaign escrow holds only the creator's deposit, so both
+      settlement paths finalize in O(1) and failed-campaign refunds keep working from the
+      vault after the campaign is deleted. Full attack matrix on LocalNet.
 - [x] **Frontend core** — wallet connect (Pera/Defly), browse (Factory-filtered), create
       (+ fund + register), pledge (auto opt-in), claim/refund/cancel, close-out, delete.
-- [x] **LocalNet deploy + seed** — Factory/Campaign deployers and a demo seed script
-      (deploy → fund → register → pledge).
+- [x] **LocalNet deploy + seed** — Factory/ClaimsVault/Campaign deployers and a demo seed
+      script (create → fund → register → issue → attach → seed → pledge).
 
 ## Contract
 
@@ -78,10 +82,13 @@ discovery and the outcome record; the catalog is for search/filter/history UX.
 
 ## Open design questions
 
-- [ ] **Force-close for claimed campaigns.** The Claim ASA cannot be destroyed until
-      every backer closes out; a single lazy wallet parks the creator's ~0.67 ALGO.
-      Evaluate clawback- or bounty-based force-close (see
+- [ ] **Vault garbage collection cadence.** Each claimed campaign parks ~0.156 ALGO on the
+      vault until `sweepClaimAsa` + `destroyClaimAsa` run (permissionless, optional). Decide
+      whether the platform or the community drives sweeps, and whether a small bounty per
+      sweep is worth adding (see
       [`claim-asa-redesign.md`](claim-asa-redesign.md) → Limitations).
+- [ ] **Pooled-custody review.** The vault concentrates all campaign funds; consider a
+      third-party audit of the vault before TestNet.
 
 ## Product & design (later)
 

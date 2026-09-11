@@ -7,15 +7,16 @@ import path from 'node:path'
 /**
  * Seed the running LocalNet with demo `Campaign` applications so the frontend has data to render.
  *
- * Creates one campaign per wallet below (each wallet is idempotently created and funded from the LocalNet dispenser), funds the storage
- * deposit (issuing each campaign's Claim ASA), registers it with the Factory when `FACTORY_APP_ID` is set, and pledges to a couple of
- * them from a backer wallet so the list shows partial progress.
+ * Requires the Factory (`FACTORY_APP_ID`) and the ClaimsVault (`VAULT_APP_ID`) to be deployed. Creates one campaign per wallet below,
+ * runs the full setup chain (create → fund → register → issueClaimAsa → attachClaimAsa → seedSupply), and pledges to a couple of them
+ * from a backer wallet so the list shows partial progress.
  *
- * Usage: `algokit localnet start && npm run build && FACTORY_APP_ID=<id> npx ts-node --transpile-only scripts/seed-demo.ts`
+ * Usage: `FACTORY_APP_ID=<id> VAULT_APP_ID=<id> npx ts-node --transpile-only scripts/seed-demo.ts`
  */
 
 const SPEC_PATH = path.resolve(__dirname, '../smart_contracts/artifacts/campaign/Campaign.arc56.json')
 const FACTORY_SPEC_PATH = path.resolve(__dirname, '../smart_contracts/artifacts/factory/Factory.arc56.json')
+const VAULT_SPEC_PATH = path.resolve(__dirname, '../smart_contracts/artifacts/claimsvault/ClaimsVault.arc56.json')
 
 const DAY = 86_400
 
@@ -33,28 +34,42 @@ const CAMPAIGNS: ReadonlyArray<{ creator: string; goalAlgo: number; days: number
 void (async () => {
   const algorand = AlgorandClient.defaultLocalNet()
   const spec = JSON.parse(fs.readFileSync(SPEC_PATH, 'utf8')) as Arc56Contract
+  const factorySpec = JSON.parse(fs.readFileSync(FACTORY_SPEC_PATH, 'utf8')) as Arc56Contract
+  const vaultSpec = JSON.parse(fs.readFileSync(VAULT_SPEC_PATH, 'utf8')) as Arc56Contract
+
   const factoryId = process.env.FACTORY_APP_ID !== undefined && process.env.FACTORY_APP_ID !== '' ? BigInt(process.env.FACTORY_APP_ID) : 0n
-  const factorySpec = factoryId > 0n ? (JSON.parse(fs.readFileSync(FACTORY_SPEC_PATH, 'utf8')) as Arc56Contract) : undefined
+  const vaultId = process.env.VAULT_APP_ID !== undefined && process.env.VAULT_APP_ID !== '' ? BigInt(process.env.VAULT_APP_ID) : 0n
+  if (factoryId === 0n || vaultId === 0n) {
+    throw new Error('FACTORY_APP_ID and VAULT_APP_ID must both be set (deploy the Factory and the ClaimsVault first).')
+  }
 
   const backer = await algorand.account.fromEnvironment('backer', (100).algo())
 
   for (const c of CAMPAIGNS) {
     const creator = await algorand.account.fromEnvironment(c.creator, (100).algo())
 
-    const factory = new AppFactory({ appSpec: spec, algorand, defaultSender: creator.addr })
+    const campaignFactory = new AppFactory({ appSpec: spec, algorand, defaultSender: creator.addr })
+    const vaultClient = new AppFactory({ appSpec: vaultSpec, algorand, defaultSender: creator.addr }).getAppClientById({ appId: vaultId })
 
     const goal = BigInt(c.goalAlgo) * 1_000_000n
     const deadline = BigInt(Math.floor(Date.now() / 1000) + c.days * DAY)
 
-    const { result } = await factory.send.create({
-      method: 'create(byte[],byte[],uint64,uint64)void',
-      args: [new TextEncoder().encode(`${c.creator}'s campaign`), new TextEncoder().encode(`ipfs://seed/${c.creator}`), goal, deadline],
+    const { result } = await campaignFactory.send.create({
+      method: 'create(uint64,byte[],byte[],uint64,uint64)void',
+      args: [
+        vaultId,
+        new TextEncoder().encode(`${c.creator}'s campaign`),
+        new TextEncoder().encode(`ipfs://seed/${c.creator}`),
+        goal,
+        deadline,
+      ],
       sender: creator.addr,
+      appReferences: [vaultId],
     })
 
-    const client = factory.getAppClientById({ appId: result.appId })
+    const client = campaignFactory.getAppClientById({ appId: result.appId })
 
-    // Fund the storage deposit: 0.2 ALGO covers the escrow's fixed minimum balance and issues the Claim ASA.
+    // Fund the storage deposit: 0.2 ALGO covers the escrow's fixed minimum balance.
     const fundPayment = await algorand.createTransaction.payment({
       sender: creator.addr,
       receiver: result.appAddress,
@@ -67,39 +82,62 @@ void (async () => {
       extraFee: microAlgos(1000),
     })
 
-    const claimAsa = (await client.state.global.getValue('claimAsa')) as bigint
+    // Register with the Factory so the browse page lists the campaign.
+    const factoryClient = new AppFactory({ appSpec: factorySpec, algorand, defaultSender: creator.addr }).getAppClientById({
+      appId: factoryId,
+    })
+    const registerPayment = await algorand.createTransaction.payment({
+      sender: creator.addr,
+      receiver: factoryClient.appAddress,
+      amount: microAlgos(REGISTER_MBR),
+    })
+    await factoryClient.send.call({
+      method: 'register(uint64,pay)void',
+      args: [result.appId, registerPayment],
+      sender: creator.addr,
+      appReferences: [result.appId],
+    })
 
-    let registered = 'no'
-    if (factoryId > 0n && factorySpec !== undefined) {
-      const factoryClientFactory = new AppFactory({ appSpec: factorySpec, algorand, defaultSender: creator.addr })
-      const factoryClient = factoryClientFactory.getAppClientById({ appId: factoryId })
-      const registerPayment = await algorand.createTransaction.payment({
-        sender: creator.addr,
-        receiver: factoryClient.appAddress,
-        amount: microAlgos(REGISTER_MBR),
-      })
-      await factoryClient.send.call({
-        method: 'register(uint64,pay)void',
-        args: [result.appId, registerPayment],
-        sender: creator.addr,
-        appReferences: [result.appId],
-      })
-      registered = 'yes'
-    }
+    // The vault issues the Claim ASA; the campaign attaches it; the vault seeds the supply.
+    await vaultClient.send.call({
+      method: 'issueClaimAsa(uint64)void',
+      args: [result.appId],
+      sender: creator.addr,
+      appReferences: [result.appId, factoryId],
+      extraFee: microAlgos(1000),
+    })
+    const claimAsa = (await vaultClient.state.box.getMapValue('asaOf', result.appId)) as bigint
+    await client.send.call({
+      method: 'attachClaimAsa(uint64)void',
+      args: [claimAsa],
+      sender: creator.addr,
+      appReferences: [vaultId],
+      assetReferences: [claimAsa],
+      extraFee: microAlgos(1000),
+    })
+    await vaultClient.send.call({
+      method: 'seedSupply(uint64)void',
+      args: [result.appId],
+      sender: creator.addr,
+      appReferences: [result.appId],
+      assetReferences: [claimAsa],
+      extraFee: microAlgos(1000),
+    })
 
     let pledged = '—'
     if (c.pledgeAlgo > 0) {
-      // The backer opts into the Claim ASA, then pledges: the contract mints the same number of claim units.
+      // The backer opts into the Claim ASA, then pledges: the payment goes to the vault and the campaign mints the claim units.
       await algorand.send.assetOptIn({ sender: backer.addr, assetId: claimAsa })
       const pledgePayment = await algorand.createTransaction.payment({
         sender: backer.addr,
-        receiver: result.appAddress,
+        receiver: vaultClient.appAddress,
         amount: microAlgos(BigInt(c.pledgeAlgo) * 1_000_000n),
       })
       await client.send.call({
         method: 'pledge(pay)void',
         args: [pledgePayment],
         sender: backer.addr,
+        appReferences: [vaultId],
         assetReferences: [claimAsa],
         extraFee: microAlgos(1000),
       })
@@ -108,8 +146,7 @@ void (async () => {
 
     console.log(
       `#${result.appId.toString()} creator=${c.creator} (${creator.addr.toString()}) claimAsa=${claimAsa.toString()} ` +
-        `goal=${String(c.goalAlgo)} ALGO deadline=${new Date(Number(deadline) * 1000).toISOString()} ` +
-        `registered=${registered} pledged=${pledged}`,
+        `goal=${String(c.goalAlgo)} ALGO deadline=${new Date(Number(deadline) * 1000).toISOString()} pledged=${pledged}`,
     )
   }
 })()

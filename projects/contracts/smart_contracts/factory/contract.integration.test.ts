@@ -59,21 +59,10 @@ describe('Factory (localnet)', () => {
     const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600)
     const factory = new AppFactory({ appSpec: campaignSpec, algorand, defaultSender: creatorAddr })
     const { appClient } = await factory.send.create({
-      method: 'create(byte[],byte[],uint64,uint64)void',
-      args: [new TextEncoder().encode('Registrable'), new TextEncoder().encode('ipfs://test'), 1_000_000n, deadline],
+      method: 'create(uint64,byte[],byte[],uint64,uint64)void',
+      args: [1n, new TextEncoder().encode('Registrable'), new TextEncoder().encode('ipfs://test'), 1_000_000n, deadline],
       sender: creatorAddr,
-      suppressLog: true,
-    })
-    const payment = await algorand.createTransaction.payment({
-      sender: creatorAddr,
-      receiver: appClient.appAddress,
-      amount: microAlgos(200_000n),
-    })
-    await appClient.send.call({
-      method: 'fund(pay)void',
-      args: [payment],
-      sender: creatorAddr,
-      extraFee: (1000).microAlgo(),
+      appReferences: [1n],
       suppressLog: true,
     })
     return appClient

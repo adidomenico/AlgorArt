@@ -31,17 +31,18 @@ projects/frontend/src/
 │   │   ├── CampaignList.tsx        # browse all campaigns
 │   │   ├── CampaignCard.tsx        # one card in the list
 │   │   ├── CampaignDetail.tsx      # single campaign + pledge/claim/refund/cancel/closeOut/delete
-│   │   ├── CreateCampaignForm.tsx  # create() → fund() → factory.register() action
-│   │   └── PledgeForm.tsx          # pledge() ABI call (opt-in + payment + app call)
+│   │   ├── CreateCampaignForm.tsx  # create → fund → register → issueClaimAsa → attachClaimAsa → seedSupply action
+│   │   └── PledgeForm.tsx          # pledge() ABI call (opt-in + payment to the vault + app call)
 │   └── app/                  # shared app chrome
 │       └── Nav.tsx                 # brand, wallet button, address badge
 ├── lib/                      # shared services
 │   ├── algorand.ts           # lazy AlgorandClient + IndexerClient singletons
 │   ├── campaign.ts           # indexer -> CampaignViewModel mapping + Claim ASA reads + Factory box search
-│   ├── transaction.ts        # create/fund/register/pledge/claim/refund/cancel/closeOut/delete send helpers
+│   ├── transaction.ts        # create/fund/register/issue/attach/seed/pledge/claim/refund/cancel/closeOut/delete send helpers
 │   └── format.ts             # microAlgo / deadline formatting
 ├── contracts/                # generated typed clients (gitignored)
 │   ├── Campaign.ts
+│   ├── ClaimsVault.ts
 │   └── Factory.ts
 ├── components/               # generic UI (ConnectWallet, Account, ErrorBoundary)
 ├── Home.tsx                  # state-based navigation between list/detail/create
@@ -115,89 +116,116 @@ All reads use `algosdk.Indexer` configured from the same env as algod:
 
 ## Writes (generated clients)
 
-All writes go through the generated `CampaignClient` / `FactoryClient` (built
-from the ARC-56 specs by `algokit project link` — never edited by hand).
+All writes go through the generated `CampaignClient` / `ClaimsVaultClient` /
+`FactoryClient` (built from the ARC-56 specs by `algokit project link` — never
+edited by hand). Pledges pay the **vault** (its app address, derived from
+`VITE_VAULT_APP_ID` via `algosdk.getApplicationAddress`), never the campaign
+escrow.
 
-### create — deploy, fund (issues the Claim ASA), register
+### create — the full setup chain
 
 ```ts
-const factory = new CampaignFactory({ algorand, defaultSender: activeAddress, defaultSigner: transactionSigner })
-const { result } = await factory.send.create.create({ args: { title, metadataUri, goal, deadline } })
+const { result } = await new CampaignFactory({ algorand, defaultSender, defaultSigner }).send.create.create({
+  args: { vault: vaultAppId(), title, metadataUri, goal, deadline },
+  appReferences: [vaultAppId()],
+})
 
-// fund(): 0.2 ALGO storage deposit — the same call issues the Claim ASA.
+// fund(): 0.2 ALGO storage deposit (escrow MBR: base + Claim ASA opt-in).
 await client.send.fund({ args: { payment }, extraFee: microAlgos(1000) })
 
-// factory.register(): proves the campaign runs the official program; ~0.019 ALGO refundable deposit.
+// factory.register(): official-campaign proof; ~0.019 ALGO refundable deposit.
 await factoryClient.send.register({ args: { app: appId, payment }, appReferences: [appId] })
+
+// The vault issues the Claim ASA; the campaign attaches it (self-opt-in); the vault seeds the supply.
+await vaultClient.send.issueClaimAsa({ args: { app: appId }, appReferences: [appId, factoryAppId()], extraFee: microAlgos(1000) })
+const claimAsa = await vaultClient.state.box.asaOf.value(appId)
+await client.send.attachClaimAsa({
+  args: { asset: claimAsa }, appReferences: [vaultAppId()], assetReferences: [claimAsa], extraFee: microAlgos(1000),
+})
+await vaultClient.send.seedSupply({ args: { app: appId }, appReferences: [appId], assetReferences: [claimAsa], extraFee: microAlgos(1000) })
 ```
 
-### pledge — opt-in, then payment + app call
-
-`pledge(pay)void` mints claim units via an inner asset transfer, so the wallet
-must hold the Claim ASA first:
+### pledge — opt-in, then payment to the vault + app call
 
 ```ts
 const { optedIn } = await fetchClaimHolding(appId, address)
 if (!optedIn) await algorand.send.assetOptIn({ sender: address, assetId: claimAsa })
 
 await client.send.pledge({
-  args: { payment },              // backer -> escrow, the pledge amount
-  assetReferences: [claimAsa],    // the inner mint must reference the Claim ASA
-  extraFee: microAlgos(1000),     // covers the inner asset transfer
+  args: { payment },                      // backer -> VAULT, the pledge amount
+  appReferences: [vaultAppId()],          // the campaign reads the vault's address
+  assetReferences: [claimAsa],            // the inner mint references the Claim ASA
+  extraFee: microAlgos(1000),
 })
 ```
 
-### claim — bare no-arg call
+### claim — the vault pays from unit conservation
 
 ```ts
-await client.send.claim({ args: [], extraFee: microAlgos(1000) })
+await client.send.claim({
+  args: [],
+  appReferences: [vaultAppId()],          // inner call target
+  assetReferences: [claimAsa],            // the vault reads holdings
+  boxReferences: vaultBoxRefs(appId, ['a', 'd', 'o', 's']),  // the vault's boxes touched by the inner call
+  extraFee: microAlgos(2000),             // inner app call + inner payment
+})
 ```
 
-### refund / cancelPledge — surrender claim units
+### refund / cancelPledge — surrender claim units to the vault
 
-No proofs anymore: the backer signs an asset transfer of their whole claim
-balance to the escrow, grouped with the app call:
+While the campaign is alive, the campaign drives the payout (inner app call to
+the vault):
 
 ```ts
-const { balance } = await fetchClaimHolding(appId, address)
 const axfer = await algorand.createTransaction.assetTransfer({
-  sender: address, assetId: claimAsa, receiver: client.appAddress, amount: balance,
+  sender: address, assetId: claimAsa, receiver: vaultAddress(), amount: balance,
 })
-await client.send.refund({ args: { axfer }, extraFee: microAlgos(1000) })
-// …or client.send.cancelPledge({ args: { axfer }, extraFee: microAlgos(1000) })
+await client.send.refund({
+  args: { axfer },
+  appReferences: [vaultAppId()],
+  boxReferences: vaultBoxRefs(appId, ['a', 'd']),   // the vault's boxes the inner payBack touches
+  extraFee: microAlgos(2000),
+})
+// …or client.send.cancelPledge({ … same shape … })
 ```
 
-The contract pays `axfer.assetAmount` back, so surrendering the full balance
-refunds the full pledge in one call.
+Once a **failed campaign has been deleted** (the indexer reports
+`application.deleted === true`), the refund goes **directly through the vault**
+— permanent, permissionless, campaign-independent:
+
+```ts
+await vaultClient.send.refund({ args: { app: appId, axfer }, appReferences: [appId], extraFee: microAlgos(1000) })
+```
 
 ### closeOut — dump worthless units after a successful claim
 
 ```ts
 const axfer = await algorand.createTransaction.assetTransfer({
-  sender: address, assetId: claimAsa, receiver: client.appAddress,
-  amount: 0n, closeAssetTo: client.appAddress,   // note: `closeAssetTo`, not `closeRemainderTo`
+  sender: address, assetId: claimAsa, receiver: vaultAddress(),
+  amount: 0n, closeAssetTo: vaultAddress(),   // note: `closeAssetTo`, not `closeRemainderTo`
 })
-await client.send.closeOut({ args: { axfer } })
+await client.send.closeOut({ args: { axfer }, appReferences: [vaultAppId()] })
 ```
 
-### deleteCampaign — sweep + unregister
+### deleteCampaign — settle + sweep + unregister, one O(1) call
 
 ```ts
-await client.send.delete.delete({            // the generated client nests delete
+await client.send.delete.delete({             // the generated client nests delete
   args: [],
-  assetReferences: claimAsa !== undefined ? [claimAsa] : [],   // supply check + destroy
-  extraFee: microAlgos(claimAsa !== undefined ? 2000 : 1000),
+  appReferences: [vaultAppId()],
+  assetReferences: claimAsa !== undefined ? [claimAsa] : [],
+  boxReferences: claimAsa !== undefined ? vaultBoxRefs(appId, ['a', 'd', 's']) : [],
+  extraFee: microAlgos(claimAsa !== undefined ? 3000 : 1000),
 })
 await factoryClient.send.unregister({ args: { app: appId }, appReferences: [appId], extraFee: microAlgos(1000) })
 ```
 
 ### Fees
 
-Each inner payment (claim/refund/cancel, factory unregister) and inner asset
-transaction (pledge mint, delete destroy) is funded by fee pooling: the outer
-app call carries one extra minimum fee (1,000 µA) per inner transaction via
-`extraFee`. A refund therefore costs ≈ 0.003 ALGO (the surrender transfer, the
-app call, the inner payment) — amounts are never reduced by fees.
+Each inner transaction (inner app call, inner payment, inner asset transfer) is
+funded by fee pooling: the outer app call carries one extra minimum fee
+(1,000 µA) per inner transaction via `extraFee`. Amounts are never reduced by
+fees.
 
 > Do **not** use `coverAppCallInnerTransactionFees: true` on the generated client
 > send path — it requires a per-transaction `maxFee` + `additionalAtcContext` that
@@ -206,17 +234,18 @@ app call, the inner payment) — amounts are never reduced by fees.
 
 ## Refund UX & fee disclaimers
 
-A failed campaign leaves funds at the escrow until backers reclaim them, and a
-refund is itself a transaction the backer signs and pays for. The UI states the
-estimated network fee beside every money-moving action:
+A failed campaign keeps the backers' funds at the vault until they reclaim them,
+and a refund is itself a transaction the backer signs and pays for. The UI
+states the estimated network fee beside every money-moving action:
 
 | Action | Transactions | Estimated network fee |
 | --- | --- | --- |
 | `pledge()` (first time) | 1 opt-in + 1 payment + 1 app call + 1 inner axfer | ≈ 0.004 ALGO |
 | `pledge()` (re-pledge) | 1 payment + 1 app call + 1 inner axfer | ≈ 0.003 ALGO |
-| `refund()` / `cancelPledge()` | 1 axfer + 1 app call + 1 inner payment | ≈ 0.003 ALGO |
+| `refund()` / `cancelPledge()` | 1 axfer + 1 app call + 1 inner app call + 1 inner payment | ≈ 0.004 ALGO |
+| `refund()` via the vault (post-delete) | 1 axfer + 1 vault call + 1 inner payment | ≈ 0.003 ALGO |
 | `closeOut()` | 1 axfer + 1 app call | ≈ 0.002 ALGO |
-| `delete()` | 1 app call + 2 inner txns (+ 1 unregister call) | ≈ 0.003–0.004 ALGO |
+| `delete()` | 1 app call + 2–3 inner txns (+ 1 unregister call) | ≈ 0.003–0.004 ALGO |
 
 ## Edge cases & gotchas
 
@@ -234,12 +263,22 @@ estimated network fee beside every money-moving action:
   check-then-send is best-effort and a failed opt-in just surfaces an error.
 - **Close-out needs the exact `closeAssetTo` parameter** (asset transfers use
   `closeAssetTo`, not `closeRemainderTo`).
-- **The Factory must be funded.** `register()` needs the Factory's app account
-  to hold the registration deposits; the deploy script funds it once.
-- **`VITE_FACTORY_APP_ID`.** The browse filter depends on this env var matching
-  the deployed Factory; when empty, the filter is skipped.
-- **Delete needs the Claim ASA as a foreign asset reference** (`assetReferences`),
-  otherwise the supply check and destroy inner transaction fail.
+- **The Factory and the vault must be funded.** `register()` needs the Factory's
+  app account to hold the registration deposits; the vault's app account holds
+  the pooled pledges plus its parked per-campaign MBR. The deploy scripts fund
+  both once.
+- **`VITE_FACTORY_APP_ID` / `VITE_VAULT_APP_ID`.** The browse filter and every
+  pledge/refund depend on these env vars matching the deployed apps; an empty
+  Factory id disables the official-campaign filter.
+- **Inner vault calls need box references.** `claim()`, `refund()`,
+  `cancelPledge()`, and `delete()` inner-call the vault, whose BoxMap reads and
+  writes require the box names to be declared on the outer transaction
+  (`boxReferences` built from the vault app id + the campaign app id) — the
+  AVM rejects undeclared box access. The vault's own methods get their boxes
+  auto-populated from the ARC-56 spec.
+- **The vault address is the pledge receiver.** `pledge()` rejects payments
+  sent anywhere else, so the helper derives the address from
+  `algosdk.getApplicationAddress(VITE_VAULT_APP_ID)`.
 - **Suppress pledge readout on `claimed`.** `closeOut()` removes the units, so
   the detail view's "Your pledge" reflects the live balance naturally.
 

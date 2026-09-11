@@ -25,6 +25,7 @@ export default defineConfig({
       VITE_INDEXER_PORT: '8980',
       VITE_INDEXER_TOKEN: 'a'.repeat(64),
       VITE_FACTORY_APP_ID: '1001',
+      VITE_VAULT_APP_ID: '2002',
       VITE_KMD_SERVER: 'http://localhost',
       VITE_KMD_PORT: '4002',
       VITE_KMD_TOKEN: 'a'.repeat(64),

@@ -11,8 +11,12 @@ workspace: an Algorand TypeScript smart contract plus a React + Vite frontend.
 
 - `projects/contracts/` — AlgoKit contract project (Algorand TypeScript → AVM)
   - `smart_contracts/campaign/contract.algo.ts` — the `Campaign` escrow app
-    (`create`, `fund`, `pledge`, `claim`, `refund`, `cancelPledge`, `closeOut`,
-    `delete`), with a per-campaign **Claim ASA** (backers' refundable claims)
+    (`create`, `fund`, `attachClaimAsa`, `pledge`, `claim`, `refund`,
+    `cancelPledge`, `closeOut`, `delete`); its escrow holds only the creator's
+    deposit
+  - `smart_contracts/claimsvault/contract.algo.ts` — the `ClaimsVault`: pooled
+    refund escrow + per-campaign Claim ASA issuer (`issueClaimAsa`, `seedSupply`,
+    `payBack`, `payClaim`, `settle`, `refund`, `sweepClaimAsa`, `destroyClaimAsa`)
   - `smart_contracts/factory/contract.algo.ts` — the on-chain `Factory`
     registry (owner-configured approval hash, `register`/`unregister`)
   - `smart_contracts/artifacts/` — **generated** (compiled TEAL, ARC-32/56 specs, clients)
@@ -92,6 +96,21 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
     gtxn transfers pool their own assets, so `refund(axfer)` needs none).
   - Destroy an ASA with `itxn.assetConfig({ configAsset, fee: Uint64(0) })` (no
     other fields) — only valid when the creator account holds the full supply.
+  - **Box access needs declared references on the outer txn** (AVM): inner app
+    calls that read/write another app's BoxMaps fail with "invalid Box
+    reference" unless `boxReferences` lists the box names. Keep BoxMap keys
+    derivable from ABI args so `populateAppCallResources` can fill them; names
+    derived from inner-created ids (e.g. a created asset id) can never be
+    declared — avoid that keying.
+  - Inner app calls use raw ARC-4 selectors (the emitted signatures flatten
+    `Application`→`uint64`, `Account`→`address`) — compute them from the emitted
+    ARC-56 and keep them in sync with a test.
+  - A zero-amount asset transfer only opts a receiver in when sender == receiver
+    (self-opt-in); one app cannot opt another account in on its behalf.
+  - Reading a foreign app's global state works via
+    `op.AppGlobal.getExUint64/getExBytes(app, key)`; foreign **box** reads have
+    no opcode — derive lookups from caller-supplied ids verified against local
+    mappings instead.
 - **Keep docs aligned.** Whenever a change affects behavior, structure, commands, or
   conventions, update the relevant docs in the same change set:
   - `docs/` for technical details and design decisions

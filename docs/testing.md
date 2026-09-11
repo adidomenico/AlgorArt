@@ -82,16 +82,28 @@ class as it does not extend Contract or BaseContract".
   offset. `advanceTime(n)` sets the offset, produces any transaction (a self-payment
   "time bump"), then resets the offset in a `finally`.
 - Inner transactions need fee pooling via `extraFee: (1000).microAlgo()` per
-  inner txn (`fund`/`pledge`/`claim`/`refund`/`cancelPledge` → 1000; `delete`
-  with the ASA → 2000).
-- `pledge(pay)void` mints claim units via an inner asset transfer, so the call
-  must carry `assetReferences: [claimAsa]`. `refund(axfer)void` /
-  `cancelPledge(axfer)void` / `closeOut(axfer)void` take the backer's own asset
-  transfer as the ABI argument — the group pools its asset, no explicit
-  reference needed. `delete()void` needs `assetReferences: [claimAsa]` for the
-  supply check and destroy.
+  inner txn: `fund`/`pledge` → 1000; `claim`/`refund`/`cancelPledge` (inner app
+  call + inner payment) → 2000; `delete` (settle + holding close + escrow
+  close) → 3000 with an asset, 1000 without.
+- `pledge(pay)void` mints claim units via an inner asset transfer and reads the
+  vault's app address, so the call carries `appReferences: [vaultId]` and
+  `assetReferences: [claimAsa]`. The payment goes to the **vault app account**,
+  never the escrow.
+- `claim()` / `refund(axfer)` / `cancelPledge(axfer)` / `delete()` inner-call
+  the vault, whose BoxMap reads/writes require the box names to be declared on
+  the outer transaction — pass `boxReferences` for the vault's campaign boxes
+  (`a`/`d` for payouts, `a`/`d`/`s` for settle, `a`/`d`/`o`/`s` for claims; the
+  AVM rejects undeclared box access with "invalid Box reference"). The vault's
+  own methods get their boxes auto-populated from the ARC-56 spec.
+- The setup chain is: `create(vault)` → `fund` → (register) →
+  `vault.issueClaimAsa` → `attachClaimAsa` (escrow self-opt-in) →
+  `vault.seedSupply`. The zero-amount opt-in trick only works self-signed
+  (sender == receiver), so the campaign opts itself in — the vault cannot opt
+  the escrow in for it (measured: "receiver error: must optin").
 - Backers must `assetOptIn` to the Claim ASA before pledging (the mint inner
   txn fails otherwise and the whole group reverts).
+- Post-delete refunds call the vault directly: `refund(uint64,axfer)void` with
+  the campaign app id — the vault verifies it against its own `asaOf` mapping.
 - `closeOut` uses the `closeAssetTo` parameter on `createTransaction.assetTransfer`
   (not `closeRemainderTo`, which is the payment field).
 - Do **not** pass `updatable`/`deletable` to `factory.send.create` — the contract TEAL
@@ -166,60 +178,41 @@ class as it does not extend Contract or BaseContract".
       surrender), added `closeOut`, the Factory registry contract, and full
       offline + LocalNet coverage of the new lifecycle, MBR accounting, and the
       double-refund invariants.
+- [x] **M8 — Split vault.** Moved the backers' funds into a permanent
+      ClaimsVault (pooled refund escrow + Claim ASA issuer); the campaign escrow
+      now holds only the creator's deposit, so both settlement paths finalize in
+      O(1) — including the flagship straggler scenario (creator deletes; the
+      straggler refunds from the vault afterwards). Added the attack matrix:
+      cross-campaign isolation, pooled solvency, settlement-after-deletion,
+      counterfeit assets, double claims, pledge→cancel→refund, payout-authority
+      hijacking, stray-ALGO, and the GC round trip (sweep + destroy frees the
+      vault's parked MBR).
 
 ## Coverage matrix (every method × every branch)
 
 | Method | Branch | Covered? |
 | --- | --- | --- |
-| `create` | success | ✅ |
-| `create` | `goal == 0` | ✅ |
-| `create` | `deadline <= latestTimestamp` | ✅ |
-| `create` | empty title | ✅ |
-| `fund` | success (issues the Claim ASA, records the deposit) | ✅ |
-| `fund` | second fund (`claimAsa != 0`) | ✅ |
-| `fund` | non-creator | ✅ |
-| `fund` | `amount < MIN_DEPOSIT` | ✅ |
-| `fund` | settled campaign | ✅ |
-| `pledge` | success (mints units, bumps `raised`) | ✅ |
-| `pledge` | re-pledge accumulates | ✅ |
-| `pledge` | before `fund()` (no Claim ASA yet) | ✅ |
-| `pledge` | creator self-pledge | ✅ |
-| `pledge` | `amount == 0` | ✅ |
-| `pledge` | after deadline | ✅ |
-| `claim` | success | ✅ |
-| `claim` | non-creator | ✅ |
-| `claim` | before deadline | ✅ |
-| `claim` | `raised < goal` | ✅ |
-| `claim` | double claim (`status != Open`) | ✅ |
-| `refund` | success (full surrender, exact payout) | ✅ |
-| `refund` | partial refund | ✅ |
-| `refund` | before deadline | ✅ |
-| `refund` | `raised >= goal` | ✅ |
-| `refund` | claimed campaign | ✅ |
-| `refund` | surrender with `closeRemainderTo` set | ✅ |
-| `refund` | wrong asset | ✅ |
-| `refund` | zero amount | ✅ |
-| `refund` | wrong receiver | ✅ |
-| `refund` | double refund (units gone — LocalNet) | ✅ |
-| `refund` | non-holder (no units — LocalNet) | ✅ |
-| `cancelPledge` | success (decrements `raised`) | ✅ |
-| `cancelPledge` | after deadline | ✅ |
-| `cancelPledge` | settled campaign | ✅ |
-| `cancelPledge` | surrender with `closeRemainderTo` set | ✅ |
-| `cancelPledge` | double cancel (units gone — LocalNet) | ✅ |
-| `closeOut` | success (claimed campaign) | ✅ |
-| `closeOut` | not claimed | ✅ |
-| `closeOut` | without `closeRemainderTo` | ✅ |
-| `closeOut` | wrong receiver | ✅ |
-| `delete` | success (failed, fully refunded — destroy ASA + close) | ✅ |
-| `delete` | success (claimed, all units closed out — destroy ASA + close) | ✅ |
-| `delete` | never-funded open campaign | ✅ |
-| `delete` | non-creator | ✅ |
-| `delete` | open campaign with live pledges | ✅ |
-| `delete` | outstanding claim units | ✅ |
-| `Factory.create` / `setApprovalHash` | owner + length guards | ✅ |
-| `Factory.register` | success / unconfigured hash / non-creator / impostor program / low deposit / wrong payer / wrong receiver / double registration | ✅ |
+| `create` | success / empty title / `goal == 0` / past deadline | ✅ |
+| `fund` | success / non-creator / below MBR / already attached | ✅ |
+| `attachClaimAsa` | success / wrong creator / wrong manager / wrong clawback / wrong supply / wrong decimals / double attach | ✅ |
+| `pledge` | success / re-pledge / before attach / wrong receiver (escrow) / creator self-pledge / zero / after deadline | ✅ |
+| `claim` | success (vault inner call) / non-creator / before deadline / `raised < goal` / double claim | ✅ |
+| `refund` | success / partial / before deadline / `raised >= goal` / claimed / close-remainder / wrong receiver / double refund (LocalNet) / non-holder (LocalNet) | ✅ |
+| `cancelPledge` | success / after deadline / settled / close-remainder / double cancel (LocalNet) | ✅ |
+| `closeOut` | success / not claimed / without close-remainder / wrong receiver | ✅ |
+| `delete` | failed-in-fact materialization + vault settle / claimed / never-funded / non-creator / live pledges | ✅ |
+| `ClaimsVault.create` | success | ✅ |
+| `issueClaimAsa` | success / hash not configured / impostor program / non-creator / double issue | ✅ |
+| `seedSupply` | success (LocalNet) / double seed / unknown campaign | ✅ |
+| `payBack` | success / non-campaign caller / unknown campaign | ✅ |
+| `payClaim` | success (derived amount) / double claim / non-campaign caller | ✅ |
+| `settle` | success / double settle / non-campaign caller | ✅ |
+| `vault.refund` | success (post-delete — LocalNet) / mismatched campaign id / unsettled / zero amount / wrong receiver / counterfeit asset | ✅ |
+| `sweepClaimAsa` | success (LocalNet) / not claimed | ✅ |
+| `destroyClaimAsa` | success (LocalNet, frees 156,400 µA) / not settled / units outstanding | ✅ |
+| `Factory.register` | success / unconfigured hash / non-creator / impostor / low deposit / wrong payer / wrong receiver / double registration | ✅ |
 | `Factory.unregister` | success (deposit back) / unregistered / non-creator | ✅ |
+| Attacks (LocalNet) | cross-campaign isolation / pooled insolvency / counterfeit attach / pledge→cancel→refund / payout hijacking / stray ALGO / straggler settlement-after-deletion | ✅ |
 
 ## Browser E2E / acceptance tests
 

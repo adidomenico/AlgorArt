@@ -42,11 +42,14 @@ The app never sees a secret — only signed transactions.
 
 ## Contract design
 
-One **stateful Algorand application** per campaign, plus a per-campaign **Claim ASA**.
-Funds are held at the app's escrow address; a backer's refundable claim is their
-**balance of the Claim ASA** — 1 unit = 1 microAlgo. Refunding surrenders the units
-back to the escrow, so the same claim cannot be redeemed twice. A separate **Factory**
-registry app proves which campaigns are official AlgorArt.
+One **stateful Algorand application** per campaign, plus a per-campaign **Claim ASA**
+and a permanent **ClaimsVault**. A backer's refundable claim is their **balance of the
+Claim ASA** — 1 unit = 1 microAlgo; surrendering the units to the vault is the refund,
+so the same claim cannot be redeemed twice. The vault holds all backers' pledged ALGO
+(the campaign escrow holds only the creator's deposit), so both settlement paths
+finalize in O(1) and failed-campaign refunds keep working from the vault after the
+campaign is deleted. A separate **Factory** registry app proves which campaigns are
+official AlgorArt.
 
 ```mermaid
 stateDiagram-v2
@@ -66,20 +69,23 @@ stateDiagram-v2
 
 | Method | Caller | Conditions | Effect |
 | --- | --- | --- | --- |
-| `create(title, metadataUri, goal, deadline)` | creator | — | Deploys the app, sets global state |
-| `fund()` | creator | once, ≥ 0.2 ALGO | Funds the escrow's fixed MBR; issues the Claim ASA |
-| `pledge()` | backer | before deadline, opted in | Payment tx into escrow; mints equal claim units; bumps `raised` |
-| `claim()` | creator | after deadline **and** `raised >= goal` | Sends the spendable escrow balance to the creator |
-| `refund()` | backer | after deadline **and** `raised < goal` | Surrenders claim units; pays the same µA back |
-| `cancelPledge()` | backer | before deadline | Surrenders claim units; pays back; decrements `raised` |
-| `closeOut()` | backer | claimed | Returns worthless units; frees the backer's opt-in MBR |
-| `delete()` | creator | settled & no outstanding units | Destroys the Claim ASA, closes the escrow, frees all MBR |
+| `create(vault, title, metadataUri, goal, deadline)` | creator | — | Deploys the app, sets global state |
+| `fund()` | creator | ≥ 0.2 ALGO | Funds the escrow's fixed MBR (deposit) |
+| `vault.issueClaimAsa()` + `attachClaimAsa()` + `vault.seedSupply()` | creator | official program | Issues the Claim ASA; escrow opts in; supply seeded |
+| `pledge()` | backer | before deadline, opted in | Payment into the **vault**; mints equal claim units; bumps `raised` |
+| `claim()` | creator | after deadline **and** `raised >= goal` | The **vault** pays the creator (unit conservation); settlement recorded |
+| `refund()` | backer | after deadline **and** `raised < goal` | Surrenders claim units to the vault; the vault pays the same µA back — also directly, after the campaign is deleted |
+| `cancelPledge()` | backer | before deadline | Surrenders claim units; the vault pays back; decrements `raised` |
+| `closeOut()` | backer | claimed | Returns worthless units to the vault; frees the backer's opt-in MBR |
+| `delete()` | creator | settled or abandoned | Settles the vault on failure; closes the holding and the escrow in O(1) |
 
 ### Key on-chain state
 
-- **Global (per campaign):** `creator`, `title`, `metadataUri`, `goal`, `deadline`,
-  `raised`, `status` (`Open` / `Failed` / `Claimed`), `claimAsa`, `deposit`.
+- **Global (per campaign):** `creator`, `vault`, `title`, `metadataUri`, `goal`,
+  `deadline`, `raised`, `status` (`Open` / `Failed` / `Claimed`), `claimAsa`, `deposit`.
 - **Per backer:** nothing on the campaign — the backer's Claim ASA balance *is* their pledge.
+- **ClaimsVault (one app):** the pooled pledge balance, per-campaign boxes
+  (`asaOf`, `addressOf`, `creatorOf`, `settled`), the Claim ASA authorities.
 - **Factory (one app):** `owner`, the official Campaign approval-program hash,
   `registered` boxes (app id → creator).
 
@@ -112,6 +118,9 @@ AlgorArt/
 │   │       ├── factory/          # the canonical campaign registry
 │   │       │   ├── contract.algo.ts
 │   │       │   └── deploy-config.ts
+│   │       ├── claimsvault/      # the pooled refund escrow + Claim ASA issuer
+│   │       │   ├── contract.algo.ts
+│   │       │   └── deploy-config.ts
 │   │       └── index.ts          # deploy orchestrator
 │   └── frontend/                 # AlgoKit frontend project (React + Vite + TS)
 │       └── src/
@@ -131,10 +140,11 @@ Two docs carry the plan:
 - [`docs/roadmap.md`](docs/roadmap.md) — a living checklist of what's left, organized by area.
 - [`docs/design.md`](docs/design.md) — product design & open questions (identity, backend, notifications, UI).
 
-Done so far: setup; the core contract (`create`/`fund`/`pledge`/`claim`/`refund` with full
-tests); the Claim ASA redesign (replacing the Merkle/spent-bitmap machinery) and the
-Factory registry; and the core frontend (wallet connect, browse, create, pledge,
-claim/refund/cancel, close-out, delete).
+Done so far: setup; the core contract with full tests; the Claim ASA redesign
+(replacing the Merkle/spent-bitmap machinery); the Factory registry; the split
+ClaimsVault (O(1) finalization on both settlement paths with permanent vault refunds);
+and the core frontend (wallet connect, browse, create, pledge, claim/refund/cancel,
+close-out, delete).
 Next up: a TestNet smoke test, the contract-shape decisions (`updateMetadata`),
 then styling and the later product features.
 
