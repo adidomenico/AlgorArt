@@ -46,9 +46,10 @@ const MIN_DEPOSIT = 200_000
 
 // ARC-4 method selectors for the ClaimsVault methods this contract invokes as inner app calls (computed from the emitted ARC-56
 // signatures — see smart_contracts/claimsvault/contract.algo.ts; kept in sync by the integration tests).
-const VAULT_PAY_BACK_SELECTOR = Bytes.fromHex('b0e0eedf') // payBack(uint64,address,uint64)void
+const VAULT_PAY_BACK_SELECTOR = Bytes.fromHex('ca30b7c7') // payBack(uint64,address)void — the payout is derived by the vault, no amount passed
 const VAULT_PAY_CLAIM_SELECTOR = Bytes.fromHex('f8c4e0cb') // payClaim(uint64)void
 const VAULT_SETTLE_SELECTOR = Bytes.fromHex('58a020de') // settle(uint64)void
+const VAULT_NOTIFY_ATTACH_SELECTOR = Bytes.fromHex('ad142b8f') // notifyAttach(uint64)void
 
 export class Campaign extends Contract {
   /** Address of the creator — the only account allowed to claim and delete. */
@@ -161,6 +162,14 @@ export class Campaign extends Contract {
       .submit()
 
     this.claimAsa.value = asset.id
+
+    itxn
+      .applicationCall({
+        appId: this.vault.value,
+        appArgs: [VAULT_NOTIFY_ATTACH_SELECTOR, op.itob(Global.currentApplicationId.id)],
+        fee: Uint64(0),
+      })
+      .submit()
   }
 
   /**
@@ -244,7 +253,7 @@ export class Campaign extends Contract {
     itxn
       .applicationCall({
         appId: this.vault.value,
-        appArgs: [VAULT_PAY_BACK_SELECTOR, op.itob(Global.currentApplicationId.id), Txn.sender.bytes, op.itob(axfer.assetAmount)],
+        appArgs: [VAULT_PAY_BACK_SELECTOR, op.itob(Global.currentApplicationId.id), Txn.sender.bytes],
         fee: Uint64(0),
       })
       .submit()
@@ -271,7 +280,7 @@ export class Campaign extends Contract {
     itxn
       .applicationCall({
         appId: this.vault.value,
-        appArgs: [VAULT_PAY_BACK_SELECTOR, op.itob(Global.currentApplicationId.id), Txn.sender.bytes, op.itob(axfer.assetAmount)],
+        appArgs: [VAULT_PAY_BACK_SELECTOR, op.itob(Global.currentApplicationId.id), Txn.sender.bytes],
         fee: Uint64(0),
       })
       .submit()
@@ -327,7 +336,9 @@ export class Campaign extends Contract {
     }
 
     if (this.claimAsa.value !== Uint64(0)) {
-      if (this.status.value === STATUS_FAILED) {
+      // Settle the vault whenever the asset exists and the campaign is not claimed (failed-in-fact, or abandoned with raised == 0):
+      // this is what lets the vault's garbage collection release the parked MBR in O(1), so an abandoned campaign can never strand it.
+      if (this.status.value !== STATUS_CLAIMED) {
         itxn
           .applicationCall({
             appId: this.vault.value,

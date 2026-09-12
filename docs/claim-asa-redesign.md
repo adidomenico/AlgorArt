@@ -86,7 +86,7 @@ stateDiagram-v2
 | --- | --- | --- | --- |
 | Escrow base + Claim ASA opt-in | 0.2 ALGO | Creator (`fund()` deposit) | `delete()` closes the escrow |
 | Campaign app sponsorship floor | ≈ 0.47 ALGO | Creator (on their own account) | App deletion |
-| Vault: created asset + mapping boxes per campaign | ≈ 0.156 ALGO | **Platform** (parked, accepted cost) | Optional GC: `destroyClaimAsa` once all units are home |
+| Vault: created asset + mapping boxes per campaign | ≈ 0.166 ALGO | **Platform** (parked, accepted cost) | Optional GC: `destroyClaimAsa` once all units are home (or, for orphans, immediately) |
 | Claim ASA opt-in | 0.1 ALGO | Each backer (their own account) | Opt-out / close-out (always possible; the asset never dies unexpectedly) |
 | Factory registration box | ≈ 0.019 ALGO | Campaign creator (refundable) | `unregister()` |
 
@@ -132,9 +132,11 @@ trusting the campaign's bookkeeping. Ordering attacks fail because each campaign
 
 ## Known limitations & honest trade-offs
 
-1. **≈0.156 ALGO per campaign parked on the vault** — the accepted, backer-independent platform cost (see the table above). `destroyClaimAsa`
-   releases it once all units are home (failed campaigns self-complete as refunds return units; claimed campaigns need the optional
-   permissionless `sweepClaimAsa` per holder, which is deliberately off any critical path).
+1. **≈0.166 ALGO per campaign parked on the vault** — the accepted, backer-independent platform cost (see the table above).
+   `destroyClaimAsa` releases it once all units are home (failed campaigns self-complete as refunds return units; claimed campaigns need
+   the optional permissionless `sweepClaimAsa` per holder, which is deliberately off any critical path). **Issuance is gated on Factory
+   registration** and the destroy also covers **orphaned** ASAs (issued but never attached), so no abandoned lifecycle — registered or
+   not — can permanently immobilize the vault's minimum balance.
 2. **Pooled custody** — a vault bug would be systemic; no emergency authority exists.
 3. **Bearer risk is the holder's** — losing the key loses the claim (the same risk as holding the ALGO itself).
 4. **`raised` is revocable while Open** (cancelPledge decrements it) — the deadline remains the sole arbiter; the same accepted trade-off

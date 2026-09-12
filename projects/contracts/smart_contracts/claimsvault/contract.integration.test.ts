@@ -50,6 +50,13 @@ describe('ClaimsVault (localnet)', () => {
     const factoryClient = (await factoryFactory.send.create({ method: 'create()void', args: [], sender: owner.addr, suppressLog: true }))
       .appClient
     factoryId = factoryClient.appId
+    // Platform funding: the Factory app account holds the registration deposits and pays the registration box MBR.
+    await algorand.send.payment({
+      sender: owner.addr,
+      receiver: factoryClient.appAddress,
+      amount: microAlgos(1_000_000n),
+      suppressLog: true,
+    })
 
     const campaignTeal = fs.readFileSync(path.resolve(__dirname, '../artifacts/campaign/Campaign.approval.teal'), 'utf8')
     const compiled = await algorand.app.compileTeal(campaignTeal)
@@ -82,6 +89,35 @@ describe('ClaimsVault (localnet)', () => {
 
   function vaultClientFor(sender: string): AppClient {
     return new AppClient({ algorand, appSpec: vaultSpec, appId: vaultId, defaultSender: sender })
+  }
+
+  function factoryClientFor(sender: string): AppClient {
+    return new AppClient({ algorand, appSpec: factorySpec, appId: factoryId, defaultSender: sender })
+  }
+
+  /**
+   * Register the campaign with the Factory (required by `issueClaimAsa`) and return the registration box reference.
+   *
+   * @param creatorAddr The campaign creator's address.
+   * @param campaignId The campaign app id.
+   */
+  async function registerAs(creatorAddr: string, campaignId: bigint) {
+    const factoryClient = factoryClientFor(creatorAddr)
+    const payment = await algorand.createTransaction.payment({
+      sender: creatorAddr,
+      receiver: factoryClient.appAddress,
+      amount: microAlgos(18_900n),
+    })
+    await factoryClient.send.call({
+      method: 'register(uint64,pay)void',
+      args: [campaignId, payment],
+      sender: creatorAddr,
+      appReferences: [campaignId],
+      suppressLog: true,
+    })
+    const appIdBytes = Buffer.alloc(8)
+    appIdBytes.writeBigUInt64BE(campaignId)
+    return [{ appId: factoryId, name: Buffer.concat([Buffer.from('r'), appIdBytes]) }]
   }
 
   async function deployBareCampaign(creatorAddr: string): Promise<AppClient> {
@@ -117,7 +153,7 @@ describe('ClaimsVault (localnet)', () => {
     const vaultBefore = await accountInfo(vaultAddress)
     const strangerBefore = await accountInfo(stranger.addr.toString())
 
-    // A stranger cannot issue for someone else's campaign.
+    // A stranger cannot issue for someone else's campaign (the creator check fires before the registration check).
     await expect(
       vaultClient.send.call({
         method: 'issueClaimAsa(uint64)void',
@@ -141,14 +177,16 @@ describe('ClaimsVault (localnet)', () => {
       }),
     ).rejects.toThrow(/not an official AlgorArt campaign/)
 
-    // The creator issues; a second issue is rejected.
+    // The creator registers, then issues; a second issue is rejected.
     const creatorVaultClient = vaultClientFor(creator.addr.toString())
+    const registrationBox = await registerAs(creator.addr.toString(), campaignClient.appId)
     await creatorVaultClient.send.call({
       method: 'issueClaimAsa(uint64)void',
       args: [campaignClient.appId],
       sender: creator.addr,
       appReferences: [campaignClient.appId, factoryId],
-      extraFee: (1000).microAlgo(),
+      boxReferences: registrationBox,
+      extraFee: (2000).microAlgo(),
       suppressLog: true,
     })
     await expect(
@@ -157,7 +195,8 @@ describe('ClaimsVault (localnet)', () => {
         args: [campaignClient.appId],
         sender: creator.addr,
         appReferences: [campaignClient.appId, factoryId],
-        extraFee: (1000).microAlgo(),
+        boxReferences: registrationBox,
+        extraFee: (2000).microAlgo(),
         suppressLog: true,
       }),
     ).rejects.toThrow(/claim asset already issued/)
@@ -173,13 +212,19 @@ describe('ClaimsVault (localnet)', () => {
     // The supply can only be seeded once: the campaign first attaches (self-opts in), then the first seed succeeds and the second is
     // rejected.
     const claimAsa = (await creatorVaultClient.state.box.getMapValue('asaOf', campaignClient.appId)) as bigint
+    const appIdBytes = Buffer.alloc(8)
+    appIdBytes.writeBigUInt64BE(campaignClient.appId)
     await campaignClient.send.call({
       method: 'attachClaimAsa(uint64)void',
       args: [claimAsa],
       sender: creator.addr,
       appReferences: [vaultId],
       assetReferences: [claimAsa],
-      extraFee: (1000).microAlgo(),
+      boxReferences: ['a', 'd', 't'].map((prefix) => ({
+        appId: vaultId,
+        name: Buffer.concat([Buffer.from(prefix), appIdBytes]),
+      })),
+      extraFee: (2000).microAlgo(),
       suppressLog: true,
     })
     await creatorVaultClient.send.call({

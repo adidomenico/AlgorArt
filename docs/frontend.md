@@ -136,11 +136,21 @@ await client.send.fund({ args: { payment }, extraFee: microAlgos(1000) })
 // factory.register(): official-campaign proof; ~0.019 ALGO refundable deposit.
 await factoryClient.send.register({ args: { app: appId, payment }, appReferences: [appId] })
 
-// The vault issues the Claim ASA; the campaign attaches it (self-opt-in); the vault seeds the supply.
-await vaultClient.send.issueClaimAsa({ args: { app: appId }, appReferences: [appId, factoryAppId()], extraFee: microAlgos(1000) })
+// The vault issues the Claim ASA (program hash + Factory registration verified on-chain via an inner call — the Factory's
+// registration box must be referenced); the campaign attaches it (self-opt-in + attach notification); the vault seeds the supply.
+await vaultClient.send.issueClaimAsa({
+  args: { app: appId },
+  appReferences: [appId, factoryAppId()],
+  boxReferences: factoryRegistrationBox(appId),
+  extraFee: microAlgos(2000),
+})
 const claimAsa = await vaultClient.state.box.asaOf.value(appId)
 await client.send.attachClaimAsa({
-  args: { asset: claimAsa }, appReferences: [vaultAppId()], assetReferences: [claimAsa], extraFee: microAlgos(1000),
+  args: { asset: claimAsa },
+  appReferences: [vaultAppId()],
+  assetReferences: [claimAsa],
+  boxReferences: vaultBoxRefs(appId, ['a', 'd', 't']),
+  extraFee: microAlgos(2000),
 })
 await vaultClient.send.seedSupply({ args: { app: appId }, appReferences: [appId], assetReferences: [claimAsa], extraFee: microAlgos(1000) })
 ```
@@ -182,7 +192,7 @@ const axfer = await algorand.createTransaction.assetTransfer({
 })
 await client.send.refund({
   args: { axfer },
-  appReferences: [vaultAppId()],
+  appReferences: [vaultAppId(), appId],             // the vault's payBack reads the campaign's raised (derived payout)
   boxReferences: vaultBoxRefs(appId, ['a', 'd']),   // the vault's boxes the inner payBack touches
   extraFee: microAlgos(2000),
 })

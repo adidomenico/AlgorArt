@@ -104,7 +104,15 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
     declared — avoid that keying.
   - Inner app calls use raw ARC-4 selectors (the emitted signatures flatten
     `Application`→`uint64`, `Account`→`address`) — compute them from the emitted
-    ARC-56 and keep them in sync with a test.
+    ARC-56 and keep them in sync with a test. A readonly bool return arrives as
+    the inner call's `lastLog`: the ARC-4 prefix `0x151f7c75` + `0x80`/`0x00`.
+  - `app_global_get_ex` **fails on deleted apps** (not exists=false) — never
+    make vault logic depend on reading a possibly-deleted campaign's state; use
+    vault-local markers written by the campaign (e.g. the `attached` box set by
+    `notifyAttach`) instead.
+  - Box MBR: a box written by an app is charged to that app's account — the
+    Factory app account must be platform-funded before `register()` can write
+    its registration box.
   - A zero-amount asset transfer only opts a receiver in when sender == receiver
     (self-opt-in); one app cannot opt another account in on its behalf.
   - Reading a foreign app's global state works via

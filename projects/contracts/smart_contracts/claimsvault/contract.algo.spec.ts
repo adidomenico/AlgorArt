@@ -9,12 +9,15 @@ import { ClaimsVault } from './contract.algo'
 /**
  * Behavioral tests for the ClaimsVault, run against the offline AVM emulation provided by `algorand-typescript-testing`.
  *
- * The vault's asset-balance-dependent paths (seed transfer, clawback sweep, destroy) can't be emulated offline — they're covered by the
- * LocalNet integration suites (`../campaign/contract.integration.test.ts` and `contract.integration.test.ts`). Everything else — the
- * issuance happy path, the payout-authority gating, the settlement bookkeeping, and the refund guards — is covered here.
+ * The vault's inner app calls (the Factory registration check inside `issueClaimAsa`) and the asset-balance-dependent paths (seed
+ * transfer, payBack's ledger derivation, clawback sweep, destroy) can't be emulated offline — they're covered by the LocalNet
+ * integration suites (`../campaign/contract.integration.test.ts` and `contract.integration.test.ts`). Everything else — the issuance
+ * guards that fire before the inner call, the payout-authority gating, the settlement bookkeeping, and the refund guards — is covered
+ * here, using direct box writes to emulate the issuance mappings.
  */
 
 const CAMPAIGN_APP_ID = 42
+const ISSUED_ASSET_ID = 777
 const FAKE_PROGRAM = new Uint8Array([0x41, 0x6c, 0x67, 0x6f, 0x72, 0x41, 0x72, 0x74]) // "AlgorArt"
 const FAKE_PROGRAM_HASH = createHash('sha256').update(FAKE_PROGRAM).digest()
 const CAMPAIGN_APP_ADDRESS = algosdk.getApplicationAddress(CAMPAIGN_APP_ID).toString()
@@ -55,6 +58,21 @@ describe('ClaimsVault', () => {
     return ctx.ledger.getAccount(Bytes(algosdk.decodeAddress(CAMPAIGN_APP_ADDRESS).publicKey))
   }
 
+  /**
+   * Emulate the issuance mappings (the real `issueClaimAsa` needs the Factory inner call, covered on LocalNet).
+   *
+   * @param vault The vault contract.
+   * @param app The campaign application.
+   */
+  function issueOffline(vault: ClaimsVault, app: ReturnType<typeof campaignApp>) {
+    // Accessing the application's address forces the offline ledger to materialize the campaign app account data (the same side
+    // effect the real `issueClaimAsa` has when it stores `app.address`).
+    void app.address
+    vault.asaOf(CAMPAIGN_APP_ID).value = ISSUED_ASSET_ID
+    vault.addressOf(CAMPAIGN_APP_ID).value = campaignAppAccount()
+    vault.creatorOf(CAMPAIGN_APP_ID).value = ctx.defaultSender
+  }
+
   describe('create', () => {
     test('stores the factory app id', () => {
       const vault = createVault()
@@ -63,21 +81,10 @@ describe('ClaimsVault', () => {
   })
 
   describe('issueClaimAsa', () => {
-    test('issues the Claim ASA and records the mappings for the creator', () => {
+    test('rejects a second issue for the same campaign (the guard fires before any inner call)', () => {
       const vault = createVault()
       const app = campaignApp()
-
-      vault.issueClaimAsa(app)
-
-      expect(toExternalValue(vault.asaOf(CAMPAIGN_APP_ID).value)).toBeGreaterThan(0)
-      expect(vault.addressOf(CAMPAIGN_APP_ID).value).toEqual(campaignAppAccount())
-      expect(vault.creatorOf(CAMPAIGN_APP_ID).value).toEqual(ctx.defaultSender)
-    })
-
-    test('rejects a second issue for the same campaign', () => {
-      const vault = createVault()
-      const app = campaignApp()
-      vault.issueClaimAsa(app)
+      issueOffline(vault, app)
 
       expect(() => {
         vault.issueClaimAsa(app)
@@ -110,29 +117,17 @@ describe('ClaimsVault', () => {
   })
 
   describe('payBack', () => {
-    test('pays the backer when called by the campaign app account', () => {
-      const vault = createVault()
-      const app = campaignApp()
-      vault.issueClaimAsa(app)
-      const backer = ctx.any.account()
-
-      ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: campaignAppAccount() })]).execute(() => {
-        vault.payBack(app, backer, 60_000)
-      })
-
-      const payout = ctx.txn.lastGroup.lastItxnGroup().getPaymentInnerTxn()
-      expect(payout.receiver).toEqual(backer)
-      expect(payout.amount).toEqual(60_000)
-    })
+    // The payout derivation (raised − (T − U − H)) reads foreign global state and asset holdings the offline ledger can't emulate;
+    // the full happy path is covered on LocalNet in ../campaign/contract.integration.test.ts.
 
     test('rejects a caller that is not the campaign app', () => {
       const vault = createVault()
       const app = campaignApp()
-      vault.issueClaimAsa(app)
+      issueOffline(vault, app)
       const stranger = ctx.any.account()
       ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: stranger })]).execute(() => {
         expect(() => {
-          vault.payBack(app, stranger, 1)
+          vault.payBack(app, stranger)
         }).toThrow('not the campaign app')
       })
     })
@@ -142,7 +137,7 @@ describe('ClaimsVault', () => {
       const stranger = ctx.any.account()
       ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: stranger })]).execute(() => {
         expect(() => {
-          vault.payBack(ctx.any.application({ applicationId: 999 }), stranger, 1)
+          vault.payBack(ctx.any.application({ applicationId: 999 }), stranger)
         }).toThrow('unknown campaign')
       })
     })
@@ -152,7 +147,7 @@ describe('ClaimsVault', () => {
     test('records the claim settlement and pays the creator when called by the campaign app account', () => {
       const vault = createVault()
       const app = campaignApp()
-      vault.issueClaimAsa(app)
+      issueOffline(vault, app)
 
       ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: campaignAppAccount() })]).execute(() => {
         vault.payClaim(app)
@@ -166,7 +161,7 @@ describe('ClaimsVault', () => {
     test('rejects a second claim (already settled)', () => {
       const vault = createVault()
       const app = campaignApp()
-      vault.issueClaimAsa(app)
+      issueOffline(vault, app)
       ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: campaignAppAccount() })]).execute(() => {
         vault.payClaim(app)
       })
@@ -180,7 +175,7 @@ describe('ClaimsVault', () => {
     test('rejects a caller that is not the campaign app', () => {
       const vault = createVault()
       const app = campaignApp()
-      vault.issueClaimAsa(app)
+      issueOffline(vault, app)
       const stranger = ctx.any.account()
       ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: stranger })]).execute(() => {
         expect(() => {
@@ -190,11 +185,51 @@ describe('ClaimsVault', () => {
     })
   })
 
+  describe('notifyAttach', () => {
+    test('records the attach marker when called by the campaign app account', () => {
+      const vault = createVault()
+      const app = campaignApp()
+      issueOffline(vault, app)
+
+      ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: campaignAppAccount() })]).execute(() => {
+        vault.notifyAttach(app)
+      })
+
+      expect(toExternalValue(vault.attached(CAMPAIGN_APP_ID).value)).toEqual(1)
+    })
+
+    test('rejects a second attach', () => {
+      const vault = createVault()
+      const app = campaignApp()
+      issueOffline(vault, app)
+      ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: campaignAppAccount() })]).execute(() => {
+        vault.notifyAttach(app)
+      })
+      ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: campaignAppAccount() })]).execute(() => {
+        expect(() => {
+          vault.notifyAttach(app)
+        }).toThrow('already attached')
+      })
+    })
+
+    test('rejects a caller that is not the campaign app', () => {
+      const vault = createVault()
+      const app = campaignApp()
+      issueOffline(vault, app)
+      const stranger = ctx.any.account()
+      ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: stranger })]).execute(() => {
+        expect(() => {
+          vault.notifyAttach(app)
+        }).toThrow('not the campaign app')
+      })
+    })
+  })
+
   describe('settle', () => {
     test('records the failed settlement when called by the campaign app account', () => {
       const vault = createVault()
       const app = campaignApp()
-      vault.issueClaimAsa(app)
+      issueOffline(vault, app)
 
       ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: campaignAppAccount() })]).execute(() => {
         vault.settle(app)
@@ -206,7 +241,7 @@ describe('ClaimsVault', () => {
     test('rejects a second settle', () => {
       const vault = createVault()
       const app = campaignApp()
-      vault.issueClaimAsa(app)
+      issueOffline(vault, app)
       ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: campaignAppAccount() })]).execute(() => {
         vault.settle(app)
       })
@@ -220,7 +255,7 @@ describe('ClaimsVault', () => {
     test('rejects a caller that is not the campaign app', () => {
       const vault = createVault()
       const app = campaignApp()
-      vault.issueClaimAsa(app)
+      issueOffline(vault, app)
       const stranger = ctx.any.account()
       ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: stranger })]).execute(() => {
         expect(() => {
@@ -234,8 +269,7 @@ describe('ClaimsVault', () => {
     test('pays a failed-settled backer for surrendered units', () => {
       const vault = createVault()
       const app = campaignApp()
-      vault.issueClaimAsa(app)
-      const issuedAsset = ctx.txn.lastGroup.lastItxnGroup().getAssetConfigInnerTxn().createdAsset
+      issueOffline(vault, app)
       const backer = ctx.any.account()
 
       ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: campaignAppAccount() })]).execute(() => {
@@ -247,7 +281,7 @@ describe('ClaimsVault', () => {
           app,
           ctx.any.txn.assetTransfer({
             sender: backer,
-            xferAsset: issuedAsset,
+            xferAsset: ctx.any.asset({ assetId: ISSUED_ASSET_ID }),
             assetReceiver: ctx.ledger.getApplicationForContract(vault).address,
             assetAmount: 60_000,
           }),
@@ -262,8 +296,7 @@ describe('ClaimsVault', () => {
     test('rejects a mismatched campaign id (the mapping is authoritative)', () => {
       const vault = createVault()
       const app = campaignApp()
-      vault.issueClaimAsa(app)
-      const issuedAsset = ctx.txn.lastGroup.lastItxnGroup().getAssetConfigInnerTxn().createdAsset
+      issueOffline(vault, app)
       const backer = ctx.any.account()
 
       ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: campaignAppAccount() })]).execute(() => {
@@ -276,7 +309,7 @@ describe('ClaimsVault', () => {
             ctx.any.application({ applicationId: 999 }),
             ctx.any.txn.assetTransfer({
               sender: backer,
-              xferAsset: issuedAsset,
+              xferAsset: ctx.any.asset({ assetId: ISSUED_ASSET_ID }),
               assetReceiver: ctx.ledger.getApplicationForContract(vault).address,
               assetAmount: 60_000,
             }),
@@ -288,8 +321,7 @@ describe('ClaimsVault', () => {
     test('rejects refunding an unsettled campaign', () => {
       const vault = createVault()
       const app = campaignApp()
-      vault.issueClaimAsa(app)
-      const issuedAsset = ctx.txn.lastGroup.lastItxnGroup().getAssetConfigInnerTxn().createdAsset
+      issueOffline(vault, app)
       const backer = ctx.any.account()
 
       ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: backer })]).execute(() => {
@@ -298,7 +330,7 @@ describe('ClaimsVault', () => {
             app,
             ctx.any.txn.assetTransfer({
               sender: backer,
-              xferAsset: issuedAsset,
+              xferAsset: ctx.any.asset({ assetId: ISSUED_ASSET_ID }),
               assetReceiver: ctx.ledger.getApplicationForContract(vault).address,
               assetAmount: 60_000,
             }),
@@ -355,20 +387,20 @@ describe('ClaimsVault', () => {
       })
     })
 
-    test('rejects destroying an unsettled campaign', () => {
+    test('rejects destroying an unsettled campaign (no issued asset)', () => {
       const vault = createVault()
       const app = campaignApp()
       ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: ctx.defaultSender })]).execute(() => {
         expect(() => {
           vault.destroyClaimAsa(app)
-        }).toThrow('campaign not settled')
+        }).toThrow('unknown campaign')
       })
     })
 
     test('rejects destroying with units outstanding', () => {
       const vault = createVault()
       const app = campaignApp()
-      vault.issueClaimAsa(app)
+      issueOffline(vault, app)
       ctx.txn.createScope([ctx.any.txn.applicationCall({ appId: vault, sender: campaignAppAccount() })]).execute(() => {
         vault.settle(app)
       })

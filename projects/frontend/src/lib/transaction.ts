@@ -82,6 +82,22 @@ function factoryClientFor(session: WalletSession): FactoryClient {
 }
 
 /**
+ * The Factory's registration box for a campaign (prefix 'r' + 8-byte big-endian app id) — the inner `isRegistered` check needs it.
+ *
+ * @param appId The campaign application id.
+ * @returns Box references for the Factory app.
+ */
+function factoryRegistrationBox(appId: bigint): { appId: bigint; name: Uint8Array }[] {
+  let remaining = appId
+  const appIdBytes = new Uint8Array(8)
+  for (let i = 7; i >= 0; i--) {
+    appIdBytes[i] = Number(remaining & 0xffn)
+    remaining >>= 8n
+  }
+  return [{ appId: factoryAppId(), name: new Uint8Array([0x72, ...appIdBytes]) }]
+}
+
+/**
  * The vault app's account address (where pledges go and claim units return).
  *
  * @returns The vault's app account address.
@@ -156,19 +172,22 @@ export async function createCampaign(
     })
   }
 
-  // The vault issues the Claim ASA (verified against the official program hash), the campaign attaches it (self-opt-in), the vault seeds.
+  // The vault issues the Claim ASA (the official-program hash AND the Factory registration are verified on-chain), the campaign
+  // attaches it (self-opt-in + the vault records the attach), the vault seeds the supply.
   const vaultClient = vaultClientFor(session)
   await vaultClient.send.issueClaimAsa({
     args: { app: appId },
     appReferences: [appId, factoryAppId()],
-    extraFee: microAlgos(1000),
+    boxReferences: factoryRegistrationBox(appId),
+    extraFee: microAlgos(2000),
   })
   const claimAsa = (await vaultClient.state.box.asaOf.value(appId)) as bigint
   await client.send.attachClaimAsa({
     args: { asset: claimAsa },
     appReferences: [vaultAppId()],
     assetReferences: [claimAsa],
-    extraFee: microAlgos(1000),
+    boxReferences: vaultBoxRefs(appId, ['a', 'd', 't']),
+    extraFee: microAlgos(2000),
   })
   await vaultClient.send.seedSupply({
     args: { app: appId },
@@ -283,7 +302,7 @@ export async function refund(appId: bigint, session: WalletSession): Promise<voi
   const client = campaignClientFor(appId, session)
   const result = await client.send.refund({
     args: { axfer },
-    appReferences: [vaultAppId()],
+    appReferences: [vaultAppId(), appId],
     boxReferences: vaultBoxRefs(appId, ['a', 'd']),
     extraFee: microAlgos(2000),
   })
@@ -316,7 +335,7 @@ export async function cancelPledge(appId: bigint, session: WalletSession): Promi
         amount: balance,
       }),
     },
-    appReferences: [vaultAppId()],
+    appReferences: [vaultAppId(), appId],
     boxReferences: vaultBoxRefs(appId, ['a', 'd']),
     extraFee: microAlgos(2000),
   })

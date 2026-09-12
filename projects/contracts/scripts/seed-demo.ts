@@ -98,13 +98,16 @@ void (async () => {
       appReferences: [result.appId],
     })
 
-    // The vault issues the Claim ASA; the campaign attaches it; the vault seeds the supply.
+    // The vault issues the Claim ASA (program hash + Factory registration verified on-chain); the campaign attaches it; the vault seeds.
+    const appIdBytes = Buffer.alloc(8)
+    appIdBytes.writeBigUInt64BE(result.appId)
     await vaultClient.send.call({
       method: 'issueClaimAsa(uint64)void',
       args: [result.appId],
       sender: creator.addr,
       appReferences: [result.appId, factoryId],
-      extraFee: microAlgos(1000),
+      boxReferences: [{ appId: factoryId, name: Buffer.concat([Buffer.from('r'), appIdBytes]) }],
+      extraFee: microAlgos(2000),
     })
     const claimAsa = (await vaultClient.state.box.getMapValue('asaOf', result.appId)) as bigint
     await client.send.call({
@@ -113,7 +116,11 @@ void (async () => {
       sender: creator.addr,
       appReferences: [vaultId],
       assetReferences: [claimAsa],
-      extraFee: microAlgos(1000),
+      boxReferences: ['a', 'd', 't'].map((prefix) => ({
+        appId: vaultId,
+        name: Buffer.concat([Buffer.from(prefix), appIdBytes]),
+      })),
+      extraFee: microAlgos(2000),
     })
     await vaultClient.send.call({
       method: 'seedSupply(uint64)void',

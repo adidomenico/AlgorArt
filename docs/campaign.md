@@ -95,7 +95,8 @@ Every movement of funds is an explicit transaction submitted by a caller; none o
 - Permissionless, once. Verifies the asset's provenance: `creator == vault`, `manager == vault`, `clawback == vault`,
   `total == 2⁶⁴ − 1`, `decimals == 0`. Only the real vault can issue such an asset, so a campaign whose creator stored a fake vault
   address is **inert**: no asset ever attaches and `pledge()` refuses payments.
-- Self-opts the escrow in (inner zero-amount transfer), after which the vault seeds the supply.
+- Self-opts the escrow in (inner zero-amount transfer) and inner-calls `vault.notifyAttach(app)` — the vault-local attach marker that
+  lets `destroyClaimAsa` distinguish settled campaigns from orphans (the vault cannot read a deleted app's global state).
 
 ### `pledge(payment)`
 
@@ -117,8 +118,9 @@ Every movement of funds is an explicit transaction submitted by a caller; none o
 - Any holder, after the deadline, `raised < goal`.
 - Materialises `status = Failed` on the first refund; subsequent calls require it.
 - `axfer` must be an asset transfer **from the caller to the vault** of the campaign's Claim ASA, `assetAmount > 0`, without
-  `closeRemainderTo`. The campaign inner-calls `vault.payBack(app, backer, amount)`, which pays from the pool. A second refund fails at
-  the transfer itself — the units no longer exist. Fees (~0.004 ALGO) are paid by the backer; the refund amount is never reduced.
+  `closeRemainderTo`. The campaign inner-calls `vault.payBack(app, backer)` — the vault **derives the payout from the ledger**
+  (`raised − (T − U − H)`, the surrendered amount) and pays from the pool. A second refund fails at the transfer itself — the units no
+  longer exist. Fees (~0.004 ALGO) are paid by the backer; the refund amount is never reduced.
 
 ### `cancelPledge(axfer)`
 
@@ -138,7 +140,8 @@ A guarded `@abimethod({ allowActions: 'DeleteApplication' })`:
 - **Settled or abandoned only** — `status != Open`, or an open campaign with `raised == 0` (every unit returned), or a failed-in-fact
   campaign (deadline passed, `raised < goal`) which is materialised here.
 - **Failed path:** inner-calls `vault.settle(app)` — from then on refunds are served **directly by the vault, forever**, even with the
-  campaign deleted. **Claimed path:** the settlement was already recorded at `claim()`.
+  campaign deleted. **Abandoned-with-asset path** (Open, `raised == 0`, asset attached): also settled as failed, so the vault's GC can
+  release the parked MBR in O(1). **Claimed path:** the settlement was already recorded at `claim()`.
 - Then two inner transactions: an asset transfer closing the escrow's own Claim ASA holding to the vault (`closeAssetTo` — legal, the
   escrow is not the asset's creator), and a payment with `closeRemainderTo: creator` that closes the app account, returning the deposit
   and freeing the sponsorship floor.

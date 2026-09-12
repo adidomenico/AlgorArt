@@ -27,16 +27,20 @@ finalize in O(1). Full internals: [`campaign.md`](campaign.md).
 
 The vault is a permanent platform app that:
 
-1. **Issues each campaign's Claim ASA** (`issueClaimAsa`, creator-gated, official-program-hash verified) and **seeds its whole supply** to
-   the campaign app (`seedSupply`), so the campaign mints claim units per pledge without any per-pledge vault involvement.
+1. **Issues each campaign's Claim ASA** (`issueClaimAsa`, creator-gated, official-program-hash verified **and Factory registration
+   verified on-chain** via an inner call to `isRegistered`) and **seeds its whole supply** to the campaign app (`seedSupply`), so the
+   campaign mints claim units per pledge without any per-pledge vault involvement. An unregistered campaign can never park the vault's
+   minimum balance.
 2. **Holds all pledged ALGO** in one pooled account. Solvency is by conservation, not bookkeeping: every unit is minted against a payment
    verified into the vault, refunds pay exactly the surrendered units, and the claim payout is **derived** as
    `total − vault holding − campaign holding`.
 3. **Pays out** on the campaign's authority (`payBack`, `payClaim`, `settle` — inner-call-gated to the registered campaign's own app
    account) and **serves refunds directly** after a failed settlement (`refund(app, axfer)`) — permanently, including after the campaign
-   app is deleted.
-4. **Garbage-collects** (`sweepClaimAsa` after a claim, `destroyClaimAsa` when the supply is home) to release its parked ~0.156 ALGO of
-   MBR per campaign — optional, permissionless, off any critical path.
+   app is deleted. `payBack` **derives the payout from the ledger** (`raised − (T − U − H)`, the surrendered amount) rather than
+   trusting a caller-supplied figure.
+4. **Garbage-collects** (`sweepClaimAsa` after a claim, `destroyClaimAsa` when the supply is home) to release its parked ~0.166 ALGO of
+   MBR per campaign — optional, permissionless, off any critical path. `destroyClaimAsa` also covers the **orphan** case (issued but
+   never attached), so the `issue → abandon` lifecycle can never strand the vault's minimum balance.
 
 The vault is the honest concentration of trust: one audited, non-updatable contract holds all campaign funds. See
 [`claim-asa-redesign.md`](claim-asa-redesign.md) for the security analysis and the accepted parked-MBR economics.
@@ -52,9 +56,10 @@ obtain a Claim ASA.
 
 1. The creator signs the Campaign `create(vault, …)` — one app-create transaction.
 2. The creator calls `fund()` with the 0.2 ALGO storage deposit.
-3. The creator registers with the Factory (≈ 0.019 ALGO refundable deposit).
-4. The creator calls `vault.issueClaimAsa(app)`, then `attachClaimAsa(asset)`, then `vault.seedSupply(app)` — one claim asset, fully
-   seeded.
+3. The creator registers with the Factory (≈ 0.019 ALGO refundable deposit) — **required**: the vault's `issueClaimAsa` verifies the
+   registration on-chain, so `create → issueClaimAsa → abandon` is impossible for unregistered campaigns.
+4. The creator calls `vault.issueClaimAsa(app)`, then `attachClaimAsa(asset)` (the vault records the attach), then
+   `vault.seedSupply(app)` — one claim asset, fully seeded.
 
 The frontend chains 1–4 into a single user action ([`frontend.md`](frontend.md)).
 

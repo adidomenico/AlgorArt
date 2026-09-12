@@ -111,7 +111,7 @@ class as it does not extend Contract or BaseContract".
 
 ## Integration test inventory
 
-All LocalNet integration tests in the repo (run with `npm run test:integration`; 29
+All LocalNet integration tests in the repo (run with `npm run test:integration`; 34
 tests across 3 files). Each file deploys its own fixture chain to a live algod.
 
 **Full ledger accounting.** Every integration test asserts the complete money
@@ -124,7 +124,7 @@ sponsorship floor (449,500 µA while the app lives), and the backer's 0.1 ALGO
 opt-in. Rejected transactions are asserted to move **nothing** (atomic failure
 charges no fee).
 
-### `smart_contracts/campaign/contract.integration.test.ts` (24 tests)
+### `smart_contracts/campaign/contract.integration.test.ts` (29 tests)
 
 The full split-vault lifecycle plus the attack matrix, deployed against a real
 Factory + ClaimsVault + Campaign.
@@ -155,21 +155,26 @@ Factory + ClaimsVault + Campaign.
 | 22 | B: two campaigns live simultaneously — one claimed and drained, the other still refunds in full | A funded twin claims (draining the pool) while a failing twin's backer later refunds in full; the pool drops by exactly the claim + the refund — neither settlement touches the other's funds |
 | 23 | C: claim and refund interleaved in arbitrary order across the pool | claim A → refund B1 (campaign path) → double-claim rejected → double-refund rejected → settle B → refund B2 (vault path) → delete A; the pool drops by exactly the three payouts; every rejected attempt moves nothing |
 | 24 | D: the derived claim amount (T − U_i − H_i) always equals raised | Evaluates `total − vault holding − escrow holding` from live on-chain holdings after a pledge→cancel history and asserts it equals `raised` and exactly the payout |
+| 25 | unregistered campaign cannot issue a Claim ASA — and leaves no residual state on the vault | The on-chain Factory-registration gate: an unregistered (but otherwise valid) campaign's `issueClaimAsa` fails with `campaign not registered`, and the vault's balance, MBR, and boxes are all untouched |
+| 26 | a registered campaign with the wrong caller cannot issue — the recording must match the creator | A stranger cannot issue for a properly registered campaign; no residual vault state |
+| 27 | a second issuance attempt fails and leaves no residual state | Double-issue is rejected; the mapping and the vault MBR are unchanged |
+| 28 | issue → abandon lifecycle: the vault MBR is fully recoverable in O(1) via the orphan destroy | create → fund → register → issue → (no attach, no seed) → creator deletes → `destroyClaimAsa`'s orphan rule (issued but never attached) releases the full parked MBR in O(1) — the anti-grief proof |
+| 29 | FIX2-B: a partial refund pays exactly the surrendered amount, not the full pledge | Pledge 2 ALGO, surrender 1: the vault pays exactly 1 ALGO (derived from the ledger), the remaining claim stays intact, `raised` drops by exactly the surrender |
 
 ### `smart_contracts/claimsvault/contract.integration.test.ts` (1 test)
 
 | # | Test | Verifies |
 | --- | --- | --- |
-| 25 | issueClaimAsa guards: non-creator, non-official program, double issue; seedSupply is one-shot | Only the campaign creator can issue; a program that does not hash to the Factory's official hash is refused; a second issue is rejected; the supply can be seeded exactly once (second seed → `supply already seeded`) |
+| 30 | issueClaimAsa guards: non-creator, non-official program, double issue; seedSupply is one-shot | Only the campaign creator can issue; a program that does not hash to the Factory's official hash is refused; a second issue is rejected; the supply can be seeded exactly once (second seed → `supply already seeded`) |
 
 ### `smart_contracts/factory/contract.integration.test.ts` (4 tests)
 
 | # | Test | Verifies |
 | --- | --- | --- |
-| 26 | register/isRegistered/unregister round trip with a real Campaign | Registration against the real deployed program hash; the deposit lands on the Factory and returns on unregister; `isRegistered` reflects the state |
-| 27 | an impostor copy of the Campaign contract cannot register | The program-hash check rejects a non-official program |
-| 28 | a non-creator cannot register someone else's campaign, and registration is refused before the hash is configured | Creator gating; unconfigured-hash refusal |
-| 29 | only the owner can set the official hash, and only the registered creator can unregister | Factory ownership and deposit protection |
+| 31 | register/isRegistered/unregister round trip with a real Campaign | Registration against the real deployed program hash; the deposit lands on the Factory and returns on unregister; `isRegistered` reflects the state |
+| 32 | an impostor copy of the Campaign contract cannot register | The program-hash check rejects a non-official program |
+| 33 | a non-creator cannot register someone else's campaign, and registration is refused before the hash is configured | Creator gating; unconfigured-hash refusal |
+| 34 | only the owner can set the official hash, and only the registered creator can unregister | Factory ownership and deposit protection |
 
 ## API cheat sheet (learned the hard way)
 

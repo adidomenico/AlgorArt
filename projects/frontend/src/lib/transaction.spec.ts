@@ -126,6 +126,22 @@ const session = {
 const VAULT_APP_ADDRESS = algosdk.getApplicationAddress(2002).toString()
 
 /**
+ * The 8-byte big-endian app id bytes.
+ *
+ * @param appId The app id to encode.
+ * @returns The encoded bytes.
+ */
+function appIdBytesOf(appId: bigint): Uint8Array {
+  let remaining = appId
+  const bytes = new Uint8Array(8)
+  for (let i = 7; i >= 0; i--) {
+    bytes[i] = Number(remaining & 0xffn)
+    remaining >>= 8n
+  }
+  return bytes
+}
+
+/**
  * The vault's box references for a campaign — the same bytes the helpers build.
  *
  * @param appId The campaign application id.
@@ -133,14 +149,9 @@ const VAULT_APP_ADDRESS = algosdk.getApplicationAddress(2002).toString()
  * @returns Box references for the vault app.
  */
 function vaultBoxes(appId: bigint, prefixes: string[]) {
-  const appIdBytes = new Uint8Array(8)
-  for (let i = 7; i >= 0; i--) {
-    appIdBytes[i] = Number(appId & 0xffn)
-    appId >>= 8n
-  }
   return prefixes.map((prefix) => ({
     appId: 2002n,
-    name: new Uint8Array([...new TextEncoder().encode(prefix), ...appIdBytes]),
+    name: new Uint8Array([...new TextEncoder().encode(prefix), ...appIdBytesOf(appId)]),
   }))
 }
 
@@ -183,12 +194,18 @@ describe('transaction helpers', () => {
     expect(sendFundMock).toHaveBeenCalledWith({ args: { payment: { payment: 'fund-txn' } }, extraFee: microAlgos(1000) })
     expect(paymentMock).toHaveBeenNthCalledWith(2, { sender: 'ADDRESS', receiver: 'FACTORYADDRESS', amount: microAlgos(18_900n) })
     expect(sendRegisterMock).toHaveBeenCalledWith({ args: { app: 9n, payment: { payment: 'register-txn' } }, appReferences: [9n] })
-    expect(sendIssueClaimAsaMock).toHaveBeenCalledWith({ args: { app: 9n }, appReferences: [9n, 1001n], extraFee: microAlgos(1000) })
+    expect(sendIssueClaimAsaMock).toHaveBeenCalledWith({
+      args: { app: 9n },
+      appReferences: [9n, 1001n],
+      boxReferences: [{ appId: 1001n, name: new Uint8Array([0x72, ...appIdBytesOf(9n)]) }],
+      extraFee: microAlgos(2000),
+    })
     expect(sendAttachClaimAsaMock).toHaveBeenCalledWith({
       args: { asset: 777n },
       appReferences: [2002n],
       assetReferences: [777n],
-      extraFee: microAlgos(1000),
+      boxReferences: vaultBoxes(9n, ['a', 'd', 't']),
+      extraFee: microAlgos(2000),
     })
     expect(sendSeedSupplyMock).toHaveBeenCalledWith({
       args: { app: 9n },
@@ -255,7 +272,7 @@ describe('transaction helpers', () => {
     })
     expect(sendRefundMock).toHaveBeenCalledWith({
       args: { axfer: { axfer: 'txn' } },
-      appReferences: [2002n],
+      appReferences: [2002n, 42n],
       boxReferences: vaultBoxes(42n, ['a', 'd']),
       extraFee: microAlgos(2000),
     })
@@ -292,7 +309,7 @@ describe('transaction helpers', () => {
     })
     expect(sendCancelPledgeMock).toHaveBeenCalledWith({
       args: { axfer: { axfer: 'txn' } },
-      appReferences: [2002n],
+      appReferences: [2002n, 42n],
       boxReferences: vaultBoxes(42n, ['a', 'd']),
       extraFee: microAlgos(2000),
     })

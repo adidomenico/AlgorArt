@@ -58,19 +58,46 @@ export async function deploy() {
     extraFee: microAlgos(1000),
   })
 
-  // The vault issues the Claim ASA; the campaign attaches it (self-opt-in); the vault seeds the supply.
+  // The vault issues the Claim ASA (program hash + Factory registration verified on-chain); the campaign attaches it (self-opt-in +
+  // attach notification); the vault seeds the supply.
   const vaultSpec = JSON.parse(
     fs.readFileSync(path.resolve(__dirname, '../artifacts/claimsvault/ClaimsVault.arc56.json'), 'utf8'),
   ) as Arc56Contract
   const vaultClient = new AppFactory({ appSpec: vaultSpec, algorand, defaultSender: deployer.addr }).getAppClientById({
     appId: BigInt(vaultId),
   })
+  const factoryId = process.env.FACTORY_APP_ID
+  if (factoryId === undefined || factoryId === '') {
+    throw new Error('FACTORY_APP_ID is not set — register() and issueClaimAsa() need it.')
+  }
+  const factorySpec = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '../artifacts/factory/Factory.arc56.json'), 'utf8'),
+  ) as Arc56Contract
+  const factoryClient = new AppFactory({ appSpec: factorySpec, algorand, defaultSender: deployer.addr }).getAppClientById({
+    appId: BigInt(factoryId),
+  })
+  // Register with the Factory first (issueClaimAsa requires it on-chain).
+  const registerPayment = await algorand.createTransaction.payment({
+    sender: deployer.addr,
+    receiver: factoryClient.appAddress,
+    amount: microAlgos(18_900n),
+  })
+  await factoryClient.send.call({
+    method: 'register(uint64,pay)void',
+    args: [result.appId, registerPayment],
+    sender: deployer.addr,
+    appReferences: [result.appId],
+  })
+  const appIdBytes = Buffer.alloc(8)
+  appIdBytes.writeBigUInt64BE(result.appId)
+  const registrationBox = [{ appId: BigInt(factoryId), name: Buffer.concat([Buffer.from('r'), appIdBytes]) }]
   await vaultClient.send.call({
     method: 'issueClaimAsa(uint64)void',
     args: [result.appId],
     sender: deployer.addr,
-    appReferences: [result.appId],
-    extraFee: microAlgos(1000),
+    appReferences: [result.appId, BigInt(factoryId)],
+    boxReferences: registrationBox,
+    extraFee: microAlgos(2000),
   })
   const claimAsa = (await vaultClient.state.box.getMapValue('asaOf', result.appId)) as bigint
   await appClient.send.call({
@@ -79,7 +106,11 @@ export async function deploy() {
     sender: deployer.addr,
     appReferences: [BigInt(vaultId)],
     assetReferences: [claimAsa],
-    extraFee: microAlgos(1000),
+    boxReferences: ['a', 'd', 't'].map((prefix) => ({
+      appId: BigInt(vaultId),
+      name: Buffer.concat([Buffer.from(prefix), appIdBytes]),
+    })),
+    extraFee: microAlgos(2000),
   })
   await vaultClient.send.call({
     method: 'seedSupply(uint64)void',
