@@ -161,20 +161,21 @@ Factory + ClaimsVault + Campaign.
 | 28 | issue → abandon lifecycle: the vault MBR is fully recoverable in O(1) via the orphan destroy | create → fund → register → issue → (no attach, no seed) → creator deletes → `destroyClaimAsa`'s orphan rule (issued but never attached) releases the full parked MBR in O(1) — the anti-grief proof |
 | 29 | FIX2-B: a partial refund pays exactly the surrendered amount, not the full pledge | Pledge 2 ALGO, surrender 1: the vault pays exactly 1 ALGO (derived from the ledger), the remaining claim stays intact, `raised` drops by exactly the surrender |
 
-### `smart_contracts/claimsvault/contract.integration.test.ts` (1 test)
+### `smart_contracts/claimsvault/contract.integration.test.ts` (2 tests)
 
 | # | Test | Verifies |
 | --- | --- | --- |
 | 30 | issueClaimAsa guards: non-creator, non-official program, double issue; seedSupply is one-shot | Only the campaign creator can issue; a program that does not hash to the Factory's official hash is refused; a second issue is rejected; the supply can be seeded exactly once (second seed → `supply already seeded`) |
+| 31 | a clawback axfer cannot close a holder position — the protocol rejects the close-out and the opt-in MBR stays parked | A probe app (clawback = the app account) issues an ASA and a backer opts in (100,000 µA MBR); the clawback axfer with `AssetSender` = backer and `AssetCloseTo` = the app is rejected by the protocol (`cannot close asset by clawback`, go-algorand `ledger/apply/asset.go`); the units and the 100k stay with the backer, and only the backer's own close-out frees the MBR |
 
 ### `smart_contracts/factory/contract.integration.test.ts` (4 tests)
 
 | # | Test | Verifies |
 | --- | --- | --- |
-| 31 | register/isRegistered/unregister round trip with a real Campaign | Registration against the real deployed program hash; the deposit lands on the Factory and returns on unregister; `isRegistered` reflects the state |
-| 32 | an impostor copy of the Campaign contract cannot register | The program-hash check rejects a non-official program |
-| 33 | a non-creator cannot register someone else's campaign, and registration is refused before the hash is configured | Creator gating; unconfigured-hash refusal |
-| 34 | only the owner can set the official hash, and only the registered creator can unregister | Factory ownership and deposit protection |
+| 32 | register/isRegistered/unregister round trip with a real Campaign | Registration against the real deployed program hash; the deposit lands on the Factory and returns on unregister; `isRegistered` reflects the state |
+| 33 | an impostor copy of the Campaign contract cannot register | The program-hash check rejects a non-official program |
+| 34 | a non-creator cannot register someone else's campaign, and registration is refused before the hash is configured | Creator gating; unconfigured-hash refusal |
+| 35 | only the owner can set the official hash, and only the registered creator can unregister | Factory ownership and deposit protection |
 
 ## API cheat sheet (learned the hard way)
 

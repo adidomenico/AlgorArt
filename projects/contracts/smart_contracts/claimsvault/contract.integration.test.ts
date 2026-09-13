@@ -11,7 +11,8 @@ import { beforeAll, describe, expect, test } from 'vitest'
 
 /**
  * LocalNet integration tests for the ClaimsVault's issuance path and payout-authority gating: the guards on `issueClaimAsa`,
- * `seedSupply`, and the caller-verification of `payBack`/`payClaim`/`settle` against the real chain.
+ * `seedSupply`, and the caller-verification of `payBack`/`payClaim`/`settle` against the real chain — plus the protocol rule
+ * that bounds the vault's clawback authority (a clawback axfer can never close a holder's position).
  *
  * Requires `algokit localnet start` and a build (`npm run build`).
  */
@@ -19,6 +20,100 @@ import { beforeAll, describe, expect, test } from 'vitest'
 const CAMPAIGN_SPEC_PATH = path.resolve(__dirname, '../artifacts/campaign/Campaign.arc56.json')
 const FACTORY_SPEC_PATH = path.resolve(__dirname, '../artifacts/factory/Factory.arc56.json')
 const VAULT_SPEC_PATH = path.resolve(__dirname, '../artifacts/claimsvault/ClaimsVault.arc56.json')
+
+/**
+ * A bare probe app that creates an ASA with itself (the app account) as the clawback address and can attempt a clawback
+ * close-out: an inner asset transfer with `AssetSender` = the holder and `AssetCloseTo` = the app. Its methods, dispatched
+ * on the first application argument:
+ *
+ * - `make` — create the ASA (clawback = the app account) and record its id in global state.
+ * - `give` — transfer `btoi(args[2])` units to `args[1]`.
+ * - `claw` — claw `btoi(args[2])` units from `args[1]` (AssetSender) with AssetCloseTo = the app account.
+ */
+const CLAW_PROBE_TEAL = `
+#pragma version 11
+
+txn ApplicationID
+bz create
+
+txna ApplicationArgs 0
+byte "make"
+==
+bnz make
+
+txna ApplicationArgs 0
+byte "give"
+==
+bnz give
+
+txna ApplicationArgs 0
+byte "claw"
+==
+bnz claw
+
+err
+
+make:
+itxn_begin
+int acfg
+itxn_field TypeEnum
+int 1000000
+itxn_field ConfigAssetTotal
+int 0
+itxn_field ConfigAssetDecimals
+global CurrentApplicationAddress
+itxn_field ConfigAssetClawback
+byte "CLAW"
+itxn_field ConfigAssetUnitName
+byte "Clawback probe"
+itxn_field ConfigAssetName
+itxn_submit
+byte "aid"
+itxn CreatedAssetID
+app_global_put
+int 1
+return
+
+give:
+itxn_begin
+int axfer
+itxn_field TypeEnum
+byte "aid"
+app_global_get
+itxn_field XferAsset
+txna ApplicationArgs 2
+btoi
+itxn_field AssetAmount
+txna ApplicationArgs 1
+itxn_field AssetReceiver
+itxn_submit
+int 1
+return
+
+claw:
+itxn_begin
+int axfer
+itxn_field TypeEnum
+byte "aid"
+app_global_get
+itxn_field XferAsset
+txna ApplicationArgs 2
+btoi
+itxn_field AssetAmount
+global CurrentApplicationAddress
+itxn_field AssetReceiver
+txna ApplicationArgs 1
+itxn_field AssetSender
+global CurrentApplicationAddress
+itxn_field AssetCloseTo
+itxn_submit
+int 1
+return
+
+create:
+int 1
+return
+`
 
 describe('ClaimsVault (localnet)', () => {
   const fixture = algorandFixture()
@@ -36,6 +131,20 @@ describe('ClaimsVault (localnet)', () => {
   async function accountInfo(address: string) {
     const info = await algorand.account.getInformation(address)
     return { balance: info.balance.microAlgo, minBalance: info.minBalance.microAlgo }
+  }
+
+  function uint64Arg(value: bigint): Uint8Array {
+    const bytes = new Uint8Array(8)
+    new DataView(bytes.buffer).setBigUint64(0, value)
+    return bytes
+  }
+
+  async function assetBalanceOf(address: string, assetId: bigint): Promise<bigint> {
+    try {
+      return (await algorand.asset.getAccountInformation(address, assetId)).balance
+    } catch {
+      return 0n
+    }
   }
 
   beforeAll(async () => {
@@ -247,5 +356,85 @@ describe('ClaimsVault (localnet)', () => {
         suppressLog: true,
       }),
     ).rejects.toThrow(/supply already seeded/)
+  })
+
+  test('a clawback axfer cannot close a holder position — the protocol rejects the close-out and the 100k opt-in MBR stays parked', async () => {
+    const prober = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+
+    const probeApp = await algorand.send.appCreate({
+      sender: prober.addr,
+      approvalProgram: CLAW_PROBE_TEAL,
+      clearStateProgram: CLAW_PROBE_TEAL,
+      schema: { globalInts: 1, globalByteSlices: 0, localInts: 0, localByteSlices: 0 },
+      suppressLog: true,
+    })
+    // The app account needs the created-asset MBR before `make` can run.
+    await algorand.send.payment({
+      sender: prober.addr,
+      receiver: probeApp.appAddress,
+      amount: microAlgos(200_000n),
+      suppressLog: true,
+    })
+    await algorand.send.appCall({
+      sender: prober.addr,
+      appId: probeApp.appId,
+      args: [new TextEncoder().encode('make')],
+      extraFee: (1000).microAlgo(),
+      suppressLog: true,
+    })
+    const globalState = await algorand.app.getGlobalState(probeApp.appId)
+    const assetId = (globalState.aid as { value: bigint }).value
+    const asset = await algorand.asset.getById(assetId)
+    expect(asset.clawback).toEqual(probeApp.appAddress.toString())
+
+    // The backer opts in, parking 100,000 µA of MBR.
+    await algorand.send.assetOptIn({ sender: backer.addr, assetId, suppressLog: true })
+    const optedIn = await accountInfo(backer.addr.toString())
+    expect(optedIn.minBalance).toEqual(200_000n)
+
+    // The app hands the backer 5 units so the claw has something to take.
+    await algorand.send.appCall({
+      sender: prober.addr,
+      appId: probeApp.appId,
+      args: [new TextEncoder().encode('give'), backer.addr.publicKey, uint64Arg(5n)],
+      accountReferences: [backer.addr.toString()],
+      assetReferences: [assetId],
+      extraFee: (1000).microAlgo(),
+      suppressLog: true,
+    })
+    expect(await assetBalanceOf(backer.addr.toString(), assetId)).toEqual(5n)
+
+    // The clawback axfer with AssetSender = backer and AssetCloseTo = the app account is rejected by the protocol:
+    // go-algorand refuses close-out on any clawback transfer ("cannot close asset by clawback").
+    await expect(
+      algorand.send.appCall({
+        sender: prober.addr,
+        appId: probeApp.appId,
+        args: [new TextEncoder().encode('claw'), backer.addr.publicKey, uint64Arg(5n)],
+        accountReferences: [backer.addr.toString()],
+        assetReferences: [assetId],
+        extraFee: (1000).microAlgo(),
+        suppressLog: true,
+      }),
+    ).rejects.toThrow(/cannot close asset by clawback/)
+
+    // Nothing moved: the units and the 100k MBR stay with the backer.
+    expect(await assetBalanceOf(backer.addr.toString(), assetId)).toEqual(5n)
+    const afterClaw = await accountInfo(backer.addr.toString())
+    expect(afterClaw.balance).toEqual(optedIn.balance)
+    expect(afterClaw.minBalance).toEqual(optedIn.minBalance)
+
+    // Only the backer's own close-out releases the MBR: closing the holding to the app frees the backer's 100k.
+    await algorand.send.assetOptOut({
+      sender: backer.addr,
+      assetId,
+      creator: probeApp.appAddress.toString(),
+      ensureZeroBalance: false,
+      suppressLog: true,
+    })
+    const afterOptOut = await accountInfo(backer.addr.toString())
+    expect(afterOptOut.minBalance).toEqual(afterClaw.minBalance - 100_000n)
+    expect(await assetBalanceOf(backer.addr.toString(), assetId)).toEqual(0n)
   })
 })
