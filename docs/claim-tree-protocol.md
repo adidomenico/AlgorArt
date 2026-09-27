@@ -8,6 +8,9 @@
 >
 > Replaces, once implemented: the Claim ASA lifecycle in [`claim-asa-redesign.md`](claim-asa-redesign.md), the campaign contract internals
 > in [`campaign.md`](campaign.md), and the affected rows of [`testing.md`](testing.md).
+>
+> Amendment A1 (September 27, 2026) fixes the budget mechanism (§14) and the `credit` payment verification (§9) — see
+> [§20](#20-amendment-a1-changelog).
 
 ## 1. Repository and protocol verification
 
@@ -203,8 +206,8 @@ state; a group is atomic (all-or-nothing). Two refunds constructed against the s
 - **Campaign deletion vs refund:** the settlement box is written atomically by `delete()` (via the inner `settle`); a refund racing it
   either executes before (against the campaign root, path `payBack`) or after (against the vault box) — both are valid; there is no
   interleaving in which a refund is lost.
-- **Campaign deletion vs pledge:** the pledge group's inner `credit` requires the vault box to be `OPEN`; a settle/deletion that lands
-  first flips the box → the pledge group reverts entirely.
+- **Campaign deletion vs pledge:** the pledge group's `credit` requires the vault box to be absent or `OPEN`; a settle/deletion that lands
+  first flips the box to `FAILED` → the pledge group reverts entirely.
 
 ## 8. Receipt design
 
@@ -245,19 +248,26 @@ per-campaign state exists. There is **no ASA, no addressOf/asaOf/creatorOf mappi
 
 ### Pledge
 
-Group: `[Payment (backer → vault, amount a, note optional), Campaign.pledge(payment, frontier)]`.
+Group: `[Payment (backer → vault, amount a, note optional), Campaign.pledge(payment, frontier), Vault.credit(app, amount)]`
+(the pledge precedes the credit; atomicity makes the order safe — if any of the three fails, nothing is written).
 
 `Campaign.pledge` checks: deadline not passed; `status == OPEN`; `payment.receiver == vault.address`; `payment.sender == Txn.sender`;
 `payment.amount > 0`; `Txn.sender != creator`; `frontier.length == 32·popcount(N)`. Computes
 `leaf = H(0x01 ‖ sender ‖ amount ‖ payment.txnId)`; asserts `leaf ≠ Z`; authenticates the frontier (§4); updates `root, N`;
-`raised += amount`. Emits two inner calls: (1) `self.reserve()` — a no-op that adds 700 to the pooled budget; (2)
-`vault.credit(app, backer, amount)`.
+`raised += amount`. No inner calls (a self inner call for budget would be illegal reentrancy — see §14 for the `ensureBudget`
+mechanism instead).
 
-`Vault.credit` checks: `Txn.sender == app.address`; if the box is absent: inner-call `factory.isRegistered(app)` (result must be
-true); assert `status == OPEN`; **independently verify the payment**: scan the caller's group (`gtxn`) for a payment with
-`sender == backer`, `receiver == vault`, `amount == amount` — assert found. Then `paidInOf += amount` (creating the box on first
-pledge). The vault's `paidInOf` therefore counts only real payments into the vault — the "derived, not trusted" property of the
-current design is preserved, per campaign.
+`Vault.credit` (top-level, backer-signed) checks: the vault box for `app` is absent or `OPEN` (`FAILED`/`CLAIMED` reject — no pledges
+after settlement); if the box is absent: inner-call `factory.isRegistered(app)` (result must be true) before creating it;
+**independently verify the payment**: scan the caller's own group (`gtxn` — fully visible because `credit` is top-level) for a payment
+with `sender == Txn.sender`, `receiver == vault.address`, `amount == amount` — assert found. Then `paidInOf += amount` (creating the
+box on first pledge). The vault's `paidInOf` therefore counts only real payments into the vault — the "derived, not trusted" property
+of the current design is preserved, per campaign.
+
+No pledge-presence check is needed in `credit`: a `credit` without a matching `pledge` — or a `pledge` without a `credit` — strands
+only the deviator's own funds (every later outflow is capped by verified inflows via the balance guard; §17 #29). The previous draft's
+inner `credit` with a group scan from inside the callee was impossible — an inner-called app sees only its own inner group in `gtxn`,
+and a transaction argument to an inner call indexes the inner group, not the outer one — hence `credit` is top-level by construction.
 
 ### Cancel (pre-deadline withdrawal, while OPEN)
 
@@ -310,7 +320,16 @@ Then: refunds per §9 until the window closes (§13); then `[Vault.finalize(app)
 ### Cross-campaign note
 
 Every inner call names its own app id; the `Txn.sender == app.address` check makes cross-campaign calls impossible (an app account
-acts only through its own program; app addresses are distinct).
+acts only through its own program; app addresses are distinct). The top-level `credit` names its app id explicitly as an argument; a
+misattributed `credit` (paying under the wrong campaign's box) locks the caller's own funds under that campaign's balance cap — self-harm,
+no theft (§17 #31).
+
+### Resource declaration (outer transactions)
+
+Every outer transaction that triggers inner vault calls declares the vault's campaign box in `boxReferences` and the vault app in
+`appReferences`; on first-touch paths (`credit` creating the box) it additionally declares the factory app plus its registration box
+(`'r' ‖ appId`), so the inner `isRegistered` call resolves under v9+ group resource sharing. The frontend builds these from the
+vault/factory app ids plus the campaign app id, exactly as the current Claim ASA frontend does for `claim`/`refund`/`delete`.
 
 ## 10. State layout
 
@@ -402,6 +421,12 @@ wants zero self-enrichment optics, `sweepTarget` can be a documented community f
 
 **Recommendation: Option B.**
 
+**Governance decision required before TestNet (not a protocol change):** who `sweepTarget` is. Options: (i) platform treasury
+(simplest; self-enrichment optics — disclose the window and the target in the UI at pledge time); (ii) a documented community fund
+or the campaign creator (kills the optics; the address must be fixed at vault creation); (iii) a longer window (e.g. 5 years) with
+(i)/(ii) unchanged. The address is immutable once the vault is created. This is the one open item in this section; everything else
+stands.
+
 ## 14. Opcode and resource analysis
 
 Derived from the verified reference model (not estimates):
@@ -424,23 +449,35 @@ Worst case for pledge is `N = 2ᵏ−1` (maximal popcount); worst case for refun
 (path = `(k−1) + (k−1) = 2k−2`).
 
 Budget model: `ops = H_calls × 35 + ~150` (ABI decode, box access, asserts, inner-call emission, payment scan). Available pool =
-`700 × (top-level app calls + inner app calls)` under v30+ pooling (inner calls each add 700 — verified in `eval.go`). Required
-self-calls (`ceil(ops/700) − 1` additional inner no-op calls):
+`700 × (top-level app calls)` plus `700` per inner app call submitted, under v30+ pooling
+([specs](https://specs.algorand.co/avm/avm-mode-applications)). Inner calls to *oneself* are forbidden (reentrancy is explicitly
+excluded — [Inner Transactions](https://dev.algorand.co/concepts/smart-contracts/inner-txn/)), so heavy methods size
+`ensureBudget(requiredOps)` — the Puya OpUp utility, which adds budget with inner app *creates* of ephemeral programs
+(created and deleted in one inner group; the pattern production Puya code uses, e.g. `ensure_budget(20000)` in the
+[voting example](https://github.com/algorandfoundation/puya/blob/main/examples/voting/voting.py)), paid by the caller via
+`GroupCredit` fee pooling. OpUp inners needed: `ceil(ops/700) − pool/700`:
 
-- **Pledge** (group: 1 app call; 2 inner calls → pool 2,100): N=10,000 → 10·35+150 = 500 ✓ (pooling headroom large); worst realistic
-  N=131,071 → 34·35+150 = 1,340 ✓. Only `N ≥ 2²⁰−1`-class trees need a third self-call.
-- **Refund** (1 app call; self-calls as needed): N=1,000 → 1,165 → 1 self-call (1,400) ✓; N=10,000 → 1,375 ✓ 1; N=131,071 →
-  2,425 → 3 self-calls (2,800) ✓; N=1,000,000 → 1,935 → 2 ✓.
+- **Pledge** (group: 2 app calls → pool 1,400; no campaign inners): N=10,000 → 10·35+150 = 500 (+`credit` ≈ 150) ✓ headroom large;
+  worst realistic N=131,071 → 34·35+150 = 1,340 (+150) → 1 OpUp inner (2,100) ✓. Only `N ≥ 2²⁰−1`-class trees need a second one.
+- **Refund, campaign path** (1 app call + 1 inner `payBack` → pool 1,400): N=1,000 → 1,165 ✓; N=10,000 → 1,375 ✓ (tight — size one
+  OpUp headroom anyway); N=131,071 → 2,425 → 2 OpUp inners (2,800) ✓; N=1,000,000 → 1,935 → 1 ✓.
+- **Refund, vault path** (1 app call + 0 inner app calls → pool 700): same `ops` as above, so N=1,000 → 1 OpUp inner (1,400) ✓;
+  N=131,071 → 3 OpUp inners (2,800) ✓.
+
+The client derives `(N, k)` from on-chain state, computes the `ops` estimate with the formula above, and funds the group fee
+accordingly; the contract calls `ensureBudget` itself with the same estimate. An underfunded transaction fails atomically and the
+client retries with a higher fee — no partial state either way.
 
 Resource ceilings (hard limits, not Big-O):
 
 - **Arguments:** refund args `appId(8) ‖ k(8) ‖ amount(8) ‖ txid(34) ‖ path(2+32·pathLen)`; total ≤ 2,048 B ⇒ pathLen ≤ 62 ⇒
   **N ≤ 2³²−1** (4.29 billion backers). Pledge frontier: `32·p + ~20` B ⇒ p ≤ 62 ⇒ N ≤ 2³²−1.
 - **Box IO:** refund reads+writes one 65-byte box (1 ref → 1,024 B budget) ✓; `credit` writes the same box ✓.
-- **Group size:** 2 top-level transactions (limit 16); ≤ 4 inner transactions (limit 256) ✓.
+- **Group size:** 3 top-level transactions on pledge (limit 16); inner groups ≤ 5 (OpUp creates + vault/factory calls; limit 256) ✓.
 - **Stack:** values ≤ 32 B each during hashing (leaf preimage 73 B once); depth < 20 ✓.
-- Fees: each inner self-call ≈ +1,000 µA (or drawn from the outer fee credit); total pledge fee ≈ 2–3× minimum, refund ≈ 2–4× — flat,
-  independent of N.
+- Fees: each OpUp inner ≈ +1,000 µA via `GroupCredit`. Typical campaigns (N ≤ ~10k) need no OpUp: pledge ≈ 3× minimum (pay + 2 app
+  calls), campaign-path refund ≈ 2×, vault-path refund ≈ 1–2×. Worst-case trees (N ≈ 131k) add 2–3 inners: pledge ≈ 4–5×, refund ≈
+  5–6×. Flat in the common case, growing only with `log N`-class path lengths at extreme N.
 
 ## 15. Reference implementation
 
@@ -504,6 +541,9 @@ real consensus, including the races of §7.
 | 26 | Finalize race | window + status assertions; absent-box reject | app checks |
 | 27 | Repeated finalize | box absent after first | app checks |
 | 28 | Malicious indexer data | the indexer is never trusted: every supplied structure (frontier, path) is authenticated by the contract against on-chain state; wrong indexer data only causes a rejected transaction and a retry | SHA + app checks |
+| 29 | `credit` without a matching `pledge` (or vice versa) | `paidInOf` counts only real in-group payments; a tree/paidIn skew strands only the deviator's own funds (an uncredited leaf fails the balance guard at refund; unpledged credit inflates only the deviator's own inflow, claimable back by nobody but the pool) — self-harm, no cross-campaign effect | app checks |
+| 30 | Inner self-call for budget (`self.reserve()`) | forbidden by consensus (reentrancy); heavy methods use `ensureBudget` OpUp creates instead (§14) | AVM |
+| 31 | `credit` under another campaign's box | the box is keyed by the caller-supplied app id and creation is registration-gated; misattribution locks the caller's own funds under that campaign's cap | app checks |
 
 ## 18. Six-requirement scorecard
 
@@ -512,7 +552,7 @@ real consensus, including the races of §7.
 | A — Backer-controlled refund | ✓ | Self-service `refund`/`cancelPledge` from wallet alone; works after campaign deletion and after creator disappearance (`settleOpen`); no creator/platform processing exists on any refund path. Satisfied **within the refund window** under Option B. |
 | B — Complete bounded finalization | ✓ with Option B | Protocol resources per campaign = one 32,100 µA box; recovered by `notifyDelete` (claimed) or `finalize` (failed, time-gated) — one transaction, independent of N and of any backer. Without the window (Option A), fails by a constant. |
 | C — No O(N) platform operations | ✓ | No platform operation is per-backer anywhere; frontiers/proofs are computed by backers' own clients and *verified* by the contract. |
-| D — Very high scalability | ✓ | Zero per-backer on-chain structures (no ASA, no boxes-per-backer, no local state, no bitmap). Per-campaign state is constant (10 global slots + one box). Single-call refunds to N ≈ 1,000; pooled-budget refunds to N ≈ 131k with 3 self-calls; argument ceiling N ≤ 2³²−1. |
+| D — Very high scalability | ✓ | Zero per-backer on-chain structures (no ASA, no boxes-per-backer, no local state, no bitmap). Per-campaign state is constant (10 global slots + one box). Single-call refunds to N ≈ 1,000; `ensureBudget`-pooled refunds to N ≈ 131k with ≤ 3 OpUp inners (§14); argument ceiling N ≤ 2³²−1. |
 | E — Minimal creator capital | ✓ | ≈ 0.24 ALGO (app + schema MBR on the creator's own account), fully recovered at `delete()`; **no escrow deposit at all** (`fund()` removed). |
 | F — Zero backer action after success | ✓ | Backers hold nothing on-chain after success: no ASA, no opt-in, no local state, nothing to close, sweep, or destroy. 100% disappearance of backers leaves zero residue. |
 
@@ -528,3 +568,27 @@ in §18, with the refund window (Option B) being the one explicit, documented co
 
 The implementation must follow §§2–12 verbatim, treat `claim-tree-protocol-reference.py` as the oracle, and carry the differential
 test plan of §16 before any deployment.
+
+## 20. Amendment A1 changelog
+
+September 27, 2026. Two implementation-blocking defects in v1, found on review against the AVM toolchain and consensus rules:
+
+1. **Budget mechanism (§14).** v1 sized "inner no-op self-calls" (`self.reserve()`) to grow the pooled opcode budget. An application may
+   not call itself, even indirectly — reentrancy is explicitly forbidden
+   ([Inner Transactions](https://dev.algorand.co/concepts/smart-contracts/inner-txn/)). Replaced with `ensureBudget(requiredOps)`
+   (Puya OpUp: inner app *creates* of ephemeral programs, caller-paid via `GroupCredit`), the pattern production Puya contracts use.
+   Hash counts and ceilings are unchanged; only the mechanism, the OpUp sizing rule, and the fee table are new.
+2. **`credit` payment verification (§9).** v1 had the campaign inner-call `vault.credit`, which then scanned "the caller's group" via
+   `gtxn` — impossible, because an inner-called app sees only its own inner group in `Txn`/`Gtxn`. A transaction argument to an inner
+   call indexes the inner group too, so forwarding was no fix either. `credit` is therefore a top-level, backer-signed call
+   (`[Payment, Campaign.pledge, Vault.credit]`) whose `gtxn` scan sees the real outer group. Added: the absent-or-`OPEN` box gate, the
+   registration-gated box creation, the no-pledge-presence rationale (§17 #29), the cross-campaign misattribution note, and the outer
+   resource-declaration subsection.
+3. **Governance (§13).** Added the open `sweepTarget` decision (treasury vs community fund/creator vs longer window) as the one item
+   required before TestNet.
+4. **Reference model.** The `append` helper now asserts `fold(P) == root_of(leaves)` instead of discarding the fold — it models the
+   on-chain frontier authentication rather than just counting its hashes.
+
+No change to the tree math (§§2–6), the null proofs (§5 A–G), the accounting invariants (§11), the state machines (§12), or the verdict:
+still GO, now without known implementation blockers. Next gate: the LocalNet spike (`pledge → refund` with differential assertions
+against the reference oracle) before the full rewrite.

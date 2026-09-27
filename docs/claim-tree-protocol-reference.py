@@ -95,7 +95,7 @@ def append(leaves, new_leaf):
     P = peaks(N, nodes)
     calls = 1  # leaf hash
     if N:
-        fold(P)  # frontier authentication (p-1 hashes)
+        assert fold(P) == root_of(leaves)  # frontier authentication (p-1 hashes)
         calls += len(P) - 1
     g = new_leaf
     l, idx = 0, 0
