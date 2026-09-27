@@ -19,6 +19,7 @@ item links to the doc that has the details.
 - [x] **Claim ASA redesign** — replaced the Merkle tree + spent bitmap with a per-campaign
       Claim ASA whose balances are the anti-double-refund state; no boxes, no proofs, no
       per-backer campaign storage. See [`claim-asa-redesign.md`](claim-asa-redesign.md).
+      (Superseded by the [Claim-tree rewrite](#claim-tree-rewrite-current-track) below; kept as history.)
 - [x] **Factory registry** — on-chain Factory app: owner-configured approval hash,
       `register`/`unregister` with a refundable deposit, program-hash verification against
       impostor copies. See [`architecture.md`](architecture.md).
@@ -26,10 +27,66 @@ item links to the doc that has the details.
       campaign's Claim ASA; the campaign escrow holds only the creator's deposit, so both
       settlement paths finalize in O(1) and failed-campaign refunds keep working from the
       vault after the campaign is deleted. Full attack matrix on LocalNet.
+      (ASA issuance is removed by the rewrite; the pooled escrow stays.)
 - [x] **Frontend core** — wallet connect (Pera/Defly), browse (Factory-filtered), create
       (+ fund + register), pledge (auto opt-in), claim/refund/cancel, close-out, delete.
 - [x] **LocalNet deploy + seed** — Factory/ClaimsVault/Campaign deployers and a demo seed
       script (create → fund → register → issue → attach → seed → pledge).
+
+## Claim-tree rewrite (current track)
+
+Decision: replace the Claim ASA with the Incremental Frontier-Merkle claim tree. The spec is
+[`claim-tree-protocol.md`](claim-tree-protocol.md) (Amendment A1 applied); a LocalNet spike already
+proved pledge → refund differentially against the Python oracle. Commits are ordered so every step
+stays green (format, lint, types, offline coverage at 100%, integration on LocalNet).
+
+### Phase 0 — decisions (block C1, no code)
+
+- [ ] **`sweepTarget` + window** — who receives the post-window residual, and confirm 730 days
+      (see [`claim-tree-protocol.md`](claim-tree-protocol.md) → Refund window decision). The vault's
+      `finalize` needs the address source.
+- [ ] **Spike retirement** — migrate the differential asserts into the campaign suite, delete
+      `smart_contracts/claimtree/`, remove the coverage exclusion.
+- [ ] **Confirm the drops** — `fund()`, `attachClaimAsa`, `closeOut`, `claimAsa`/`deposit` state,
+      and the vault ASA methods (`issueClaimAsa`, `seedSupply`, `sweepClaimAsa`, `destroyClaimAsa`).
+- [ ] **Proof strategy** — client-only indexer replay for v1 (a backend proof endpoint stays a later
+      item under Backend & archival).
+
+### C1 — contracts: replace claim ASA with claim-tree escrow
+
+- [ ] **Vault rewrite** (in place) — add `credit` (top-level), `payBack`, `payClaim`, `settle`,
+      `settleOpen`, `refund` (vault path), `notifyDelete`, `finalize` on the 65-byte box; delete all
+      ASA methods.
+- [ ] **Campaign rewrite** (in place) — add `root`/`N` state, `pledge(payment, frontier)`,
+      `cancelPledge`, `refund`, `claim`, `delete` with `ensureBudget` sizing; port the spike patterns
+      (`isOdd`, early-exit `popcount`/`pathLen`, `op.sha512_256`).
+- [ ] **Factory needs no code change** — `setApprovalHash` already covers v2; tests register the new hash.
+- [ ] **Tests** — offline specs rewritten (100% gate holds), integration suite rewritten with oracle-CLI
+      differential asserts, spike dir deleted. Rewrite [`campaign.md`](campaign.md) in the same set.
+
+### C2 — frontend: claim-tree proof builder
+
+- [ ] New `lib/claimtree.ts` — replay pledge/null events from the indexer into frontiers (pledges) and
+      paths (refunds); read-only TS port of the reference model.
+- [ ] Unit tests against committed oracle vectors (generate once from Python, commit the JSON — no Python
+      dependency in frontend CI). No UI changes yet.
+
+### C3 — frontend: claim-tree flows
+
+- [ ] `transaction.ts` — `[pay, pledge, credit]` groups, cancel/refund/claim/delete with box/app refs and
+      OpUp `extraFee`; delete all ASA flows (issue/attach/seed/sweep/destroy/opt-in).
+- [ ] UI — proof-building states (loading frontier/path, stale-proof retry), fee disclaimers, 730-day
+      refund-window banner; covers the unchecked Frontend UX items above. Update
+      [`frontend.md`](frontend.md) in the same set.
+
+### C4 — docs: retire claim ASA
+
+- [ ] README spec section, [`testing.md`](testing.md) rows, this roadmap; superseded header on
+      [`claim-asa-redesign.md`](claim-asa-redesign.md) (kept as history).
+
+### C5 — TestNet smoke (no code)
+
+- [ ] Full lifecycle with a real wallet on the v2 contracts; record results under TestNet & deployment.
 
 ## Contract
 
@@ -55,7 +112,7 @@ item links to the doc that has the details.
 - [ ] **TestNet smoke test** — deploy the Factory + Campaign contracts, fund via the dispenser, and run
       create → pledge → claim, and → refund with a real wallet (Pera/Defly). This de-risks
       wallet + public-network integration and is independent of styling.
-- [ ] **Lock the contract shape** (decide `updateMetadata()` / `settle()`) before the first demo deploy.
+- [ ] **Lock the contract shape** (decide `updateMetadata()`) before the v2 demo deploy.
 - [ ] Deploy the frontend to a **free static host** (GitHub Pages / Cloudflare Pages / Netlify).
 
 ## Backend & archival
@@ -82,11 +139,10 @@ discovery and the outcome record; the catalog is for search/filter/history UX.
 
 ## Open design questions
 
-- [ ] **Vault garbage collection cadence.** Each claimed campaign parks ~0.156 ALGO on the
-      vault until `sweepClaimAsa` + `destroyClaimAsa` run (permissionless, optional). Decide
-      whether the platform or the community drives sweeps, and whether a small bounty per
-      sweep is worth adding (see
-      [`claim-asa-redesign.md`](claim-asa-redesign.md) → Limitations).
+- [ ] **Residual + cleanup cadence.** Successful campaigns delete O(1) with nothing parked;
+      failed campaigns hold the pool until `finalize` sweeps the residual to `sweepTarget` after the
+      window. Decide `sweepTarget` (Phase 0 above), and whether the platform or the community drives
+      `finalize` (see [`claim-tree-protocol.md`](claim-tree-protocol.md) → Refund window decision).
 - [ ] **Pooled-custody review.** The vault concentrates all campaign funds; consider a
       third-party audit of the vault before TestNet.
 
