@@ -15,7 +15,9 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['smart_contracts/**/*.algo.ts'],
-      exclude: ['**/*.algo.spec.ts', '**/*.algo.test.ts', 'smart_contracts/artifacts/**'],
+      // The claimtree spike contract is proven by its LocalNet differential test only (no offline spec) — remove this
+      // exclusion when the spike is promoted to the real implementation with full offline coverage.
+      exclude: ['**/*.algo.spec.ts', '**/*.algo.test.ts', 'smart_contracts/artifacts/**', 'smart_contracts/claimtree/**'],
       reporter: ['text', 'json-summary'],
       // Lines/branches/functions are the meaningful metrics. Statements is left
       // un-thresholded because the `@abimethod` decorator wraps each method
