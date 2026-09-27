@@ -35,6 +35,10 @@ projects/frontend/src/contracts/*
 # TypeScript
 *.tsbuildinfo
 
+# Python
+__pycache__/
+*.py[cod]
+
 # Logs
 logs/
 *.log

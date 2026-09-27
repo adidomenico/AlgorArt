@@ -39,7 +39,7 @@ Verified against the repository at HEAD `1dbd708` and go-algorand `master` (`dat
 
 | Fact | Value | Source |
 | --- | --- | --- |
-| `sha256` opcode | SHA-512/256, cost 35 | `opcodes.go` v2+ |
+| `sha512_256` opcode | SHA-512/256, cost 35 | `opcodes.go` v2+ |
 | Per-call opcode budget | 700, never raised | `consensus.go` v24 |
 | Group budget pooling | 700 per app call in the group; inner app calls add 700 each to the shared pool | `consensus.go` v30 (`EnableAppCostPooling`); `eval.go` `NewAppEvalParams`/`NewInnerEvalParams` |
 | `txn TxID` / `gtxn i TxID` | `[32]byte`, available without version gate (field 23) | `TEAL_opcodes_v12.md` |
@@ -52,7 +52,7 @@ Verified against the repository at HEAD `1dbd708` and go-algorand `master` (`dat
 
 ### Hash function
 
-`H(x) = SHA-512/256(x)` — the AVM `sha256` opcode. `Z = 0x00 × 32` (32 zero bytes).
+`H(x) = SHA-512/256(x)` — the AVM `sha512_256` opcode (not `sha256`, which is plain SHA-256). `Z = 0x00 × 32` (32 zero bytes).
 
 ### Leaf
 
@@ -588,6 +588,10 @@ September 27, 2026. Two implementation-blocking defects in v1, found on review a
    required before TestNet.
 4. **Reference model.** The `append` helper now asserts `fold(P) == root_of(leaves)` instead of discarding the fold — it models the
    on-chain frontier authentication rather than just counting its hashes.
+5. **Hash opcode (§§1–2).** v1 named the AVM `sha256` opcode for `H`, but `sha256` is plain SHA-256 — the LocalNet spike proved
+   this differentially (on-chain leaf = `SHA256(preimage)`, full 32-byte match). `H` is SHA-512/256 via the `sha512_256` opcode
+   (PuyaTs `op.sha512_256`, same cost 35); the contract was fixed to it and the table above corrected. Nothing else changes —
+   the analysis was always about SHA-512/256 collision resistance.
 
 No change to the tree math (§§2–6), the null proofs (§5 A–G), the accounting invariants (§11), the state machines (§12), or the verdict:
 still GO, now without known implementation blockers. Next gate: the LocalNet spike (`pledge → refund` with differential assertions
