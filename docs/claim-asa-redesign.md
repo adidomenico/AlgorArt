@@ -1,5 +1,12 @@
 # Claim ASA redesign
 
+<!-- prettier-ignore -->
+> [!WARNING]
+> Superseded: this design was implemented, then replaced by the
+> [claim-tree protocol](claim-tree-protocol.md) (C1–C3 rewrite), which needs no
+> assets, no opt-ins, and no per-backer storage. Kept as history — the reasoning
+> below still explains *why* the ASA was once attractive.
+>
 > **Implemented.** The refund right is an on-chain asset balance: a per-campaign **Claim ASA**, issued by a permanent platform
 > **ClaimsVault** that also holds all backers' pledged ALGO. The campaign escrow holds only the creator's storage deposit, so both
 > settlement paths finalize in **O(1)** — including the failure path, where refunds keep working **from the vault forever, after the

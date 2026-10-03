@@ -10,7 +10,7 @@ creator can claim the funds; if not, every backer can reclaim their pledge.
 
 > Technical details live in [`docs/`](docs/): contract internals in
 > [the contract docs](docs/campaign.md) and the
-> [Claim ASA redesign rationale](docs/claim-asa-redesign.md), the
+> [claim-tree protocol](docs/claim-tree-protocol.md), the
 > [frontend design](docs/frontend.md), the [Factory & architecture](docs/architecture.md),
 > [the CI plan](docs/ci.md), the [roadmap](docs/roadmap.md) (what's left to do),
 > and [product design & open questions](docs/design.md).
@@ -42,27 +42,27 @@ The app never sees a secret — only signed transactions.
 
 ## Contract design
 
-One **stateful Algorand application** per campaign, plus a per-campaign **Claim ASA**
-and a permanent **ClaimsVault**. A backer's refundable claim is their **balance of the
-Claim ASA** — 1 unit = 1 microAlgo; surrendering the units to the vault is the refund,
-so the same claim cannot be redeemed twice. The vault holds all backers' pledged ALGO
-(the campaign escrow holds only the creator's deposit), so both settlement paths
-finalize in O(1) and failed-campaign refunds keep working from the vault after the
-campaign is deleted. A separate **Factory** registry app proves which campaigns are
-official AlgorArt.
+One **stateful Algorand application** per campaign, plus a permanent
+**ClaimsVault** and a **Factory** registry app. A backer's refundable claim is
+their **leaf in the campaign's incremental frontier-Merkle tree** — each pledge
+appends `H(backer ‖ amount ‖ paymentTxId)`, and refunds null the leaf in place,
+so the same claim cannot be redeemed twice. The vault holds all backers'
+pledged ALGO (the campaign escrow holds nothing at all — not even a creator
+deposit), so both settlement paths finalize in O(1) and failed-campaign refunds
+keep working from the vault after the campaign is deleted, until the refund
+window closes. The **Factory** registry proves which campaigns are official
+AlgorArt.
 
 ```mermaid
 stateDiagram-v2
     [*] --> Open: create()
-    Open --> Open: fund() — issues the Claim ASA
-    Open --> Open: pledge() — mints claim units to the backer
-    Open --> Open: cancelPledge() — backer surrenders units, gets ALGO back
+    Open --> Open: pledge() — appends a leaf; ALGO to the vault
+    Open --> Open: cancelPledge() — nulls the leaf, vault pays back
     Open --> Claimed: claim() — deadline passed & raised >= goal
     Open --> Failed: refund() — deadline passed & raised < goal
-    Failed --> Failed: refund() — remaining backers reclaim
-    Claimed --> Claimed: closeOut() — backers dump worthless units
-    Claimed --> [*]: delete() — all units home
-    Failed --> [*]: delete() — all units home
+    Failed --> Failed: refund() — remaining backers reclaim (or vault.refund after settle)
+    Claimed --> [*]: delete() — vault releases the box
+    Failed --> [*]: delete() — vault records the settlement
 ```
 
 ### ABI methods
@@ -70,22 +70,20 @@ stateDiagram-v2
 | Method | Caller | Conditions | Effect |
 | --- | --- | --- | --- |
 | `create(vault, title, metadataUri, goal, deadline)` | creator | — | Deploys the app, sets global state |
-| `fund()` | creator | ≥ 0.2 ALGO | Funds the escrow's fixed MBR (deposit) |
-| `vault.issueClaimAsa()` + `attachClaimAsa()` + `vault.seedSupply()` | creator | official program | Issues the Claim ASA; escrow opts in; supply seeded |
-| `pledge()` | backer | before deadline, opted in | Payment into the **vault**; mints equal claim units; bumps `raised` |
-| `claim()` | creator | after deadline **and** `raised >= goal` | The **vault** pays the creator (unit conservation); settlement recorded |
-| `refund()` | backer | after deadline **and** `raised < goal` | Surrenders claim units to the vault; the vault pays the same µA back — also directly, after the campaign is deleted |
-| `cancelPledge()` | backer | before deadline | Surrenders claim units; the vault pays back; decrements `raised` |
-| `closeOut()` | backer | claimed | Returns worthless units to the vault; frees the backer's opt-in MBR |
-| `delete()` | creator | settled or abandoned | Settles the vault on failure; closes the holding and the escrow in O(1) |
+| `pledge(payment, frontier)` + `vault.credit(app, amount)` | backer | before deadline, payment to the vault | One atomic group: appends the leaf, bumps `raised`, records the inflow |
+| `claim()` | creator | after deadline **and** `raised >= goal` | The **vault** pays the derived live total; settlement recorded |
+| `refund(k, amount, txid, path)` | backer | after deadline **and** `raised < goal` | Nulls the leaf; the vault pays the same µA back — also directly via `vault.refund`, after settlement |
+| `cancelPledge(k, amount, txid, path)` | backer | before deadline | Nulls the leaf; the vault pays back; decrements `raised` |
+| `delete()` | creator | settled or empty | Settles the vault on failure (or releases the box when claimed) in O(1) |
 
 ### Key on-chain state
 
 - **Global (per campaign):** `creator`, `vault`, `title`, `metadataUri`, `goal`,
-  `deadline`, `raised`, `status` (`Open` / `Failed` / `Claimed`), `claimAsa`, `deposit`.
-- **Per backer:** nothing on the campaign — the backer's Claim ASA balance *is* their pledge.
-- **ClaimsVault (one app):** the pooled pledge balance, per-campaign boxes
-  (`asaOf`, `addressOf`, `creatorOf`, `settled`), the Claim ASA authorities.
+  `deadline`, `raised`, `status` (`Open` / `Failed` / `Claimed`), `root`, `n`.
+- **Per backer:** nothing — leaves live in the tree fold, and proofs are rebuilt
+  from indexer history at spend time.
+- **ClaimsVault (one app):** the pooled pledge balance, per-campaign 65-byte
+  boxes (`paidIn`, `paidOut`, `root`, `n`, `status`, `settledAt`).
 - **Factory (one app):** `owner`, the official Campaign approval-program hash,
   `registered` boxes (app id → creator).
 
@@ -111,14 +109,14 @@ AlgorArt/
 ├── projects/
 │   ├── contracts/                # AlgoKit contract project (TypeScript)
 │   │   └── smart_contracts/
-│   │       ├── campaign/         # the escrow app + Claim ASA (create/fund/pledge/claim/refund)
+│   │       ├── campaign/         # the escrow app + Merkle tree (create/pledge/claim/refund)
 │   │       │   ├── contract.algo.ts
 │   │       │   ├── contract.algo.spec.ts   # offline AVM tests (Vitest)
 │   │       │   └── deploy-config.ts
 │   │       ├── factory/          # the canonical campaign registry
 │   │       │   ├── contract.algo.ts
 │   │       │   └── deploy-config.ts
-│   │       ├── claimsvault/      # the pooled refund escrow + Claim ASA issuer
+│   │       ├── claimsvault/      # the pooled refund escrow (credit/payBack/payClaim/settle/refund)
 │   │       │   ├── contract.algo.ts
 │   │       │   └── deploy-config.ts
 │   │       └── index.ts          # deploy orchestrator
@@ -140,11 +138,12 @@ Two docs carry the plan:
 - [`docs/roadmap.md`](docs/roadmap.md) — a living checklist of what's left, organized by area.
 - [`docs/design.md`](docs/design.md) — product design & open questions (identity, backend, notifications, UI).
 
-Done so far: setup; the core contract with full tests; the Claim ASA redesign
-(replacing the Merkle/spent-bitmap machinery); the Factory registry; the split
-ClaimsVault (O(1) finalization on both settlement paths with permanent vault refunds);
-and the core frontend (wallet connect, browse, create, pledge, claim/refund/cancel,
-close-out, delete).
+Done so far: setup; the core contract with full tests; the claim-tree protocol
+(replacing both the original spent-bitmap machinery and the interim Claim ASA);
+the Factory registry; the split ClaimsVault (O(1) finalization on both
+settlement paths with vault refunds inside the refund window); and the core
+frontend (wallet connect, browse, create, pledge, claim/refund/cancel,
+delete, refund-window banner).
 Next up: a TestNet smoke test, the contract-shape decisions (`updateMetadata`),
 then styling and the later product features.
 
@@ -182,7 +181,7 @@ algokit project run build        # compile contracts + generate typed clients
 cd projects/contracts
 npm run deploy:ci -- factory     # deploy the Factory (prints the app id)
 npm run deploy:ci -- campaign    # optional demo campaign
-FACTORY_APP_ID=<factory app id> npx ts-node --transpile-only scripts/seed-demo.ts  # demo data
+FACTORY_APP_ID=<factory app id> VAULT_APP_ID=<vault app id> npx ts-node --transpile-only scripts/seed-demo.ts  # demo data
 
 cd ../frontend
 # set VITE_FACTORY_APP_ID=<factory app id> in .env
@@ -219,7 +218,7 @@ The goal is near-total coverage, measured two ways:
 
 - **Smart contract — 100% behavioral coverage.** AVM bytecode has no mature line-coverage
   tool, so coverage is defined by the test matrix: every method × every branch (caller
-  checks, deadline checks, goal checks, surrender validation, re-pledge). Each case gets
+  checks, deadline checks, goal checks, proof validation, re-pledge). Each case gets
   an explicit offline AVM test in `contract.algo.spec.ts` / `factory/contract.algo.spec.ts`
   (via `algorand-typescript-testing` + Vitest), plus LocalNet integration tests
   (`*.integration.test.ts`) that exercise the compiled TEAL end-to-end with real balances

@@ -4,8 +4,9 @@ A living checklist of what's left to do. Work already done is collapsed into a
 short summary at the top; the rest is organized by **area**, not by phase. Each
 item links to the doc that has the details.
 
-> Contract internals: [`campaign.md`](campaign.md) and
-> [`claim-asa-redesign.md`](claim-asa-redesign.md). Frontend design:
+> Contract internals: [`campaign.md`](campaign.md) and the
+> [`claim-tree protocol`](claim-tree-protocol.md) ([`claim-asa-redesign.md`](claim-asa-redesign.md)
+> is superseded history). Frontend design:
 > [`frontend.md`](frontend.md). Product design & open questions:
 > [`design.md`](design.md). CI: [`ci.md`](ci.md). Testing:
 > [`testing.md`](testing.md). Factory & catalog:
@@ -81,7 +82,7 @@ stays green (format, lint, types, offline coverage at 100%, integration on Local
 
 ### C4 — docs: retire claim ASA
 
-- [ ] README spec section, [`testing.md`](testing.md) rows, this roadmap; superseded header on
+- [x] README spec section, [`testing.md`](testing.md) rows, this roadmap; superseded header on
       [`claim-asa-redesign.md`](claim-asa-redesign.md) (kept as history).
 
 ### C5 — TestNet smoke (no code)

@@ -6,7 +6,7 @@
 > [`claim-tree-protocol-reference.py`](claim-tree-protocol-reference.py) — it is the oracle for the contract test suite. No code in this
 > document has been implemented; the repository is unchanged.
 >
-> Replaces, once implemented: the Claim ASA lifecycle in [`claim-asa-redesign.md`](claim-asa-redesign.md), the campaign contract internals
+> Replaces: the Claim ASA lifecycle in [`claim-asa-redesign.md`](claim-asa-redesign.md) (superseded history), the campaign contract internals
 > in [`campaign.md`](campaign.md), and the affected rows of [`testing.md`](testing.md).
 >
 > Amendment A1 (September 27, 2026) fixes the budget mechanism (§14) and the `credit` payment verification (§9) — see

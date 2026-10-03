@@ -82,100 +82,98 @@ class as it does not extend Contract or BaseContract".
   offset. `advanceTime(n)` sets the offset, produces any transaction (a self-payment
   "time bump"), then resets the offset in a `finally`.
 - Inner transactions need fee pooling via `extraFee: (1000).microAlgo()` per
-  inner txn: `fund`/`pledge` → 1000; `claim`/`refund`/`cancelPledge` (inner app
-  call + inner payment) → 2000; `delete` (settle + holding close + escrow
-  close) → 3000 with an asset, 1000 without.
-- `pledge(pay)void` mints claim units via an inner asset transfer and reads the
-  vault's app address, so the call carries `appReferences: [vaultId]` and
-  `assetReferences: [claimAsa]`. The payment goes to the **vault app account**,
-  never the escrow.
-- `claim()` / `refund(axfer)` / `cancelPledge(axfer)` / `delete()` inner-call
-  the vault, whose BoxMap reads/writes require the box names to be declared on
-  the outer transaction — pass `boxReferences` for the vault's campaign boxes
-  (`a`/`d` for payouts, `a`/`d`/`s` for settle, `a`/`d`/`o`/`s` for claims; the
-  AVM rejects undeclared box access with "invalid Box reference"). The vault's
-  own methods get their boxes auto-populated from the ARC-56 spec.
-- The setup chain is: `create(vault)` → `fund` → (register) →
-  `vault.issueClaimAsa` → `attachClaimAsa` (escrow self-opt-in) →
-  `vault.seedSupply`. The zero-amount opt-in trick only works self-signed
-  (sender == receiver), so the campaign opts itself in — the vault cannot opt
-  the escrow in for it (measured: "receiver error: must optin").
-- Backers must `assetOptIn` to the Claim ASA before pledging (the mint inner
-  txn fails otherwise and the whole group reverts).
-- Post-delete refunds call the vault directly: `refund(uint64,axfer)void` with
-  the campaign app id — the vault verifies it against its own `asaOf` mapping.
-- `closeOut` uses the `closeAssetTo` parameter on `createTransaction.assetTransfer`
-  (not `closeRemainderTo`, which is the payment field).
+  inner txn — and each OpUp iteration submits *two* inners (create + delete), so
+  `ensureBudget` calls cost double: pledge group (pay + pledge + credit with
+  first-touch factory check) → 4000; `cancelPledge`/`refund`/`vault.refund`
+  (1 OpUp iteration + payout call) → 4000; `claim` (inner app call + inner
+  payment) → 3000; `delete` (settle/notify + escrow close) → 3000;
+  `settleOpen` (no inners) → 1000; `finalize` → 2000 with residual, 1000
+  without. Amounts are never reduced by fees.
+- `pledge(pay,byte[])` reads the vault's app address from state, so the call
+  carries no app references; the payment goes to the **vault app account**,
+  never the escrow. The three transactions must form ONE group — and the SDK
+  composer does not dedupe, so pass the payment either explicitly
+  (`addTransaction`) or by method-arg reference, never both.
+- `cancelPledge` / `refund(k,amount,txid,path)` / `vault.refund` take the path
+  as one blob (`siblings ‖ top ‖ lower`); `delete()` needs the vault box
+  declared even for pristine campaigns (settle no-ops without one).
+- The vault's one 65-byte campaign box (`'c' + appId`) is declared on every
+  outer transaction that triggers inner vault calls; first-touch `credit`
+  additionally declares the Factory app plus its registration box
+  (`'r' + appId`) for the inner `isRegistered` call. Inner calls to *oneself*
+  are forbidden by consensus — budget headroom comes from `ensureBudget`, never
+  self-calls. The vault's own methods get their boxes auto-populated from the
+  ARC-56 spec.
+- The setup chain is: `create(vault, …)` → `register`. There is no funding
+  step — the v2 escrow never holds funds.
+- Post-settlement refunds call the vault directly:
+  `refund(uint64,uint64,uint64,byte[],byte[])void` with the campaign app id —
+  the vault verifies the path against its own stored root.
+- `delete()` uses the dedicated `send.delete` path (or a manual composer group
+  with `DeleteApplicationOC`); `send.call` with an `onComplete` override
+  mis-encodes the call.
+- Raw inner `appArgs` must ABI-encode dynamic types: the settle `root`
+  (`byte[]`) carries its uint16 length prefix — static `uint64`/`address` args
+  go raw.
 - Do **not** pass `updatable`/`deletable` to `factory.send.create` — the contract TEAL
   has no deploy-time templates for them.
 
 ## Integration test inventory
 
-All LocalNet integration tests in the repo (run with `npm run test:integration`; 34
+All LocalNet integration tests in the repo (run with `npm run test:integration`; 16
 tests across 3 files). Each file deploys its own fixture chain to a live algod.
+Offline specs live next to each contract (`contract.algo.spec.ts`: 35 campaign +
+50 vault + 16 factory tests, all green with 100% line/branch/function coverage).
 
 **Full ledger accounting.** Every integration test asserts the complete money
 ledger, µA-exact, for every actor involved: balance and minimum-balance deltas
-per account (via `snapshot`/`delta` helpers), the fee totals of each operation
-(the `FEE_*` constants, measured on LocalNet), the vault pool movement, claim-unit
-ownership, the parked MBRs (147,100 µA per issued campaign on the vault, released
-as 156,400 µA — including the settled box — by `destroyClaimAsa`), the creator's
-sponsorship floor (449,500 µA while the app lives), and the backer's 0.1 ALGO
-opt-in. Rejected transactions are asserted to move **nothing** (atomic failure
-charges no fee).
+per account, the fee totals of each operation (measured on LocalNet — the
+pledge group costs 4000 µA, spends and vault refunds 4000 µA, claims 3000 µA),
+the vault pool movement, the parked box MBR (32,100 µA per campaign box on the
+vault, released by `notifyDelete`/`finalize`), and the creator's sponsorship
+floor (recovered at `delete()`). Rejected transactions are asserted to move
+**nothing** (atomic failure charges no fee).
 
-### `smart_contracts/campaign/contract.integration.test.ts` (29 tests)
+**Differential tree assertions.** Pledge/cancel/refund tests drive the Python
+reference oracle (`smart_contracts/oracle.py`, backed by
+`docs/claim-tree-protocol-reference.py`) with the REAL confirmed payment TxIDs
+and assert `root`/`n`/`raised` — plus the vault box's `paidIn`/`paidOut` — after
+every step. Forged frontiers, stale proofs, and double-spends are asserted to
+reject with state untouched.
 
-The full split-vault lifecycle plus the attack matrix, deployed against a real
+### `smart_contracts/campaign/contract.integration.test.ts` (8 tests)
+
+The full claim-tree lifecycle plus the attack matrix, deployed against a real
 Factory + ClaimsVault + Campaign.
 
 | # | Test | Verifies |
 | --- | --- | --- |
-| 1 | setup: the vault issues the Claim ASA and seeds the escrow; creator capital is the escrow constant | ASA config (creator/manager/clawback/reserve = vault, total 2⁶⁴−1, 0 decimals); the escrow holds the whole supply and exactly the 0.2 ALGO deposit; the vault parks its created-asset MBR |
-| 2 | pledge: pays the vault (escrow untouched), mints claim units, accumulates | Payments land in the vault (escrow balance unchanged); the mint equals the payment; repeated pledges accumulate on the backer |
-| 3 | pledge guards: no claim asset, wrong receiver, creator self-pledge | `claim asset not issued yet`; a payment to the escrow instead of the vault is rejected; the creator cannot self-pledge |
-| 4 | attachClaimAsa rejects a counterfeit asset (wrong creator) | Provenance verification: a decoy ASA created by a random account cannot be attached (fake-vault campaigns are inert) |
-| 5 | cancelPledge: the vault pays, raised decrements, units are consumed once | Pre-deadline withdrawal pays from the vault, decrements `raised`, consumes the units; a second cancel of the same units fails |
-| 6 | **FLAGSHIP** — failed campaign with a straggler: creator deletes in O(1), the straggler refunds from the vault afterwards | The failed settlement is recorded inside `delete()`; the creator recovers deposit + sponsorship floor in one call; the never-acting backer then refunds **directly from the vault after the campaign is deleted**; after the last refund the vault destroys the ASA and frees its parked MBR |
-| 7 | vault refund guards: unsettled campaign, wrong asset, zero amount, close-out forbidden | The vault refuses refunds before settlement; a decoy asset fails the surrender (receiver must opt in); zero-amount surrenders are rejected |
-| 8 | claim guards: below goal, non-creator | `goal not reached`; `only the creator can claim` |
-| 9 | cross-campaign isolation: units of one campaign can never redeem on another | Campaign A's units resolve to A's settlement (rejected when A is open); B's units refund only B's pledge — A's balance untouched |
-| 10 | insolvency attack: payouts never exceed contributions across two campaigns | Both campaigns refund in full after deletion; the vault's balance drops by exactly the two pledges — no cross-campaign drain |
-| 11 | funded flow: vault pays the claim from unit conservation; closeOut, sweep, destroy, full cleanup | The vault pays the derived amount (total − holdings); double claim and refunds rejected; O(1) delete recovers deposit + floor; `sweepClaimAsa` claws worthless units; `destroyClaimAsa` is refused while units are outstanding, then frees exactly 156,400 µA of vault MBR |
-| 12 | vault payout methods reject non-campaign callers (no hijacking) | Direct `payBack`/`payClaim`/`settle` calls by strangers fail with `not the campaign app` — the payout authority is unusable off the campaign path |
-| 13 | stray ALGO sent to the vault cannot be extracted by anyone | A random deposit inflates the pool but no payout path references it |
-| 14 | an abandoned campaign (created, funded, never issued) can be deleted by its creator | The no-asset delete path frees the sponsorship floor with no residual |
-| 15 | the clawback authority is inert on open and failed campaigns — live claims are untouchable | `sweepClaimAsa` is refused while Open, while failed-in-fact, and after a FAILED settlement with live claims; `destroyClaimAsa` is refused while claims are outstanding; the backer's claim then refunds normally — the vault's clawback authority cannot steal refundable claims |
-| 16 | claim payout derives correctly with cancelled pledges mixed in | With a pledge→partial-cancel history, the vault pays exactly the remaining outstanding value (`total − holdings`) and the vault balance drops by exactly that amount |
-| 17 | closeOut on-chain: a claimed campaign backer closes their holding and frees their opt-in MBR | The cooperative close-out returns the units to the vault, frees the backer's 0.1 ALGO opt-in, and lets the GC destroy complete |
-| 18 | delete on an open campaign with everything cancelled: no settlement needed | An Open campaign with `raised == 0` (asset attached) deletes without settling the vault; deposit + floor recovered; no settlement box written |
-| 19 | refund rejects a surrender with close-remainder, on both paths | The campaign and the vault both refuse surrenders carrying `closeAssetTo` (exact payouts only); a mismatched campaign id is refused via the vault's own `asaOf` mapping |
-| 20 | fund guards on-chain: non-creator and below-minimum deposits are rejected | `only the creator can fund`; a second fund after the Claim ASA is attached is refused |
-| 21 | A: N backers — the creator deletes once, then every backer refunds independently from the vault | Three backers, one O(1) creator delete (the single "cancel"), then each backer refunds their own full pledge straight from the vault, in any order, with zero dependency on each other; the pool drains by exactly the three pledges |
-| 22 | B: two campaigns live simultaneously — one claimed and drained, the other still refunds in full | A funded twin claims (draining the pool) while a failing twin's backer later refunds in full; the pool drops by exactly the claim + the refund — neither settlement touches the other's funds |
-| 23 | C: claim and refund interleaved in arbitrary order across the pool | claim A → refund B1 (campaign path) → double-claim rejected → double-refund rejected → settle B → refund B2 (vault path) → delete A; the pool drops by exactly the three payouts; every rejected attempt moves nothing |
-| 24 | D: the derived claim amount (T − U_i − H_i) always equals raised | Evaluates `total − vault holding − escrow holding` from live on-chain holdings after a pledge→cancel history and asserts it equals `raised` and exactly the payout |
-| 25 | unregistered campaign cannot issue a Claim ASA — and leaves no residual state on the vault | The on-chain Factory-registration gate: an unregistered (but otherwise valid) campaign's `issueClaimAsa` fails with `campaign not registered`, and the vault's balance, MBR, and boxes are all untouched |
-| 26 | a registered campaign with the wrong caller cannot issue — the recording must match the creator | A stranger cannot issue for a properly registered campaign; no residual vault state |
-| 27 | a second issuance attempt fails and leaves no residual state | Double-issue is rejected; the mapping and the vault MBR are unchanged |
-| 28 | issue → abandon lifecycle: the vault MBR is fully recoverable in O(1) via the orphan destroy | create → fund → register → issue → (no attach, no seed) → creator deletes → `destroyClaimAsa`'s orphan rule (issued but never attached) releases the full parked MBR in O(1) — the anti-grief proof |
-| 29 | FIX2-B: a partial refund pays exactly the surrendered amount, not the full pledge | Pledge 2 ALGO, surrender 1: the vault pays exactly 1 ALGO (derived from the ledger), the remaining claim stays intact, `raised` drops by exactly the surrender |
+| 1 | embedded vault selectors match the vault ARC-56 | The four inner-call selectors recomputed from the ARC-56 appear in the campaign TEAL |
+| 2 | pledge → cancel → refund lifecycle, differentially verified | Four pledges (one re-pledge) with per-step root/n/raised + `paidIn`; forged-frontier rejection; pre-deadline cancel; non-sequential post-deadline refunds to zero; double-refund rejection |
+| 3 | unregistered campaigns cannot touch the vault | First-touch `credit` fails with `campaign not registered`; no box is created |
+| 4 | inner-only vault methods reject top-level callers | Direct `payBack`/`payClaim`/`settle`/`notifyDelete` fail with `not the campaign app` — the payout authority is unusable off the campaign path |
+| 5 | successful claim pays the creator exactly, then deletes O(1) | Goal reached → creator paid the full live total; box `Claimed`; `notifyDelete` releases the box; unregister returns the deposit |
+| 6 | failed campaign settles on delete; vault refunds after deletion; finalize sweeps the residual | `settle` writes root/N/`Failed`; permissionless `vault.refund` pays post-delete; early `finalize` rejected; post-window residual goes to the sweep target and the box is gone |
+| 7 | pristine and all-cancelled campaigns delete cleanly | No-box delete settles as a no-op; fully-cancelled delete settles to `Failed` with nothing owed |
+| 8 | settleOpen lets a stranger settle a vanished-creator campaign | Permissionless settle from live globals; the campaign path then rejects (box not open) and the vault path serves refunds |
 
-### `smart_contracts/claimsvault/contract.integration.test.ts` (2 tests)
+### `smart_contracts/claimsvault/contract.integration.test.ts` (4 tests)
 
 | # | Test | Verifies |
 | --- | --- | --- |
-| 30 | issueClaimAsa guards: non-creator, non-official program, double issue; seedSupply is one-shot | Only the campaign creator can issue; a program that does not hash to the Factory's official hash is refused; a second issue is rejected; the supply can be seeded exactly once (second seed → `supply already seeded`) |
-| 31 | a clawback axfer cannot close a holder position — the protocol rejects the close-out and the opt-in MBR stays parked | A probe app (clawback = the app account) issues an ASA and a backer opts in (100,000 µA MBR); the clawback axfer with `AssetSender` = backer and `AssetCloseTo` = the app is rejected by the protocol (`cannot close asset by clawback`, go-algorand `ledger/apply/asset.go`); the units and the 100k stay with the backer, and only the backer's own close-out frees the MBR |
+| 9 | first touch creates the box with exact MBR accounting | Box fields on first pledge; pool total rises by exactly the pledge; minimum balance parks exactly 32,100 µA |
+| 10 | two campaigns share the pool with per-campaign isolation | Draining campaign A leaves B's box (root, `paidOut` 0) untouched; the pool holds exactly B's live pledge |
+| 11 | settleOpen + vault refunds + zero-residual finalize | Stranger settlement; direct refund + double-refund rejection; `finalize` with nothing left deletes the box with no payment and frees the MBR |
+| 12 | direct credit without a pledge strands only the deviator funds (spec §17 #29) | `paidIn` counts the real inflow but no leaf exists; pristine delete settles the stray box; post-window `finalize` sweeps the stray inflow and deletes the box — nobody else affected |
 
 ### `smart_contracts/factory/contract.integration.test.ts` (4 tests)
 
 | # | Test | Verifies |
 | --- | --- | --- |
-| 32 | register/isRegistered/unregister round trip with a real Campaign | Registration against the real deployed program hash; the deposit lands on the Factory and returns on unregister; `isRegistered` reflects the state |
-| 33 | an impostor copy of the Campaign contract cannot register | The program-hash check rejects a non-official program |
-| 34 | a non-creator cannot register someone else's campaign, and registration is refused before the hash is configured | Creator gating; unconfigured-hash refusal |
-| 35 | only the owner can set the official hash, and only the registered creator can unregister | Factory ownership and deposit protection |
+| 13 | register/isRegistered/unregister round trip with a real Campaign | Registration against the real deployed program hash; the deposit lands on the Factory and returns on unregister; `isRegistered` reflects the state |
+| 14 | an impostor copy of the Campaign contract cannot register | The program-hash check rejects a non-official program |
+| 15 | a non-creator cannot register someone else's campaign, and registration is refused before the hash is configured | Creator gating; unconfigured-hash refusal |
+| 16 | only the owner can set the official hash, and only the registered creator can unregister | Factory ownership and deposit protection |
 
 ## API cheat sheet (learned the hard way)
 
@@ -185,9 +183,10 @@ Factory + ClaimsVault + Campaign.
 - `ctx.contract.create(Campaign)` returns a proxied instance.
 - `Campaign extends Contract` (ARC4), so `@abimethod` methods auto-assemble an app-call
   transaction group when called directly:
-  - `contract.create(goal, deadline)` works — the `onCreate: 'require'` guard is
+  - `contract.create(vault, title, uri, goal, deadline)` works — the `onCreate: 'require'` guard is
     enforced via the runtime's `isCreating` flag, not a real app-id check.
-  - `contract.pledge(payment)` takes a `ctx.any.txn.payment({ sender, receiver, amount })`.
+  - `contract.pledge(payment, frontier)` takes a `ctx.any.txn.payment({ sender, receiver, amount })`
+    (its `txnId` is readable for oracle-differential assertions); the frontier is plain bytes.
 - `Txn.sender` defaults to `ctx.defaultSender`. To act as a different account, wrap the
   call:
 
@@ -203,24 +202,28 @@ Factory + ClaimsVault + Campaign.
   is `deadline > latestTimestamp` (strict), so pin the creation time and use a larger
   deadline.
 - App escrow address: `ctx.ledger.getApplicationForContract(contract).address`.
-- Escrow balance is not moved by payment txns in the offline runtime; set it with
-  `ctx.ledger.patchAccountData(appAddress, { account: { balance: N } })`
-  (`balance` is nested under `account`). Default min balance is `100_000`, so
-  `escrowBalance() = balance - 100_000`.
-- Asset effects are **not** applied offline: the inner `assetConfig`/`assetTransfer`
-  txns execute but don't move balances, so mint/surrender/double-spend behavior is
-  proven on LocalNet instead. Capture the issued Claim ASA for gtxn assertions with
-  `ctx.txn.lastGroup.lastItxnGroup().getAssetConfigInnerTxn().createdAsset`.
-- Inner payments (from `claim`/`refund`/`cancelPledge`/`delete`): assert via
-  `ctx.txn.lastGroup.lastItxnGroup().getPaymentInnerTxn()`.
-- ABI asset-transfer arguments come from `ctx.any.txn.assetTransfer({ sender, xferAsset,
-  assetReceiver, assetAmount, assetCloseTo })`, created inside the `createScope` block.
+- Inner app calls to stub apps succeed as no-ops, but their logs are NOT emulated:
+  gate the call on `lastLog` only on LocalNet, and `v8 ignore` the gate offline
+  (see `checkRegistration`).
+- Inner-call targets must be `Application`-typed state (not bare `uint64` ids) —
+  the offline emulator only resolves those.
+- Inner payments (from `claim`/`refund`/`cancelPledge`/`delete`/`finalize`): assert via
+  `ctx.txn.lastGroup.lastItxnGroup().getPaymentInnerTxn()`; inner app calls via
+  `getApplicationCallInnerTxn()` (its `appArgs(0)` carries the method selector —
+  assert it to keep the embedded selectors in sync).
+- `ensureBudget` OpUp loops run offline (each iteration submits two inners); size
+  `extraFee` accordingly on LocalNet (measured table in
+  [`campaign.md`](campaign.md)).
 - Failure assertions: `assert` throws `AssertError` with the message, so
   `expect(() => ...).toThrowError('...')` works verbatim.
 - `vitest.config.mts` must override `compilerOptions.module: 'esnext'` (the contract
   tsconfig is CommonJS); otherwise the transformer-injected `runtime-helpers` import
   fails against the package's ESM-only exports map.
 - `package.json` test script uses `--no-color` to keep AlgoKit's command output clean.
+- PuyaTs arithmetic: `+ - *` and comparisons are overloaded for `uint64`, but
+  `/ % >> << ^ & |` fall back to JS `number` semantics — use `op.shr`/`op.shl`
+  and annotate every derived numeric local, or compilation fails with
+  "`number` is not valid".
 
 ## Milestones (done)
 
@@ -245,7 +248,8 @@ Factory + ClaimsVault + Campaign.
       the per-campaign Claim ASA (`fund` issues it, `pledge` mints, refunds
       surrender), added `closeOut`, the Factory registry contract, and full
       offline + LocalNet coverage of the new lifecycle, MBR accounting, and the
-      double-refund invariants.
+      double-refund invariants. (Superseded by M9 below; kept as history —
+      see [`claim-asa-redesign.md`](claim-asa-redesign.md).)
 - [x] **M8 — Split vault.** Moved the backers' funds into a permanent
       ClaimsVault (pooled refund escrow + Claim ASA issuer); the campaign escrow
       now holds only the creator's deposit, so both settlement paths finalize in
@@ -254,33 +258,42 @@ Factory + ClaimsVault + Campaign.
       cross-campaign isolation, pooled solvency, settlement-after-deletion,
       counterfeit assets, double claims, pledge→cancel→refund, payout-authority
       hijacking, stray-ALGO, and the GC round trip (sweep + destroy frees the
-      vault's parked MBR).
+      vault's parked MBR). (Superseded by M9 below; kept as history.)
+- [x] **M9 — Claim-tree rewrite.** Replaced the Claim ASA with the incremental
+      frontier-Merkle tree (`docs/claim-tree-protocol.md`): no assets, no
+      opt-ins, no per-backer storage anywhere. Rewrote both contracts
+      (`credit`/`payBack`/`payClaim`/`settle`/`settleOpen`/`refund`/
+      `notifyDelete`/`finalize`; `pledge`/`cancelPledge`/`refund`/`claim`/
+      `delete` + the tree core), the offline specs (35 campaign + 50 vault + 16
+      factory, 100% lines/branches/functions), and the integration suites (8 +
+      4 + 4 tests with oracle-differential roots and µA-exact accounting,
+      including pooled isolation, window enforcement, and self-harm
+      containment). Frontend proof builder (`lib/claimtree.ts`) proven against
+      committed oracle vectors; flows rewritten (atomic pledge groups, per-leaf
+      spends, stale-proof retry, refund-window banner).
 
 ## Coverage matrix (every method × every branch)
 
 | Method | Branch | Covered? |
 | --- | --- | --- |
-| `create` | success / empty title / `goal == 0` / past deadline | ✅ |
-| `fund` | success / non-creator / below MBR / already attached | ✅ |
-| `attachClaimAsa` | success / wrong creator / wrong manager / wrong clawback / wrong supply / wrong decimals / double attach | ✅ |
-| `pledge` | success / re-pledge / before attach / wrong receiver (escrow) / creator self-pledge / zero / after deadline | ✅ |
-| `claim` | success (vault inner call) / non-creator / before deadline / `raised < goal` / double claim | ✅ |
-| `refund` | success / partial / before deadline / `raised >= goal` / claimed / close-remainder / wrong receiver / double refund (LocalNet) / non-holder (LocalNet) | ✅ |
-| `cancelPledge` | success / after deadline / settled / close-remainder / double cancel (LocalNet) | ✅ |
-| `closeOut` | success / not claimed / without close-remainder / wrong receiver | ✅ |
-| `delete` | failed-in-fact materialization + vault settle / claimed / never-funded / non-creator / live pledges | ✅ |
-| `ClaimsVault.create` | success | ✅ |
-| `issueClaimAsa` | success / hash not configured / impostor program / non-creator / double issue | ✅ |
-| `seedSupply` | success (LocalNet) / double seed / unknown campaign | ✅ |
-| `payBack` | success / non-campaign caller / unknown campaign | ✅ |
-| `payClaim` | success (derived amount) / double claim / non-campaign caller | ✅ |
-| `settle` | success / double settle / non-campaign caller | ✅ |
-| `vault.refund` | success (post-delete — LocalNet) / mismatched campaign id / unsettled / zero amount / wrong receiver / counterfeit asset | ✅ |
-| `sweepClaimAsa` | success (LocalNet) / not claimed | ✅ |
-| `destroyClaimAsa` | success (LocalNet, frees 156,400 µA) / not settled / units outstanding | ✅ |
+| `create` | success / empty title / overlong title+uri / `goal == 0` / past deadline | ✅ |
+| `pledge` | success incl. re-pledge / closed / not open / wrong receiver / wrong sender / zero / creator self-pledge / bad frontier length / forged + stale frontier | ✅ |
+| `claim` | success with inner `payClaim` (LocalNet) / non-creator / before deadline / `raised < goal` / double claim | ✅ |
+| `refund` | success / before deadline / `raised >= goal` / claimed / bad txid / unknown position / bad path / proof mismatch / double refund (LocalNet) | ✅ |
+| `cancelPledge` | success / after deadline / not open / zero amount / bad txid / unknown position / bad path / double cancel (LocalNet) | ✅ |
+| `delete` | failed-in-fact materialization + vault settle / claimed + notifyDelete / pristine (settle no-op) / all-cancelled settle / non-creator / live pledges | ✅ |
+| `ClaimsVault.create` | success / zero window | ✅ |
+| `credit` | existing-box inflow / zero amount / unregistered first touch / closed box / no matching payment | ✅ (+ first-touch happy path on LocalNet) |
+| `payBack` | success / non-campaign caller / unknown campaign / closed box / zero / insufficient | ✅ |
+| `payClaim` | success (derived amount) / non-campaign caller / unknown / closed box / empty payout | ✅ |
+| `settle` | success / already failed (no-op) / missing box (no-op) / claimed / non-campaign caller / bad root | ✅ |
+| `settleOpen` | success from live globals / unknown / closed box / claimed campaign / early deadline / reached goal | ✅ |
+| `vault.refund` | success differentially (LocalNet) / unknown / not failed / window closed / unknown position / bad txid+path / proof mismatch / insufficient | ✅ |
+| `notifyDelete` | success / non-campaign caller / unknown / not claimed / unbalanced | ✅ |
+| `finalize` | residual sweep + box delete / zero-residual delete / unknown / not failed / window open (all LocalNet) | ✅ |
 | `Factory.register` | success / unconfigured hash / non-creator / impostor / low deposit / wrong payer / wrong receiver / double registration | ✅ |
 | `Factory.unregister` | success (deposit back) / unregistered / non-creator | ✅ |
-| Attacks (LocalNet) | cross-campaign isolation / pooled insolvency / counterfeit attach / pledge→cancel→refund / payout hijacking / stray ALGO / straggler settlement-after-deletion | ✅ |
+| Attacks (LocalNet) | double-spend / stale + forged proofs / unregistered credit / top-level inner-only calls / settleOpen interplay / window enforcement / self-harm containment (§17 #29) / pooled isolation | ✅ |
 
 ## Browser E2E / acceptance tests
 
@@ -310,7 +323,7 @@ Browser E2E tests close this gap.
 - **Create** — fill the form, submit, assert the new campaign appears.
 - **Pledge** — enter an amount, submit, assert `raised` and "Your pledge" update.
 - **Cancel pledge** — assert the button appears only while `open` with a pledge,
-  and that clicking it returns the pledge (raised drops back, units are gone).
+  and that clicking it returns the pledge (raised drops back, the leaf is gone).
 - **Claim / refund** — after fast-forwarding the deadline, assert the creator /
   backer flows complete.
 
