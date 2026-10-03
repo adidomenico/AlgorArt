@@ -596,3 +596,20 @@ September 27, 2026. Two implementation-blocking defects in v1, found on review a
 No change to the tree math (§§2–6), the null proofs (§5 A–G), the accounting invariants (§11), the state machines (§12), or the verdict:
 still GO, now without known implementation blockers. Next gate: the LocalNet spike (`pledge → refund` with differential assertions
 against the reference oracle) before the full rewrite.
+
+## 21. C1 implementation notes
+
+September 28, 2026. Findings from implementing §§9/14 on LocalNet (contracts + 16 integration tests green):
+
+1. **Stray-box closure.** A `credit` without a `pledge` can create a box the campaign never sees (`N == 0`), and a pristine `delete`
+   would skip the vault — orphaning the box `Open` forever (no settle path: `settleOpen` needs the live app, `refund`/`finalize`
+   need `Failed`). Closed by two small changes: `settle` no-ops when no box exists, and `delete` settles unconditionally for
+   non-`Claimed` campaigns. Stray inflows now settle on pristine delete and sweep via `finalize`; the LocalNet suite proves the
+   full arc. No protocol change — this fills a gap the spec left around pristine delete.
+2. **Single-blob paths confirmed.** Refund/cancel paths carry `siblings ‖ top ‖ lower` as one `byte[]`, split at the on-chain-derived
+   `(r, c, e)` cut points — exactly as §14 framed it.
+3. **Raw inner `appArgs` must ABI-encode dynamic types.** Passing the settle `root` raw fails the callee's `byte[]` decode (which
+   expects the uint16 length prefix); the campaign prefixes it explicitly. Static types (`uint64`, `address`) go raw.
+4. **Fee model measured.** Each OpUp iteration submits two inners (create + delete), and inner *app calls* need pooling like payments:
+   spends and vault refunds cost 4,000 µA at test-tree sizes (app call + OpUp pair + payout call); `claim` costs 3,000 µA. The §14 table
+   in [`campaign.md`](campaign.md) carries the measured numbers.

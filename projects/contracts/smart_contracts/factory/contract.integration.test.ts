@@ -56,7 +56,10 @@ describe('Factory (localnet)', () => {
    * @param creatorAddr The campaign creator's address.
    */
   async function deployCampaign(creatorAddr: string): Promise<AppClient> {
-    const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600)
+    // Deadline from chain time (not wall time): other suites time-travel the shared LocalNet clock.
+    const status = await algorand.client.algod.status().do()
+    const block = await algorand.client.algod.block(status.lastRound).do()
+    const deadline = block.block.header.timestamp + 3600n
     const factory = new AppFactory({ appSpec: campaignSpec, algorand, defaultSender: creatorAddr })
     const { appClient } = await factory.send.create({
       method: 'create(uint64,byte[],byte[],uint64,uint64)void',

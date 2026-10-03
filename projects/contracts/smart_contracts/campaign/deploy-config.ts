@@ -5,7 +5,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 /**
- * Deploys a single `Campaign` application instance through the full setup chain (create → fund → issue → attach → seed).
+ * Deploys a single `Campaign` application instance and registers it (create → register).
+ *
+ * There is nothing to fund: the v2 escrow never holds funds (pledges go straight to the vault). Registration with the
+ * Factory is required before the first pledge (the vault's first-touch `credit` verifies it on-chain).
  *
  * This is an example deployer: a real dApp creates campaigns from the frontend, so this script is primarily a LocalNet sanity check that
  * the compiled TEAL deploys and runs. Requires the Factory (`FACTORY_APP_ID`) and the ClaimsVault (`VAULT_APP_ID`) to be deployed first.
@@ -43,32 +46,10 @@ export async function deploy() {
     appReferences: [BigInt(vaultId)],
   })
 
-  const appClient = factory.getAppClientById({ appId: result.appId })
-
-  // Fund the storage deposit: 0.2 ALGO covers the escrow's fixed minimum balance (base + the Claim ASA opt-in).
-  const payment = await algorand.createTransaction.payment({
-    sender: deployer.addr,
-    receiver: result.appAddress,
-    amount: microAlgos(200_000n),
-  })
-  await appClient.send.call({
-    method: 'fund(pay)void',
-    args: [payment],
-    sender: deployer.addr,
-    extraFee: microAlgos(1000),
-  })
-
-  // The vault issues the Claim ASA (program hash + Factory registration verified on-chain); the campaign attaches it (self-opt-in +
-  // attach notification); the vault seeds the supply.
-  const vaultSpec = JSON.parse(
-    fs.readFileSync(path.resolve(__dirname, '../artifacts/claimsvault/ClaimsVault.arc56.json'), 'utf8'),
-  ) as Arc56Contract
-  const vaultClient = new AppFactory({ appSpec: vaultSpec, algorand, defaultSender: deployer.addr }).getAppClientById({
-    appId: BigInt(vaultId),
-  })
+  // Register with the Factory so the browse page lists the campaign (first-touch credit requires it on-chain).
   const factoryId = process.env.FACTORY_APP_ID
   if (factoryId === undefined || factoryId === '') {
-    throw new Error('FACTORY_APP_ID is not set — register() and issueClaimAsa() need it.')
+    throw new Error('FACTORY_APP_ID is not set — register() needs it.')
   }
   const factorySpec = JSON.parse(
     fs.readFileSync(path.resolve(__dirname, '../artifacts/factory/Factory.arc56.json'), 'utf8'),
@@ -76,7 +57,6 @@ export async function deploy() {
   const factoryClient = new AppFactory({ appSpec: factorySpec, algorand, defaultSender: deployer.addr }).getAppClientById({
     appId: BigInt(factoryId),
   })
-  // Register with the Factory first (issueClaimAsa requires it on-chain).
   const registerPayment = await algorand.createTransaction.payment({
     sender: deployer.addr,
     receiver: factoryClient.appAddress,
@@ -87,38 +67,6 @@ export async function deploy() {
     args: [result.appId, registerPayment],
     sender: deployer.addr,
     appReferences: [result.appId],
-  })
-  const appIdBytes = Buffer.alloc(8)
-  appIdBytes.writeBigUInt64BE(result.appId)
-  const registrationBox = [{ appId: BigInt(factoryId), name: Buffer.concat([Buffer.from('r'), appIdBytes]) }]
-  await vaultClient.send.call({
-    method: 'issueClaimAsa(uint64)void',
-    args: [result.appId],
-    sender: deployer.addr,
-    appReferences: [result.appId, BigInt(factoryId)],
-    boxReferences: registrationBox,
-    extraFee: microAlgos(2000),
-  })
-  const claimAsa = (await vaultClient.state.box.getMapValue('asaOf', result.appId)) as bigint
-  await appClient.send.call({
-    method: 'attachClaimAsa(uint64)void',
-    args: [claimAsa],
-    sender: deployer.addr,
-    appReferences: [BigInt(vaultId)],
-    assetReferences: [claimAsa],
-    boxReferences: ['a', 'd', 't'].map((prefix) => ({
-      appId: BigInt(vaultId),
-      name: Buffer.concat([Buffer.from(prefix), appIdBytes]),
-    })),
-    extraFee: microAlgos(2000),
-  })
-  await vaultClient.send.call({
-    method: 'seedSupply(uint64)void',
-    args: [result.appId],
-    sender: deployer.addr,
-    appReferences: [result.appId],
-    assetReferences: [claimAsa],
-    extraFee: microAlgos(1000),
   })
 
   console.log(`Deployed Campaign app ${result.appId.toString()} at ${result.appAddress.toString()}`)

@@ -2,120 +2,71 @@ import type { AlgorandClient } from '@algorandfoundation/algokit-utils'
 import { microAlgos } from '@algorandfoundation/algokit-utils'
 import { algorandFixture } from '@algorandfoundation/algokit-utils/testing'
 import type { Arc56Contract } from '@algorandfoundation/algokit-utils/types/app-arc56'
-import { AppClient } from '@algorandfoundation/algokit-utils/types/app-client'
+import type { AppClient } from '@algorandfoundation/algokit-utils/types/app-client'
 import { AppFactory } from '@algorandfoundation/algokit-utils/types/app-factory'
+import { ABIMethod, decodeAddress } from 'algosdk'
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { beforeAll, describe, expect, test } from 'vitest'
 
 /**
- * LocalNet integration tests for the ClaimsVault's issuance path and payout-authority gating: the guards on `issueClaimAsa`,
- * `seedSupply`, and the caller-verification of `payBack`/`payClaim`/`settle` against the real chain — plus the protocol rule
- * that bounds the vault's clawback authority (a clawback axfer can never close a holder's position).
+ * LocalNet integration tests for the ClaimsVault pooling and settlement paths: two campaigns sharing one pool prove
+ * per-campaign isolation, and the permissionless entries (`settleOpen`, vault `refund`, `finalize`) plus the
+ * direct-credit self-harm containment run against minimal campaign fixtures. The full lifecycles live in
+ * `../campaign/contract.integration.test.ts`; every assertion here is µA-exact.
  *
- * Requires `algokit localnet start` and a build (`npm run build`).
+ * Requires `algokit localnet start` and a build (`npm run build`) so the ARC-56 artifacts exist.
  */
+
+const ALGO = 1_000_000n
+const FEE = 1_000n
+const GOAL = 10n * ALGO
+const WINDOW = 3_600n
+const REGISTER_MBR = 18_900n
+const BOX_MBR = 32_100n
+const Z_HEX = '00'.repeat(32)
+
+const FEE_CREDIT_FIRST = 2n * FEE // base + inner factory check pool
+const FEE_VAULT_REFUND = 4n * FEE // app call + 1 OpUp iteration (create+delete) + inner payment
+const FEE_FINALIZE_PAID = 2n * FEE // app call + inner residual-payment pool
+const FEE_FINALIZE_BARE = FEE // app call only
 
 const CAMPAIGN_SPEC_PATH = path.resolve(__dirname, '../artifacts/campaign/Campaign.arc56.json')
 const FACTORY_SPEC_PATH = path.resolve(__dirname, '../artifacts/factory/Factory.arc56.json')
 const VAULT_SPEC_PATH = path.resolve(__dirname, '../artifacts/claimsvault/ClaimsVault.arc56.json')
+const ORACLE = path.resolve(__dirname, '../oracle.py')
 
-/**
- * A bare probe app that creates an ASA with itself (the app account) as the clawback address and can attempt a clawback
- * close-out: an inner asset transfer with `AssetSender` = the holder and `AssetCloseTo` = the app. Its methods, dispatched
- * on the first application argument:
- *
- * - `make` — create the ASA (clawback = the app account) and record its id in global state.
- * - `give` — transfer `btoi(args[2])` units to `args[1]`.
- * - `claw` — claw `btoi(args[2])` units from `args[1]` (AssetSender) with AssetCloseTo = the app account.
- */
-const CLAW_PROBE_TEAL = `
-#pragma version 11
+interface OracleState {
+  n: number
+  root: string
+  raised: number
+}
 
-txn ApplicationID
-bz create
+interface OraclePath {
+  siblings: string[]
+  top: string | null
+  lower: string[]
+}
 
-txna ApplicationArgs 0
-byte "make"
-==
-bnz make
+/** One reference-oracle tree (own state file, so parallel campaigns stay independent). */
+class Tree {
+  file: string
 
-txna ApplicationArgs 0
-byte "give"
-==
-bnz give
+  constructor() {
+    this.file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'claimvault-it-')), 'state.json')
+    this.cmd('init')
+  }
 
-txna ApplicationArgs 0
-byte "claw"
-==
-bnz claw
+  cmd(cmd: string, ...args: string[]): unknown {
+    const out = execFileSync('python3', [ORACLE, this.file, cmd, ...args], { encoding: 'utf8' })
+    return JSON.parse(out) as unknown
+  }
+}
 
-err
-
-make:
-itxn_begin
-int acfg
-itxn_field TypeEnum
-int 1000000
-itxn_field ConfigAssetTotal
-int 0
-itxn_field ConfigAssetDecimals
-global CurrentApplicationAddress
-itxn_field ConfigAssetClawback
-byte "CLAW"
-itxn_field ConfigAssetUnitName
-byte "Clawback probe"
-itxn_field ConfigAssetName
-itxn_submit
-byte "aid"
-itxn CreatedAssetID
-app_global_put
-int 1
-return
-
-give:
-itxn_begin
-int axfer
-itxn_field TypeEnum
-byte "aid"
-app_global_get
-itxn_field XferAsset
-txna ApplicationArgs 2
-btoi
-itxn_field AssetAmount
-txna ApplicationArgs 1
-itxn_field AssetReceiver
-itxn_submit
-int 1
-return
-
-claw:
-itxn_begin
-int axfer
-itxn_field TypeEnum
-byte "aid"
-app_global_get
-itxn_field XferAsset
-txna ApplicationArgs 2
-btoi
-itxn_field AssetAmount
-global CurrentApplicationAddress
-itxn_field AssetReceiver
-txna ApplicationArgs 1
-itxn_field AssetSender
-global CurrentApplicationAddress
-itxn_field AssetCloseTo
-itxn_submit
-int 1
-return
-
-create:
-int 1
-return
-`
-
-describe('ClaimsVault (localnet)', () => {
+describe('ClaimsVault pooling + settlement (localnet)', () => {
   const fixture = algorandFixture()
   let algorand: AlgorandClient
   let campaignSpec: Arc56Contract
@@ -124,28 +75,8 @@ describe('ClaimsVault (localnet)', () => {
   let factoryId: bigint
   let vaultId: bigint
   let vaultAddress: string
-
-  // Vault MBR parked per issued campaign: 100,000 (created asset) + 47,100 (asaOf + addressOf + creatorOf boxes).
-  const VAULT_PARKED_AT_ISSUE = 147_100n
-
-  async function accountInfo(address: string) {
-    const info = await algorand.account.getInformation(address)
-    return { balance: info.balance.microAlgo, minBalance: info.minBalance.microAlgo }
-  }
-
-  function uint64Arg(value: bigint): Uint8Array {
-    const bytes = new Uint8Array(8)
-    new DataView(bytes.buffer).setBigUint64(0, value)
-    return bytes
-  }
-
-  async function assetBalanceOf(address: string, assetId: bigint): Promise<bigint> {
-    try {
-      return (await algorand.asset.getAccountInformation(address, assetId)).balance
-    } catch {
-      return 0n
-    }
-  }
+  let vaultClient: AppClient
+  let sweeperAddr: string
 
   beforeAll(async () => {
     await fixture.newScope()
@@ -155,32 +86,35 @@ describe('ClaimsVault (localnet)', () => {
     vaultSpec = JSON.parse(fs.readFileSync(VAULT_SPEC_PATH, 'utf8')) as Arc56Contract
 
     const owner = await fixture.context.generateAccount({ initialFunds: (50).algo(), suppressLog: true })
+    const sweeper = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+    sweeperAddr = sweeper.addr.toString()
+
     const factoryFactory = new AppFactory({ appSpec: factorySpec, algorand, defaultSender: owner.addr })
     const factoryClient = (await factoryFactory.send.create({ method: 'create()void', args: [], sender: owner.addr, suppressLog: true }))
       .appClient
     factoryId = factoryClient.appId
-    // Platform funding: the Factory app account holds the registration deposits and pays the registration box MBR.
     await algorand.send.payment({
       sender: owner.addr,
       receiver: factoryClient.appAddress,
-      amount: microAlgos(1_000_000n),
+      amount: microAlgos(ALGO),
       suppressLog: true,
     })
 
     const campaignTeal = fs.readFileSync(path.resolve(__dirname, '../artifacts/campaign/Campaign.approval.teal'), 'utf8')
     const compiled = await algorand.app.compileTeal(campaignTeal)
+    const approvalHash = createHash('sha256').update(compiled.compiledBase64ToBytes).digest()
     await factoryClient.send.call({
       method: 'setApprovalHash(byte[])void',
-      args: [createHash('sha256').update(compiled.compiledBase64ToBytes).digest()],
+      args: [approvalHash],
       sender: owner.addr,
       suppressLog: true,
     })
 
     const vaultFactory = new AppFactory({ appSpec: vaultSpec, algorand, defaultSender: owner.addr })
-    const vaultClient = (
+    vaultClient = (
       await vaultFactory.send.create({
-        method: 'create(uint64)void',
-        args: [factoryId],
+        method: 'create(uint64,address,uint64)void',
+        args: [factoryId, sweeper.addr, WINDOW],
         sender: owner.addr,
         appReferences: [factoryId],
         suppressLog: true,
@@ -191,250 +125,374 @@ describe('ClaimsVault (localnet)', () => {
     await algorand.send.payment({
       sender: owner.addr,
       receiver: vaultClient.appAddress,
-      amount: microAlgos(1_000_000n),
+      amount: microAlgos(ALGO),
       suppressLog: true,
     })
   })
 
-  function vaultClientFor(sender: string): AppClient {
-    return new AppClient({ algorand, appSpec: vaultSpec, appId: vaultId, defaultSender: sender })
+  function addrHex(addr: string): string {
+    return Buffer.from(decodeAddress(addr).publicKey).toString('hex')
   }
 
-  function factoryClientFor(sender: string): AppClient {
-    return new AppClient({ algorand, appSpec: factorySpec, appId: factoryId, defaultSender: sender })
+  function concatHex(hexes: string[]): Uint8Array {
+    return new Uint8Array(Buffer.concat(hexes.map((h) => Buffer.from(h, 'hex'))))
   }
 
-  /**
-   * Register the campaign with the Factory (required by `issueClaimAsa`) and return the registration box reference.
-   *
-   * @param creatorAddr The campaign creator's address.
-   * @param campaignId The campaign app id.
-   */
-  async function registerAs(creatorAddr: string, campaignId: bigint) {
-    const factoryClient = factoryClientFor(creatorAddr)
-    const payment = await algorand.createTransaction.payment({
+  function base32ToBytes(input: string): Uint8Array {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+    let bits = 0
+    let value = 0
+    const out: number[] = []
+    for (const char of input) {
+      value = (value << 5) | alphabet.indexOf(char)
+      bits += 5
+      if (bits >= 8) {
+        out.push((value >>> (bits - 8)) & 255)
+        bits -= 8
+        value &= (1 << bits) - 1
+      }
+    }
+    return new Uint8Array(out)
+  }
+
+  function appIdBytes(appId: bigint): Buffer {
+    const buf = Buffer.alloc(8)
+    buf.writeBigUInt64BE(appId)
+    return buf
+  }
+
+  function vaultBoxRef(appId: bigint): { appId: bigint; name: Uint8Array } {
+    return { appId: vaultId, name: new Uint8Array(Buffer.concat([Buffer.from('c'), appIdBytes(appId)])) }
+  }
+
+  function registrationBoxRef(appId: bigint): { appId: bigint; name: Uint8Array } {
+    return { appId: factoryId, name: new Uint8Array(Buffer.concat([Buffer.from('r'), appIdBytes(appId)])) }
+  }
+
+  async function boxOf(
+    appId: bigint,
+  ): Promise<{ paidIn: bigint; paidOut: bigint; root: string; n: bigint; status: number; settledAt: bigint }> {
+    const raw = Buffer.from((await vaultClient.state.box.getMapValue('campaignBox', appId)) as Uint8Array)
+    return {
+      paidIn: raw.subarray(0, 8).readBigUInt64BE(),
+      paidOut: raw.subarray(8, 16).readBigUInt64BE(),
+      root: raw.subarray(16, 48).toString('hex'),
+      n: raw.subarray(48, 56).readBigUInt64BE(),
+      status: raw[56] === undefined ? 0 : raw[56],
+      settledAt: raw.subarray(57, 65).readBigUInt64BE(),
+    }
+  }
+
+  async function boxExists(appId: bigint): Promise<boolean> {
+    try {
+      await vaultClient.state.box.getMapValue('campaignBox', appId)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async function balanceOf(addr: string): Promise<bigint> {
+    return (await algorand.account.getInformation(addr)).balance.microAlgo
+  }
+
+  async function minBalanceOf(addr: string): Promise<bigint> {
+    return (await algorand.account.getInformation(addr)).minBalance.microAlgo
+  }
+
+  async function advanceTime(seconds: number): Promise<void> {
+    const algod = algorand.client.algod
+    try {
+      await algod.setBlockOffsetTimestamp(seconds).do()
+      await algorand.send.payment({
+        sender: fixture.context.testAccount.addr,
+        receiver: fixture.context.testAccount.addr,
+        amount: (0.001).algo(),
+        suppressLog: true,
+      })
+    } finally {
+      await algod.setBlockOffsetTimestamp(0).do()
+    }
+  }
+
+  async function deployCampaign(creatorAddr: string, goal = GOAL, deadlineOffset = 600): Promise<{ appClient: AppClient; appId: bigint }> {
+    const status = await algorand.client.algod.status().do()
+    const block = await algorand.client.algod.block(status.lastRound).do()
+    const deadline = block.block.header.timestamp + BigInt(deadlineOffset)
+    const factory = new AppFactory({ appSpec: campaignSpec, algorand, defaultSender: creatorAddr })
+    const appClient = (
+      await factory.send.create({
+        method: 'create(uint64,byte[],byte[],uint64,uint64)void',
+        args: [vaultId, new TextEncoder().encode('Seed campaign'), new TextEncoder().encode('ipfs://seed'), goal, deadline],
+        sender: creatorAddr,
+        appReferences: [vaultId],
+        suppressLog: true,
+      })
+    ).appClient
+    const appId = appClient.appId
+
+    const factoryClient = new AppFactory({ appSpec: factorySpec, algorand, defaultSender: creatorAddr }).getAppClientById({
+      appId: factoryId,
+    })
+    const registerPayment = await algorand.createTransaction.payment({
       sender: creatorAddr,
       receiver: factoryClient.appAddress,
-      amount: microAlgos(18_900n),
+      amount: microAlgos(REGISTER_MBR),
     })
     await factoryClient.send.call({
       method: 'register(uint64,pay)void',
-      args: [campaignId, payment],
+      args: [appId, registerPayment],
       sender: creatorAddr,
-      appReferences: [campaignId],
+      appReferences: [appId],
       suppressLog: true,
     })
-    const appIdBytes = Buffer.alloc(8)
-    appIdBytes.writeBigUInt64BE(campaignId)
-    return [{ appId: factoryId, name: Buffer.concat([Buffer.from('r'), appIdBytes]) }]
+    return { appClient, appId }
   }
 
-  async function deployBareCampaign(creatorAddr: string): Promise<AppClient> {
-    const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600)
-    const factory = new AppFactory({ appSpec: campaignSpec, algorand, defaultSender: creatorAddr })
-    const { appClient } = await factory.send.create({
-      method: 'create(uint64,byte[],byte[],uint64,uint64)void',
-      args: [vaultId, new TextEncoder().encode('Vault target'), new TextEncoder().encode('ipfs://test'), 1_000_000n, deadline],
-      sender: creatorAddr,
-      appReferences: [vaultId],
-      suppressLog: true,
+  /**
+   * Pledge through `[pay, campaign.pledge, vault.credit]`, tracking the tree. Returns the payment TxID (hex).
+   *
+   * @param appId The campaign application id.
+   * @param backerAddr The backer's address.
+   * @param amount Pledge amount in microAlgos.
+   * @param tree This campaign's oracle tree.
+   * @returns The confirmed payment TxID (hex).
+   */
+  async function pledge(appId: bigint, backerAddr: string, amount: bigint, tree: Tree): Promise<string> {
+    const front = tree.cmd('frontier') as { peaks: string[] }
+    const pay = await algorand.createTransaction.payment({ sender: backerAddr, receiver: vaultAddress, amount: microAlgos(amount) })
+    const composer = algorand.send.newGroup()
+    // The payment object is referenced by the pledge call, which pulls it into the group ahead of the call.
+    composer.addAppCallMethodCall({
+      appId,
+      method: ABIMethod.fromSignature('pledge(pay,byte[])void'),
+      args: [pay, concatHex(front.peaks)],
+      sender: backerAddr,
     })
-    const payment = await algorand.createTransaction.payment({
-      sender: creatorAddr,
-      receiver: appClient.appAddress,
-      amount: microAlgos(200_000n),
+    composer.addAppCallMethodCall({
+      appId: vaultId,
+      method: ABIMethod.fromSignature('credit(uint64,uint64)void'),
+      args: [appId, amount],
+      sender: backerAddr,
+      appReferences: [factoryId],
+      boxReferences: [vaultBoxRef(appId), registrationBoxRef(appId)],
+      extraFee: microAlgos(FEE),
     })
+    const result = await composer.send({ suppressLog: true })
+    const payTxid = result.txIds[0]
+    if (payTxid === undefined) throw new Error('pledge group returned no payment TxID')
+    const txidHex = Buffer.from(base32ToBytes(payTxid)).toString('hex')
+    const exp = tree.cmd('append', addrHex(backerAddr), amount.toString(), txidHex) as OracleState
+    const box = await boxOf(appId)
+    expect(box.paidIn).toEqual(BigInt(exp.raised))
+    return txidHex
+  }
+
+  async function campaignRefund(
+    appClient: AppClient,
+    appId: bigint,
+    backerAddr: string,
+    k: number,
+    amount: bigint,
+    txidHex: string,
+    tree: Tree,
+  ): Promise<void> {
+    const p = tree.cmd('path', k.toString()) as OraclePath
+    const blob = concatHex([...p.siblings, ...(p.top === null ? [] : [p.top]), ...p.lower])
     await appClient.send.call({
-      method: 'fund(pay)void',
-      args: [payment],
-      sender: creatorAddr,
-      extraFee: (1000).microAlgo(),
+      method: 'refund(uint64,uint64,byte[],byte[])void',
+      args: [BigInt(k), amount, Buffer.from(txidHex, 'hex'), blob],
+      sender: backerAddr,
+      appReferences: [vaultId],
+      boxReferences: [vaultBoxRef(appId)],
+      extraFee: microAlgos(3n * FEE),
       suppressLog: true,
     })
-    return appClient
+    const exp = tree.cmd('null', k.toString(), amount.toString()) as OracleState
+    const box = await boxOf(appId)
+    // The vault box root stays Z until settlement; only the campaign tracks the live root (campaign suite).
+    expect(box.paidOut).toEqual(box.paidIn - BigInt(exp.raised))
   }
 
-  test('issueClaimAsa guards: non-creator, non-official program, double issue; seedSupply is one-shot', { timeout: 120_000 }, async () => {
-    const creator = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const stranger = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const campaignClient = await deployBareCampaign(creator.addr.toString())
-    const vaultClient = vaultClientFor(stranger.addr.toString())
-    const vaultBefore = await accountInfo(vaultAddress)
-    const strangerBefore = await accountInfo(stranger.addr.toString())
-
-    // A stranger cannot issue for someone else's campaign (the creator check fires before the registration check).
-    await expect(
-      vaultClient.send.call({
-        method: 'issueClaimAsa(uint64)void',
-        args: [campaignClient.appId],
-        sender: stranger.addr,
-        appReferences: [campaignClient.appId, factoryId],
-        extraFee: (1000).microAlgo(),
-        suppressLog: true,
-      }),
-    ).rejects.toThrow(/only the campaign creator can issue/)
-
-    // A program that does not hash to the official one cannot be issued for (use the factory app itself as the impostor).
-    await expect(
-      vaultClient.send.call({
-        method: 'issueClaimAsa(uint64)void',
-        args: [factoryId],
-        sender: stranger.addr,
-        appReferences: [factoryId, factoryId],
-        extraFee: (1000).microAlgo(),
-        suppressLog: true,
-      }),
-    ).rejects.toThrow(/not an official AlgorArt campaign/)
-
-    // The creator registers, then issues; a second issue is rejected.
-    const creatorVaultClient = vaultClientFor(creator.addr.toString())
-    const registrationBox = await registerAs(creator.addr.toString(), campaignClient.appId)
-    await creatorVaultClient.send.call({
-      method: 'issueClaimAsa(uint64)void',
-      args: [campaignClient.appId],
-      sender: creator.addr,
-      appReferences: [campaignClient.appId, factoryId],
-      boxReferences: registrationBox,
-      extraFee: (2000).microAlgo(),
+  async function vaultRefund(appId: bigint, backerAddr: string, k: number, amount: bigint, txidHex: string, tree: Tree): Promise<void> {
+    const p = tree.cmd('path', k.toString()) as OraclePath
+    const blob = concatHex([...p.siblings, ...(p.top === null ? [] : [p.top]), ...p.lower])
+    await vaultClient.send.call({
+      method: 'refund(uint64,uint64,uint64,byte[],byte[])void',
+      args: [appId, BigInt(k), amount, Buffer.from(txidHex, 'hex'), blob],
+      sender: backerAddr,
+      boxReferences: [vaultBoxRef(appId)],
+      extraFee: microAlgos(3n * FEE),
       suppressLog: true,
     })
-    await expect(
-      creatorVaultClient.send.call({
-        method: 'issueClaimAsa(uint64)void',
-        args: [campaignClient.appId],
-        sender: creator.addr,
-        appReferences: [campaignClient.appId, factoryId],
-        boxReferences: registrationBox,
-        extraFee: (2000).microAlgo(),
-        suppressLog: true,
-      }),
-    ).rejects.toThrow(/claim asset already issued/)
+    const exp = tree.cmd('null', k.toString(), amount.toString()) as OracleState
+    const box = await boxOf(appId)
+    expect(box.root).toEqual(exp.root)
+    expect(box.paidOut).toEqual(box.paidIn - BigInt(exp.raised))
+  }
 
-    // The rejected attempts moved nothing for the stranger.
-    expect((await accountInfo(stranger.addr.toString())).balance).toEqual(strangerBefore.balance)
+  test('first touch creates the box with exact MBR accounting', async () => {
+    const tree = new Tree()
+    const creator = await fixture.context.generateAccount({ initialFunds: (100).algo(), suppressLog: true })
+    const backer = await fixture.context.generateAccount({ initialFunds: (100).algo(), suppressLog: true })
+    const { appId } = await deployCampaign(creator.addr.toString())
+    expect(await boxExists(appId)).toEqual(false)
 
-    // The issue parked exactly the campaign's MBR on the vault (created asset + three mapping boxes) and moved no pool ALGO.
-    const vaultAfterIssue = await accountInfo(vaultAddress)
-    expect(vaultAfterIssue.minBalance - vaultBefore.minBalance).toEqual(VAULT_PARKED_AT_ISSUE)
-    expect(vaultAfterIssue.balance).toEqual(vaultBefore.balance)
+    const vaultBal0 = await balanceOf(vaultAddress)
+    const vaultMin0 = await minBalanceOf(vaultAddress)
+    const balB0 = await balanceOf(backer.addr.toString())
+    await pledge(appId, backer.addr.toString(), 2n * ALGO, tree)
 
-    // The supply can only be seeded once: the campaign first attaches (self-opts in), then the first seed succeeds and the second is
-    // rejected.
-    const claimAsa = (await creatorVaultClient.state.box.getMapValue('asaOf', campaignClient.appId)) as bigint
-    const appIdBytes = Buffer.alloc(8)
-    appIdBytes.writeBigUInt64BE(campaignClient.appId)
-    await campaignClient.send.call({
-      method: 'attachClaimAsa(uint64)void',
-      args: [claimAsa],
-      sender: creator.addr,
-      appReferences: [vaultId],
-      assetReferences: [claimAsa],
-      boxReferences: ['a', 'd', 't'].map((prefix) => ({
-        appId: vaultId,
-        name: Buffer.concat([Buffer.from(prefix), appIdBytes]),
-      })),
-      extraFee: (2000).microAlgo(),
-      suppressLog: true,
-    })
-    await creatorVaultClient.send.call({
-      method: 'seedSupply(uint64)void',
-      args: [campaignClient.appId],
-      sender: creator.addr,
-      appReferences: [campaignClient.appId],
-      assetReferences: [claimAsa],
-      extraFee: (1000).microAlgo(),
-      suppressLog: true,
-    })
-    await expect(
-      creatorVaultClient.send.call({
-        method: 'seedSupply(uint64)void',
-        args: [campaignClient.appId],
-        sender: creator.addr,
-        appReferences: [campaignClient.appId],
-        assetReferences: [claimAsa],
-        extraFee: (1000).microAlgo(),
-        suppressLog: true,
-      }),
-    ).rejects.toThrow(/supply already seeded/)
+    expect(await boxExists(appId)).toEqual(true)
+    const box = await boxOf(appId)
+    expect(box.paidIn).toEqual(2n * ALGO)
+    expect(box.paidOut).toEqual(0n)
+    expect(box.status).toEqual(1)
+    // The pool total rises by exactly the pledge; the new box parks 32,100 µA of minimum balance.
+    expect(await balanceOf(vaultAddress)).toEqual(vaultBal0 + 2n * ALGO)
+    expect(await minBalanceOf(vaultAddress)).toEqual(vaultMin0 + BOX_MBR)
+    expect(await balanceOf(backer.addr.toString())).toEqual(balB0 - 2n * ALGO - (FEE + FEE + FEE_CREDIT_FIRST))
   })
 
-  test('a clawback axfer cannot close a holder position — the protocol rejects the close-out and the 100k opt-in MBR stays parked', async () => {
-    const prober = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
-    const backer = await fixture.context.generateAccount({ initialFunds: (10).algo(), suppressLog: true })
+  test('two campaigns share the pool with per-campaign isolation', async () => {
+    const treeA = new Tree()
+    const treeB = new Tree()
+    const creator = await fixture.context.generateAccount({ initialFunds: (100).algo(), suppressLog: true })
+    const caddr = creator.addr.toString()
+    const backerA = await fixture.context.generateAccount({ initialFunds: (100).algo(), suppressLog: true })
+    const backerB = await fixture.context.generateAccount({ initialFunds: (100).algo(), suppressLog: true })
+    const addrA = backerA.addr.toString()
+    const addrB = backerB.addr.toString()
+    const { appClient: clientA, appId: idA } = await deployCampaign(caddr)
+    const { appId: idB } = await deployCampaign(caddr)
+    const vaultBal0 = await balanceOf(vaultAddress)
 
-    const probeApp = await algorand.send.appCreate({
-      sender: prober.addr,
-      approvalProgram: CLAW_PROBE_TEAL,
-      clearStateProgram: CLAW_PROBE_TEAL,
-      schema: { globalInts: 1, globalByteSlices: 0, localInts: 0, localByteSlices: 0 },
+    const txA0 = await pledge(idA, addrA, 3n * ALGO, treeA)
+    const txA1 = await pledge(idA, addrB, 1n * ALGO, treeA)
+    await pledge(idB, addrB, 2n * ALGO, treeB)
+
+    // Drain A entirely through its campaign; B must be untouched: same root, zero paid out.
+    await advanceTime(900)
+    await campaignRefund(clientA, idA, addrA, 0, 3n * ALGO, txA0, treeA)
+    await campaignRefund(clientA, idA, addrB, 1, 1n * ALGO, txA1, treeA)
+    const boxA = await boxOf(idA)
+    expect(boxA.paidOut).toEqual(boxA.paidIn)
+    const boxB = await boxOf(idB)
+    expect(boxB.paidOut).toEqual(0n)
+    // B was never settled: its box root is still Z (only settled boxes carry roots).
+    expect(boxB.root).toEqual(Z_HEX)
+    expect(boxB.paidIn).toEqual(2n * ALGO)
+    // Pool holds exactly B's live pledge (A's 4 ALGO left; both boxes' MBR stays parked in min-balance).
+    expect(await balanceOf(vaultAddress)).toEqual(vaultBal0 + 2n * ALGO)
+  })
+
+  test('settleOpen + vault refunds + zero-residual finalize', async () => {
+    const tree = new Tree()
+    const creator = await fixture.context.generateAccount({ initialFunds: (100).algo(), suppressLog: true })
+    const backer = await fixture.context.generateAccount({ initialFunds: (100).algo(), suppressLog: true })
+    const addr = backer.addr.toString()
+    const stranger = await fixture.context.generateAccount({ initialFunds: (100).algo(), suppressLog: true })
+    const { appId } = await deployCampaign(creator.addr.toString())
+
+    const txid = await pledge(appId, addr, 2n * ALGO, tree)
+    await advanceTime(900)
+
+    // A stranger settles the vanished-creator campaign; anyone can read the FAILED state but only the box matters.
+    await vaultClient.send.call({
+      method: 'settleOpen(uint64)void',
+      args: [appId],
+      sender: stranger.addr,
+      appReferences: [appId],
       suppressLog: true,
     })
-    // The app account needs the created-asset MBR before `make` can run.
-    await algorand.send.payment({
-      sender: prober.addr,
-      receiver: probeApp.appAddress,
-      amount: microAlgos(200_000n),
-      suppressLog: true,
-    })
-    await algorand.send.appCall({
-      sender: prober.addr,
-      appId: probeApp.appId,
-      args: [new TextEncoder().encode('make')],
-      extraFee: (1000).microAlgo(),
-      suppressLog: true,
-    })
-    const globalState = await algorand.app.getGlobalState(probeApp.appId)
-    const assetId = (globalState.aid as { value: bigint }).value
-    const asset = await algorand.asset.getById(assetId)
-    expect(asset.clawback).toEqual(probeApp.appAddress.toString())
+    expect((await boxOf(appId)).status).toEqual(2)
 
-    // The backer opts in, parking 100,000 µA of MBR.
-    await algorand.send.assetOptIn({ sender: backer.addr, assetId, suppressLog: true })
-    const optedIn = await accountInfo(backer.addr.toString())
-    expect(optedIn.minBalance).toEqual(200_000n)
-
-    // The app hands the backer 5 units so the claw has something to take.
-    await algorand.send.appCall({
-      sender: prober.addr,
-      appId: probeApp.appId,
-      args: [new TextEncoder().encode('give'), backer.addr.publicKey, uint64Arg(5n)],
-      accountReferences: [backer.addr.toString()],
-      assetReferences: [assetId],
-      extraFee: (1000).microAlgo(),
-      suppressLog: true,
-    })
-    expect(await assetBalanceOf(backer.addr.toString(), assetId)).toEqual(5n)
-
-    // The clawback axfer with AssetSender = backer and AssetCloseTo = the app account is rejected by the protocol:
-    // go-algorand refuses close-out on any clawback transfer ("cannot close asset by clawback").
+    // The backer refunds straight from the vault; a second attempt fails on the nulled leaf.
+    const balB = await balanceOf(addr)
+    await vaultRefund(appId, addr, 0, 2n * ALGO, txid, tree)
+    expect(await balanceOf(addr)).toEqual(balB + 2n * ALGO - FEE_VAULT_REFUND)
+    const dup = tree.cmd('path', '0') as OraclePath
+    const blob = concatHex([...dup.siblings, ...(dup.top === null ? [] : [dup.top]), ...dup.lower])
     await expect(
-      algorand.send.appCall({
-        sender: prober.addr,
-        appId: probeApp.appId,
-        args: [new TextEncoder().encode('claw'), backer.addr.publicKey, uint64Arg(5n)],
-        accountReferences: [backer.addr.toString()],
-        assetReferences: [assetId],
-        extraFee: (1000).microAlgo(),
+      vaultClient.send.call({
+        method: 'refund(uint64,uint64,uint64,byte[],byte[])void',
+        args: [appId, 0n, 2n * ALGO, Buffer.from(txid, 'hex'), blob],
+        sender: addr,
+        boxReferences: [vaultBoxRef(appId)],
+        extraFee: microAlgos(3n * FEE),
         suppressLog: true,
       }),
-    ).rejects.toThrow(/cannot close asset by clawback/)
+    ).rejects.toThrow(/proof does not match root/)
 
-    // Nothing moved: the units and the 100k MBR stay with the backer.
-    expect(await assetBalanceOf(backer.addr.toString(), assetId)).toEqual(5n)
-    const afterClaw = await accountInfo(backer.addr.toString())
-    expect(afterClaw.balance).toEqual(optedIn.balance)
-    expect(afterClaw.minBalance).toEqual(optedIn.minBalance)
-
-    // Only the backer's own close-out releases the MBR: closing the holding to the app frees the backer's 100k.
-    await algorand.send.assetOptOut({
-      sender: backer.addr,
-      assetId,
-      creator: probeApp.appAddress.toString(),
-      ensureZeroBalance: false,
+    // Nothing left: finalize deletes the box with no payment (only its own fee).
+    await advanceTime(4_000)
+    const vaultMin = await minBalanceOf(vaultAddress)
+    const caller = await fixture.context.generateAccount({ initialFunds: (100).algo(), suppressLog: true })
+    const balC0 = await balanceOf(caller.addr.toString())
+    await vaultClient.send.call({
+      method: 'finalize(uint64)void',
+      args: [appId],
+      sender: caller.addr,
       suppressLog: true,
     })
-    const afterOptOut = await accountInfo(backer.addr.toString())
-    expect(afterOptOut.minBalance).toEqual(afterClaw.minBalance - 100_000n)
-    expect(await assetBalanceOf(backer.addr.toString(), assetId)).toEqual(0n)
+    expect(await boxExists(appId)).toEqual(false)
+    expect(await balanceOf(caller.addr.toString())).toEqual(balC0 - FEE_FINALIZE_BARE)
+    // The box MBR returns to the spendable pool (nothing was swept).
+    expect(await minBalanceOf(vaultAddress)).toEqual(vaultMin - BOX_MBR)
+  })
+
+  test('direct credit without a pledge strands only the deviator funds (spec §17 #29)', async () => {
+    const creator = await fixture.context.generateAccount({ initialFunds: (100).algo(), suppressLog: true })
+    const deviator = await fixture.context.generateAccount({ initialFunds: (100).algo(), suppressLog: true })
+    const addr = deviator.addr.toString()
+    const { appId } = await deployCampaign(creator.addr.toString())
+
+    // Pay + credit with no pledge call: the payment is added explicitly (credit takes no txn arg, so no duplication).
+    const pay = await algorand.createTransaction.payment({ sender: addr, receiver: vaultAddress, amount: microAlgos(ALGO) })
+    const composer = algorand.send.newGroup()
+    composer.addTransaction(pay)
+    composer.addAppCallMethodCall({
+      appId: vaultId,
+      method: ABIMethod.fromSignature('credit(uint64,uint64)void'),
+      args: [appId, ALGO],
+      sender: addr,
+      appReferences: [factoryId],
+      boxReferences: [vaultBoxRef(appId), registrationBoxRef(appId)],
+      extraFee: microAlgos(FEE),
+    })
+    await composer.send({ suppressLog: true })
+
+    // paidIn counts the real payment, but no leaf exists: no proof can ever verify against it.
+    const box = await boxOf(appId)
+    expect(box.paidIn).toEqual(ALGO)
+    expect(box.n).toEqual(0n)
+    await advanceTime(900)
+    // Pristine delete settles the stray box to FAILED (settle no-ops only when no box exists)...
+    const campaignClient = new AppFactory({ appSpec: campaignSpec, algorand, defaultSender: creator.addr.toString() }).getAppClientById({
+      appId,
+    })
+    await campaignClient.send.delete({
+      method: 'delete()void',
+      sender: creator.addr.toString(),
+      appReferences: [vaultId],
+      boxReferences: [vaultBoxRef(appId)],
+      extraFee: microAlgos(2n * FEE),
+      suppressLog: true,
+    })
+    expect((await boxOf(appId)).status).toEqual(2)
+    // ...and after the window the stray inflow sweeps to the target: nobody else was ever affected.
+    await advanceTime(4_000)
+    const balS0 = await balanceOf(sweeperAddr)
+    const balD0 = await balanceOf(addr)
+    await vaultClient.send.call({
+      method: 'finalize(uint64)void',
+      args: [appId],
+      sender: addr,
+      extraFee: microAlgos(FEE),
+      suppressLog: true,
+    })
+    expect(await balanceOf(sweeperAddr)).toEqual(balS0 + ALGO)
+    expect(await balanceOf(addr)).toEqual(balD0 - FEE_FINALIZE_PAID)
+    expect(await boxExists(appId)).toEqual(false)
   })
 })

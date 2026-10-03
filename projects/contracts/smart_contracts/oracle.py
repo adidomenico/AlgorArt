@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Stateful CLI wrapper around the Claim Tree reference oracle.
 
-Lets the LocalNet spike test drive `docs/claim-tree-protocol-reference.py` step by step with REAL on-chain payment TxIDs:
-state (leaf records + raised) persists in a JSON file between invocations, so TypeScript only does IO while all tree math
-stays in the independent Python implementation.
+Lets the contract tests drive `docs/claim-tree-protocol-reference.py` step by step with REAL payment TxIDs: state (leaf
+records + raised) persists in a JSON file between invocations, so TypeScript only does IO while all tree math stays in
+the independent Python implementation.
 
-Usage:  spike_oracle.py STATE CMD [args...]     (prints one JSON object to stdout)
+Usage:  oracle.py STATE CMD [args...]     (prints one JSON object to stdout)
 
     init                                        reset state to the empty tree
     frontier                                    current {n, peaks[]} (ascending level, hex)
@@ -20,7 +20,7 @@ import json
 import sys
 from pathlib import Path
 
-REF_PATH = Path(__file__).resolve().parent.parent.parent.parent.parent / "docs" / "claim-tree-protocol-reference.py"
+REF_PATH = Path(__file__).resolve().parent.parent.parent.parent / "docs" / "claim-tree-protocol-reference.py"
 _spec = importlib.util.spec_from_file_location("claim_tree_ref", REF_PATH)
 assert _spec is not None and _spec.loader is not None
 ref = importlib.util.module_from_spec(_spec)
