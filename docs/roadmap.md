@@ -66,9 +66,9 @@ stays green (format, lint, types, offline coverage at 100%, integration on Local
 
 ### C2 — frontend: claim-tree proof builder
 
-- [ ] New `lib/claimtree.ts` — replay pledge/null events from the indexer into frontiers (pledges) and
+- [x] New `lib/claimtree.ts` — replay pledge/null events from the indexer into frontiers (pledges) and
       paths (refunds); read-only TS port of the reference model.
-- [ ] Unit tests against committed oracle vectors (generate once from Python, commit the JSON — no Python
+- [x] Unit tests against committed oracle vectors (generate once from Python, commit the JSON — no Python
       dependency in frontend CI). No UI changes yet.
 
 ### C3 — frontend: claim-tree flows
