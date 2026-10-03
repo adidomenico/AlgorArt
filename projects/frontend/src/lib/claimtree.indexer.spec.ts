@@ -1,6 +1,6 @@
 import { encodeAddress } from 'algosdk'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchPledges, fetchSpends, loadTree } from './claimtree'
+import { fetchMyLeaves, fetchPledges, fetchSpends, loadTree } from './claimtree'
 
 const indexerMock = vi.hoisted(() => ({
   searchForTransactions: vi.fn(),
@@ -261,6 +261,30 @@ describe('fetchSpends', () => {
     )
 
     expect(await fetchSpends(CAMPAIGN, VAULT_ID)).toEqual([{ position: 2 }, { position: 0 }, { position: 1 }])
+  })
+})
+
+describe('fetchMyLeaves', () => {
+  it('returns only the viewer’s live leaves', async () => {
+    const payA = payment('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', BACKER_A, VAULT, 3_000_000n)
+    const callA = pledgeCall('MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM', BACKER_A, 100n)
+    const payB = payment('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB', BACKER_B, VAULT, 1_000_000n)
+    const callB = pledgeCall('NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN', BACKER_B, 100n)
+    const cancel = spendCall('PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP', BACKER_A, 101n, SELECTOR.cancel, 0n)
+    indexerMock.searchForTransactions.mockImplementation(
+      searchMock(
+        new Map([
+          [CAMPAIGN, [[callA, callB, cancel]]],
+          [VAULT_ID, [[]]],
+        ]),
+      ),
+    )
+    indexerMock.lookupBlock.mockImplementation(blockMock(new Map([[100n, [payA, callA, payB, callB]]])))
+
+    const leaves = await fetchMyLeaves(CAMPAIGN, VAULT_ID, VAULT, BACKER_A)
+    expect(leaves).toEqual([])
+    const leavesB = await fetchMyLeaves(CAMPAIGN, VAULT_ID, VAULT, BACKER_B)
+    expect(leavesB.map((leaf) => [leaf.position, leaf.amount])).toEqual([[1, 1_000_000n]])
   })
 })
 

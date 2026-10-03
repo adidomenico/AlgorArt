@@ -16,15 +16,19 @@ vi.mock('../../lib/campaign', async () => {
 const claimMock = vi.fn()
 const refundMock = vi.fn()
 const cancelPledgeMock = vi.fn()
-const closeOutMock = vi.fn()
 const deleteCampaignMock = vi.fn()
+const fetchMyLeavesMock = vi.fn()
+const fetchVaultBoxMock = vi.fn()
+const fetchVaultConfigMock = vi.fn()
 
 vi.mock('../../lib/transaction', () => ({
   claim: (...args: unknown[]) => claimMock(...args),
   refund: (...args: unknown[]) => refundMock(...args),
   cancelPledge: (...args: unknown[]) => cancelPledgeMock(...args),
-  closeOut: (...args: unknown[]) => closeOutMock(...args),
   deleteCampaign: (...args: unknown[]) => deleteCampaignMock(...args),
+  fetchMyLeaves: (...args: unknown[]) => fetchMyLeavesMock(...args),
+  fetchVaultBox: (...args: unknown[]) => fetchVaultBoxMock(...args),
+  fetchVaultConfig: (...args: unknown[]) => fetchVaultConfigMock(...args),
 }))
 
 const useWalletMock = vi.fn()
@@ -67,6 +71,9 @@ describe('CampaignDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', activeWallet: {}, transactionSigner: {} })
+    fetchMyLeavesMock.mockResolvedValue([])
+    fetchVaultBoxMock.mockResolvedValue(undefined)
+    fetchVaultConfigMock.mockResolvedValue(undefined)
   })
 
   it('shows a loading state initially', () => {
@@ -120,11 +127,15 @@ describe('CampaignDetail', () => {
     expect(screen.queryByText('Claim funds')).not.toBeInTheDocument()
   })
 
-  it('shows a refund button when failed and the viewer has pledged', async () => {
+  it('shows refund buttons, one per live leaf, when failed and the viewer has pledged', async () => {
     getCampaignMock.mockResolvedValue(viewModel('failed', { myPledgeMicroAlgos: 1_000_000n }))
+    fetchMyLeavesMock.mockResolvedValue([
+      { position: 0, amount: 600_000n, txidHex: 'aa' },
+      { position: 2, amount: 400_000n, txidHex: 'bb' },
+    ])
     render(<CampaignDetail appId={42n} onBack={() => {}} />)
 
-    expect(await screen.findByText('Refund my pledge')).toBeInTheDocument()
+    expect(await screen.findAllByText('Refund my pledge')).toHaveLength(2)
   })
 
   it('hides the refund button when the viewer has not pledged', async () => {
@@ -137,9 +148,10 @@ describe('CampaignDetail', () => {
 
   it('shows a cancel pledge button when open and the viewer has pledged', async () => {
     getCampaignMock.mockResolvedValue(viewModel('open', { myPledgeMicroAlgos: 1_000_000n }))
+    fetchMyLeavesMock.mockResolvedValue([{ position: 0, amount: 1_000_000n, txidHex: 'aa' }])
     render(<CampaignDetail appId={42n} onBack={() => {}} />)
 
-    expect(await screen.findByText('Cancel my pledge')).toBeInTheDocument()
+    expect(await screen.findByText('Cancel pledge')).toBeInTheDocument()
   })
 
   it('hides the cancel pledge button when the viewer has not pledged', async () => {
@@ -175,24 +187,30 @@ describe('CampaignDetail', () => {
     expect(claimMock).toHaveBeenCalledWith(42n, { address: 'ADDRESS', signer: {} })
   })
 
-  it('calls refund when the refund button is clicked', async () => {
+  it('calls refund with the leaf when the refund button is clicked', async () => {
     getCampaignMock.mockResolvedValue(viewModel('failed', { myPledgeMicroAlgos: 1_000_000n }))
+    fetchMyLeavesMock.mockResolvedValue([{ position: 2, amount: 400_000n, txidHex: 'bb' }])
     refundMock.mockResolvedValue(undefined)
     const user = userEvent.setup()
     render(<CampaignDetail appId={42n} onBack={() => {}} />)
 
     await user.click(await screen.findByText('Refund my pledge'))
-    expect(refundMock).toHaveBeenCalledWith(42n, { address: 'ADDRESS', signer: {} })
+    expect(refundMock).toHaveBeenCalledWith(42n, { address: 'ADDRESS', signer: {} }, { position: 2, amount: 400_000n, txidHex: 'bb' })
   })
 
-  it('calls cancelPledge when the cancel pledge button is clicked', async () => {
+  it('calls cancelPledge with the leaf when the cancel pledge button is clicked', async () => {
     getCampaignMock.mockResolvedValue(viewModel('open', { myPledgeMicroAlgos: 1_000_000n }))
+    fetchMyLeavesMock.mockResolvedValue([{ position: 0, amount: 1_000_000n, txidHex: 'aa' }])
     cancelPledgeMock.mockResolvedValue(undefined)
     const user = userEvent.setup()
     render(<CampaignDetail appId={42n} onBack={() => {}} />)
 
-    await user.click(await screen.findByText('Cancel my pledge'))
-    expect(cancelPledgeMock).toHaveBeenCalledWith(42n, { address: 'ADDRESS', signer: {} })
+    await user.click(await screen.findByText('Cancel pledge'))
+    expect(cancelPledgeMock).toHaveBeenCalledWith(
+      42n,
+      { address: 'ADDRESS', signer: {} },
+      { position: 0, amount: 1_000_000n, txidHex: 'aa' },
+    )
   })
 
   it('shows an error when claim fails', async () => {
@@ -205,28 +223,21 @@ describe('CampaignDetail', () => {
     expect(await screen.findByText(/Transaction failed/)).toBeInTheDocument()
   })
 
+  it('shows the refund window banner on settled campaigns', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('failed', { myPledgeMicroAlgos: 1_000_000n }))
+    fetchMyLeavesMock.mockResolvedValue([{ position: 0, amount: 1_000_000n, txidHex: 'aa' }])
+    fetchVaultBoxMock.mockResolvedValue({ paidIn: 1_000_000n, paidOut: 0n, status: 2, settledAt: 5_000n })
+    fetchVaultConfigMock.mockResolvedValue({ window: 3_600n, sweepTarget: 'SWEEP' })
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    expect(await screen.findByText(/Refunds are open until/)).toBeInTheDocument()
+  })
+
   it('shows an error when the indexer fetch throws', async () => {
     getCampaignMock.mockRejectedValue(new Error('boom'))
     render(<CampaignDetail appId={42n} onBack={() => {}} />)
 
     expect(await screen.findByText(/Failed to load campaign/)).toBeInTheDocument()
-  })
-
-  it('shows a close-out button when claimed and the viewer holds claim units', async () => {
-    getCampaignMock.mockResolvedValue(viewModel('claimed', { myPledgeMicroAlgos: 1_000_000n }))
-    render(<CampaignDetail appId={42n} onBack={() => {}} />)
-
-    expect(await screen.findByText('Close out my claim')).toBeInTheDocument()
-  })
-
-  it('calls closeOut when the close-out button is clicked', async () => {
-    getCampaignMock.mockResolvedValue(viewModel('claimed', { myPledgeMicroAlgos: 1_000_000n }))
-    closeOutMock.mockResolvedValue(undefined)
-    const user = userEvent.setup()
-    render(<CampaignDetail appId={42n} onBack={() => {}} />)
-
-    await user.click(await screen.findByText('Close out my claim'))
-    expect(closeOutMock).toHaveBeenCalledWith(42n, { address: 'ADDRESS', signer: {} })
   })
 
   it('shows a delete button for the creator on a settled campaign', async () => {
@@ -298,6 +309,7 @@ describe('CampaignDetail', () => {
 
   it('shows an error when refund fails', async () => {
     getCampaignMock.mockResolvedValue(viewModel('failed', { myPledgeMicroAlgos: 1_000_000n }))
+    fetchMyLeavesMock.mockResolvedValue([{ position: 0, amount: 1_000_000n, txidHex: 'aa' }])
     refundMock.mockRejectedValue(new Error('boom'))
     const user = userEvent.setup()
     render(<CampaignDetail appId={42n} onBack={() => {}} />)

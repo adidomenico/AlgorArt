@@ -1,19 +1,21 @@
 import type algosdk from 'algosdk'
-import { encodeAddress } from 'algosdk'
+import { encodeAddress, getApplicationAddress } from 'algosdk'
 import { indexer } from './algorand'
+import { fetchMyLeaves } from './claimtree'
 
 /**
  * Read model: maps indexer responses into a `CampaignViewModel` the UI can render. The contract is the source of truth — everything here is
  * derived from the same public state the contract reads and writes.
  *
- * A backer's pledge is not reconstructed from history anymore: it is the backer's **Claim ASA balance**, read directly from the indexer
- * (1 claim unit = 1 microAlgo). Which campaigns are official is decided by the Factory registry — the list view only shows campaigns
- * registered with the configured Factory app.
+ * A backer's pledge is reconstructed from history, not read as a balance: their live leaves in the campaign's
+ * frontier-Merkle tree (see `./claimtree`), summed. Which campaigns are official is decided by the Factory registry —
+ * the list view only shows campaigns registered with the configured Factory app.
  *
  * See docs/campaign.md and docs/frontend.md for the on-chain model:
  *
- * - Global state: `creator` (bytes), `title` (bytes), `metadataUri` (bytes), `goal`/`deadline`/`raised`/`status`/`claimAsa`/`deposit` (uint)
- * - Backer pledges: the backer's balance of the campaign's Claim ASA
+ * - Global state: `creator` (bytes), `title` (bytes), `metadataUri` (bytes), `goal`/`deadline`/`raised`/`status` (uint),
+ *   plus the tree state `root` (bytes) and `n` (uint, positions ever appended).
+ * - Backer pledges: live leaves in the tree (no boxes, no assets, no per-backer storage).
  */
 
 export type CampaignStatus = 'open' | 'funded' | 'failed' | 'claimed'
@@ -35,18 +37,8 @@ export interface CampaignViewModel {
   deadlineSeconds: bigint
   /** Derived display status. `funded` is computed, never stored on-chain. */
   status: CampaignStatus
-  /** The campaign's Claim ASA id, once `fund()` has issued it. */
-  claimAsaId?: bigint
-  /** The connected wallet's live claim balance (microAlgos), or undefined if it hasn't pledged. */
+  /** The connected wallet's live pledge total (microAlgos), or undefined if it has no live leaves. */
   myPledgeMicroAlgos?: bigint | undefined
-}
-
-/** The connected wallet's Claim ASA holding for a campaign. */
-export interface ClaimHolding {
-  /** Whether the wallet has opted in to the Claim ASA. */
-  optedIn: boolean
-  /** The wallet's claim-unit balance (1 unit = 1 microAlgo). */
-  balance: bigint
 }
 
 /**
@@ -108,7 +100,7 @@ export function deriveStatus(
 }
 
 /** The global-state key names this contract materialises. */
-const KNOWN_KEYS = ['creator', 'title', 'metadataUri', 'goal', 'deadline', 'raised', 'status', 'claimAsa'] as const
+const KNOWN_KEYS = ['creator', 'title', 'metadataUri', 'goal', 'deadline', 'raised', 'status', 'root', 'n'] as const
 
 function decodeKey(keyBytes: Uint8Array): string {
   return Buffer.from(keyBytes).toString('utf8')
@@ -129,7 +121,6 @@ export function decodeGlobalState(app: algosdk.indexerModels.Application): {
   deadline?: bigint
   raised?: bigint
   status?: bigint
-  claimAsa?: bigint
 } {
   const result: {
     creator?: string
@@ -139,7 +130,6 @@ export function decodeGlobalState(app: algosdk.indexerModels.Application): {
     deadline?: bigint
     raised?: bigint
     status?: bigint
-    claimAsa?: bigint
   } = {}
 
   for (const kv of app.params.globalState ?? []) {
@@ -160,8 +150,6 @@ export function decodeGlobalState(app: algosdk.indexerModels.Application): {
       result.raised = kv.value.uint
     } else if (key === 'status') {
       result.status = kv.value.uint
-    } else if (key === 'claimAsa') {
-      result.claimAsa = kv.value.uint
     }
   }
 
@@ -196,7 +184,6 @@ export function toCampaignViewModel(
   const goal = state.goal ?? 0n
   const raised = state.raised ?? 0n
   const deadline = state.deadline ?? 0n
-  const claimAsaId = state.claimAsa !== undefined && state.claimAsa > 0n ? state.claimAsa : undefined
 
   const viewModel: CampaignViewModel = {
     id: app.id,
@@ -208,9 +195,6 @@ export function toCampaignViewModel(
     deadlineSeconds: deadline,
     status: deriveStatus(goal, raised, deadline, state.status ?? 0n, nowSeconds),
   }
-  if (claimAsaId !== undefined) {
-    viewModel.claimAsaId = claimAsaId
-  }
   if (myPledgeMicroAlgos !== undefined) {
     viewModel.myPledgeMicroAlgos = myPledgeMicroAlgos
   }
@@ -218,47 +202,26 @@ export function toCampaignViewModel(
 }
 
 /**
- * Fetch a campaign's Claim ASA id from its global state.
- *
- * @param appId Campaign application id.
- * @returns The Claim ASA id, or undefined when the campaign has not been funded yet.
- */
-export async function fetchClaimAsaId(appId: bigint): Promise<bigint | undefined> {
-  const response = await indexer.lookupApplications(appId).do()
-  const app = response.application
-  if (!app) return undefined
-  const state = decodeGlobalState(app)
-  return state.claimAsa !== undefined && state.claimAsa > 0n ? state.claimAsa : undefined
-}
-
-/**
- * Fetch an account's Claim ASA holding for a campaign: opt-in status and balance (1 unit = 1 microAlgo).
- *
- * @param appId Campaign application id.
- * @param address The account's address.
- * @returns The holding (not opted in → balance 0).
- */
-export async function fetchClaimHolding(appId: bigint, address: string): Promise<ClaimHolding> {
-  const claimAsa = await fetchClaimAsaId(appId)
-  if (claimAsa === undefined) return { optedIn: false, balance: 0n }
-  try {
-    const response = await indexer.lookupAccountAssets(address).assetId(Number(claimAsa)).do()
-    return { optedIn: true, balance: response.assets[0]?.amount ?? 0n }
-  } catch {
-    return { optedIn: false, balance: 0n }
-  }
-}
-
-/**
- * Fetch the connected wallet's live pledge total for a campaign, or `undefined` if it holds no claim units.
+ * Fetch the connected wallet's live pledge total for a campaign: the sum of their unspent leaves. Rebuilt from
+ * history (see `./claimtree`) — there is no balance to read.
  *
  * @param appId Campaign application id.
  * @param address Viewer's Algorand address.
- * @returns Pledge in microAlgos, or undefined if the backer has no claim.
+ * @returns Pledge in microAlgos, or undefined if the backer has no live leaves.
  */
 export async function fetchMyPledge(appId: bigint, address: string): Promise<bigint | undefined> {
-  const { balance } = await fetchClaimHolding(appId, address)
-  return balance > 0n ? balance : undefined
+  const leaves = await fetchMyLeaves(appId, vaultAppId(), vaultAddress(), address)
+  if (leaves.length === 0) return undefined
+  return leaves.reduce((sum, leaf) => sum + leaf.amount, 0n)
+}
+
+/**
+ * The vault app's account address, derived locally (no network).
+ *
+ * @returns The vault's app account address.
+ */
+function vaultAddress(): string {
+  return getApplicationAddress(vaultAppId()).toString()
 }
 
 /**

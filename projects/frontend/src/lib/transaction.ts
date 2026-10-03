@@ -1,25 +1,27 @@
 import { microAlgos } from '@algorandfoundation/algokit-utils'
 import type { TransactionSigner } from 'algosdk'
-import algosdk from 'algosdk'
+import { getApplicationAddress } from 'algosdk'
 import { CampaignClient, CampaignFactory } from '../contracts/Campaign'
 import { ClaimsVaultClient } from '../contracts/ClaimsVault'
 import { FactoryClient } from '../contracts/Factory'
-import { algorand, indexer, waitForIndexerCatchUp, waitForIndexerRound } from './algorand'
-import { factoryAppId, fetchClaimAsaId, fetchClaimHolding, vaultAppId } from './campaign'
+import { algorand, waitForIndexerCatchUp, waitForIndexerRound } from './algorand'
+import { factoryAppId, vaultAppId } from './campaign'
+import { frontierForPledge, fetchMyLeaves as loadBackerLeaves, loadTree, pathBlobForRefund } from './claimtree'
 
 /**
- * Write path: assembles + signs transactions through the generated `CampaignClient`, `ClaimsVaultClient`, and `FactoryClient`. Each helper
- * takes the wallet's signer/address so the wallet — never the app — holds the keys.
+ * Write path: assembles + signs transactions through the generated `CampaignClient`, `ClaimsVaultClient`, and
+ * `FactoryClient`, plus a manual composer for the two-app pledge group. Each helper takes the wallet's signer/address
+ * so the wallet — never the app — holds the keys.
  *
- * The split-vault design (see docs/campaign.md):
+ * The claim-tree design (see docs/campaign.md):
  *
- * - **Creation** chains create → fund (the escrow's fixed deposit) → factory.register → vault.issueClaimAsa → attachClaimAsa →
- *   vault.seedSupply.
- * - **Pledges pay the vault** (the pooled refund escrow), never the campaign escrow; the campaign mints claim units from its seeded
- *   supply.
- * - **Cancels/refunds** surrender claim units to the vault; while the campaign is alive the campaign drives the payout via an inner call;
- *   after a failed campaign is deleted, the backer refunds **directly from the vault** — permanent, permissionless refund rights.
- * - **Claims** are paid by the vault from unit conservation; **delete** is one O(1) call on both settlement paths.
+ * - **Creation** chains create → factory.register. Nothing is funded: the escrow never holds funds.
+ * - **Pledges** are one atomic group `[pay, campaign.pledge, vault.credit]`; the caller supplies the frontier (rebuilt
+ *   from the indexer right before submitting) and retries once on a stale-proof rejection.
+ * - **Cancels/refunds** null one leaf per call (`vault.payBack` path while the campaign box is open, `vault.refund`
+ *   directly once settled) with the path rebuilt fresh and one stale retry.
+ * - **Claims** are paid by the vault from per-campaign balance guards; **delete** settles in O(1) on every path.
+ * - There are no assets anywhere: no opt-ins, no balances, no close-outs.
  */
 
 export interface WalletSession {
@@ -27,32 +29,36 @@ export interface WalletSession {
   signer: TransactionSigner
 }
 
-// The creator fronts the escrow's fixed minimum balance (base 0.1 + Claim ASA opt-in 0.1 ALGO) so backers' pledges stay fully refundable.
-// See docs/campaign.md "Minimum balances". Matches MIN_DEPOSIT in the contract.
-const STORAGE_DEPOSIT_MICRO_ALGOS = 200_000n
+/** A backer's live leaf: position, amount, and payment TxID for proofs. */
+export interface BackerLeaf {
+  position: number
+  amount: bigint
+  txidHex: string
+}
+
+/** Vault box settlement state for refund routing and the window banner. */
+export interface VaultBoxView {
+  paidIn: bigint
+  paidOut: bigint
+  /** 1 = Open, 2 = Failed, 3 = Claimed. */
+  status: number
+  /** Settlement timestamp (seconds, 0 before settlement). */
+  settledAt: bigint
+}
 
 // The Factory registration deposit: the registration box's minimum balance, returned by `unregister()`.
 const REGISTER_DEPOSIT_MICRO_ALGOS = 18_900n
 
-/**
- * The vault's box names for a campaign (key prefix + 8-byte big-endian app id) — inner app calls require them declared on the outer txn.
- *
- * @param appId The campaign application id.
- * @param prefixes The vault box key prefixes to reference.
- * @returns Box references for the vault app.
- */
-function vaultBoxRefs(appId: bigint, prefixes: string[]): { appId: bigint; name: Uint8Array }[] {
-  let remaining = appId
-  const appIdBytes = new Uint8Array(8)
-  for (let i = 7; i >= 0; i--) {
-    appIdBytes[i] = Number(remaining & 0xffn)
-    remaining >>= 8n
-  }
-  return prefixes.map((prefix) => ({
-    appId: vaultAppId(),
-    name: new Uint8Array([...new TextEncoder().encode(prefix), ...appIdBytes]),
-  }))
-}
+// Fee headroom per call (measured on LocalNet — see docs/campaign.md "Minimum balances"): the outer call always covers
+// its inners via fee pooling, so every extra inner transaction costs one more minimum fee on the outer call.
+const FEE_CREDIT_EXTRA = 1_000n // possible first-touch factory check
+const FEE_SPEND_EXTRA = 3_000n // 1 OpUp iteration (create+delete) + payout call
+const FEE_CLAIM_EXTRA = 2_000n // inner payClaim + inner payment
+const FEE_DELETE_EXTRA = 2_000n // inner settle/notify + escrow close
+const FEE_UNREGISTER_EXTRA = 1_000n // inner deposit-back
+
+// Contract error fragments that mean "rebuilt tree state moved under us" — safe to retry once with fresh proofs.
+const STALE_PROOF_PATTERN = /stale or forged frontier|proof does not match root/
 
 function campaignClientFor(appId: bigint, session: WalletSession): CampaignClient {
   return new CampaignClient({
@@ -82,7 +88,25 @@ function factoryClientFor(session: WalletSession): FactoryClient {
 }
 
 /**
- * The Factory's registration box for a campaign (prefix 'r' + 8-byte big-endian app id) — the inner `isRegistered` check needs it.
+ * The vault's campaign box reference (key prefix 'c' + 8-byte big-endian app id) — inner vault calls require it
+ * declared on the outer transaction.
+ *
+ * @param appId The campaign application id.
+ * @returns Box references for the vault app.
+ */
+function vaultBoxRef(appId: bigint): { appId: bigint; name: Uint8Array }[] {
+  let remaining = appId
+  const appIdBytes = new Uint8Array(8)
+  for (let i = 7; i >= 0; i--) {
+    appIdBytes[i] = Number(remaining & 0xffn)
+    remaining >>= 8n
+  }
+  return [{ appId: vaultAppId(), name: new Uint8Array([0x63, ...appIdBytes]) }]
+}
+
+/**
+ * The Factory's registration box for a campaign (prefix 'r' + 8-byte big-endian app id) — the inner `isRegistered`
+ * check needs it.
  *
  * @param appId The campaign application id.
  * @returns Box references for the Factory app.
@@ -98,17 +122,70 @@ function factoryRegistrationBox(appId: bigint): { appId: bigint; name: Uint8Arra
 }
 
 /**
- * The vault app's account address (where pledges go and claim units return).
+ * The vault app's account address (where pledges go).
  *
  * @returns The vault's app account address.
  */
 export function vaultAddress(): string {
-  return algosdk.getApplicationAddress(vaultAppId()).toString()
+  return getApplicationAddress(vaultAppId()).toString()
 }
 
 /**
- * Deploy a new campaign: create → fund (storage deposit) → register with the Factory → issue the Claim ASA → attach it → seed its
- * supply to the escrow.
+ * Read and unpack a campaign's vault box (fresh from algod — routing decisions must not use stale indexer state).
+ *
+ * @param appId Campaign application id.
+ * @returns The unpacked box, or undefined when no box exists yet.
+ */
+export async function fetchVaultBox(appId: bigint): Promise<VaultBoxView | undefined> {
+  const vaultClient = new ClaimsVaultClient({ algorand, appId: vaultAppId() })
+  let raw: Uint8Array
+  try {
+    raw = (await vaultClient.state.box.campaignBox.value(appId)) as Uint8Array
+  } catch {
+    return undefined
+  }
+  if (raw.length !== 65) return undefined
+  const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength)
+  return {
+    paidIn: view.getBigUint64(0),
+    paidOut: view.getBigUint64(8),
+    status: raw[56] ?? 0,
+    settledAt: view.getBigUint64(57),
+  }
+}
+
+/**
+ * The vault's configured refund window (seconds), for the refund-window banner.
+ *
+ * @returns The window in seconds and the sweep target address.
+ */
+export async function fetchVaultConfig(): Promise<{ window: bigint; sweepTarget: string }> {
+  const vaultClient = new ClaimsVaultClient({ algorand, appId: vaultAppId() })
+  const window = (await vaultClient.state.global.refundWindow()) as bigint
+  const sweepTarget = (await vaultClient.state.global.sweepTarget()) as string
+  return { window, sweepTarget }
+}
+
+/**
+ * Run a proof-carrying submission, rebuilding proofs once when the tree moved under us (concurrent pledge/refund
+ * changed the root between our read and our submit). Anything else throws immediately.
+ *
+ * @param run Builds fresh proofs from a fresh tree, then submits. Called up to twice.
+ * @returns The confirmed round, if exposed.
+ */
+async function submitWithFreshProof(run: () => Promise<bigint | undefined>): Promise<bigint | undefined> {
+  try {
+    return await run()
+  } catch (error) {
+    if (error instanceof Error && STALE_PROOF_PATTERN.test(error.message)) {
+      return await run()
+    }
+    throw error
+  }
+}
+
+/**
+ * Deploy a new campaign: create → register with the Factory. Nothing is funded — the v2 escrow never holds funds.
  *
  * @param session Wallet session holding the signer and address.
  * @param title Short campaign title (stored on-chain).
@@ -142,21 +219,9 @@ export async function createCampaign(
   })
 
   const appId = sendResult.result.appId
-  const client = campaignClientFor(appId, session)
 
-  // The deposit covers the escrow's fixed minimum balance; backers' pledges never touch the escrow.
-  await client.send.fund({
-    args: {
-      payment: await algorand.createTransaction.payment({
-        sender: session.address,
-        receiver: client.appAddress,
-        amount: microAlgos(STORAGE_DEPOSIT_MICRO_ALGOS),
-      }),
-    },
-    extraFee: microAlgos(1000),
-  })
-
-  // Register with the Factory (when configured) so the browse page treats the campaign as official.
+  // Register with the Factory (when configured) so the browse page treats the campaign as official. First-touch
+  // credit verifies registration on-chain, so an unregistered campaign can never take pledges.
   if (factoryAppId() > 0n) {
     const factoryClient = factoryClientFor(session)
     await factoryClient.send.register({
@@ -172,30 +237,6 @@ export async function createCampaign(
     })
   }
 
-  // The vault issues the Claim ASA (the official-program hash AND the Factory registration are verified on-chain), the campaign
-  // attaches it (self-opt-in + the vault records the attach), the vault seeds the supply.
-  const vaultClient = vaultClientFor(session)
-  await vaultClient.send.issueClaimAsa({
-    args: { app: appId },
-    appReferences: [appId, factoryAppId()],
-    boxReferences: factoryRegistrationBox(appId),
-    extraFee: microAlgos(2000),
-  })
-  const claimAsa = (await vaultClient.state.box.asaOf.value(appId)) as bigint
-  await client.send.attachClaimAsa({
-    args: { asset: claimAsa },
-    appReferences: [vaultAppId()],
-    assetReferences: [claimAsa],
-    boxReferences: vaultBoxRefs(appId, ['a', 'd', 't']),
-    extraFee: microAlgos(2000),
-  })
-  await vaultClient.send.seedSupply({
-    args: { app: appId },
-    appReferences: [appId],
-    assetReferences: [claimAsa],
-    extraFee: microAlgos(1000),
-  })
-
   // The generated create result doesn't expose the confirmation round, so wait for the indexer to catch up to algod's current tip.
   await waitForIndexerCatchUp()
 
@@ -203,55 +244,152 @@ export async function createCampaign(
 }
 
 /**
- * Pledge ALGO: opt the wallet into the Claim ASA if needed, then pay the vault and receive claim units in one atomic group.
+ * Pledge ALGO: one atomic group `[pay, campaign.pledge, vault.credit]` with a freshly rebuilt frontier. Retries once
+ * when a concurrent pledge moved the frontier under us.
  *
  * @param appId Campaign application id.
  * @param session Wallet session holding the signer and address.
  * @param amountMicroAlgos Pledge amount in microAlgos.
  */
 export async function pledge(appId: bigint, session: WalletSession, amountMicroAlgos: bigint): Promise<void> {
-  const claimAsa = await requireClaimAsa(appId)
+  // The manual composer resolves signers by sender address — register the wallet signer for this address first.
+  algorand.account.setSigner(session.address, session.signer)
 
-  const holding = await fetchClaimHolding(appId, session.address)
-  if (!holding.optedIn) {
-    await algorand.send.assetOptIn({ sender: session.address, assetId: claimAsa })
+  const attempt = async (): Promise<bigint | undefined> => {
+    const tree = await loadTree(appId, vaultAppId(), vaultAddress())
+    const campaignClient = campaignClientFor(appId, session)
+    const vaultClient = vaultClientFor(session)
+    const composer = algorand.send.newGroup()
+    composer.addAppCallMethodCall(
+      await campaignClient.params.pledge({
+        args: {
+          payment: await algorand.createTransaction.payment({
+            sender: session.address,
+            receiver: vaultAddress(),
+            amount: microAlgos(amountMicroAlgos),
+          }),
+          frontier: frontierForPledge(tree),
+        },
+        sender: session.address,
+      }),
+    )
+    composer.addAppCallMethodCall(
+      await vaultClient.params.credit({
+        args: { app: appId, amount: amountMicroAlgos },
+        sender: session.address,
+        appReferences: [factoryAppId()],
+        boxReferences: [...vaultBoxRef(appId), ...factoryRegistrationBox(appId)],
+        extraFee: microAlgos(FEE_CREDIT_EXTRA),
+      }),
+    )
+    await composer.send()
+    return undefined
   }
 
-  const client = campaignClientFor(appId, session)
-  const result = await client.send.pledge({
-    args: {
-      payment: await algorand.createTransaction.payment({
-        sender: session.address,
-        receiver: vaultAddress(),
-        amount: microAlgos(amountMicroAlgos),
-      }),
-    },
-    appReferences: [vaultAppId()],
-    assetReferences: [claimAsa],
-    extraFee: microAlgos(1000),
-  })
+  await submitWithFreshProof(attempt)
+  await waitForIndexerCatchUp()
+}
 
-  const confirmedRound = result.confirmation.confirmedRound
+/**
+ * The viewer's live pledge leaves for a campaign (positions, amounts, payment TxIDs for proofs).
+ *
+ * @param appId Campaign application id.
+ * @param address Viewer address.
+ * @returns Live leaves owned by the viewer.
+ */
+export async function fetchMyLeaves(appId: bigint, address: string): Promise<BackerLeaf[]> {
+  return loadBackerLeaves(appId, vaultAppId(), vaultAddress(), address)
+}
+
+/**
+ * Withdraw one pledge before the deadline (backer, while the campaign is still open). Rebuilds the path fresh and
+ * retries once when a concurrent spend moved the root under us.
+ *
+ * @param appId Campaign application id.
+ * @param session Wallet session holding the signer and address.
+ * @param leaf The leaf to spend (from `fetchMyLeaves`).
+ */
+export async function cancelPledge(appId: bigint, session: WalletSession, leaf: BackerLeaf): Promise<void> {
+  const attempt = async (): Promise<bigint | undefined> => {
+    const tree = await loadTree(appId, vaultAppId(), vaultAddress())
+    const client = campaignClientFor(appId, session)
+    const result = await client.send.cancelPledge({
+      args: {
+        k: leaf.position,
+        amount: leaf.amount,
+        txid: Buffer.from(leaf.txidHex, 'hex'),
+        path: pathBlobForRefund(tree, leaf.position),
+      },
+      sender: session.address,
+      appReferences: [vaultAppId()],
+      boxReferences: vaultBoxRef(appId),
+      extraFee: microAlgos(FEE_SPEND_EXTRA),
+    })
+    return result.confirmation.confirmedRound
+  }
+
+  const confirmedRound = await submitWithFreshProof(attempt)
   if (confirmedRound !== undefined) {
     await waitForIndexerRound(confirmedRound)
   }
 }
 
 /**
- * Claim the campaign funds (creator only, after deadline, goal reached). The vault pays from unit conservation.
+ * Refund one pledge after a failed campaign. Routes by the vault box (fresh from algod): an `Open`/missing box goes
+ * through the campaign, a `Failed` box goes straight to `vault.refund` (covers post-settle and post-delete). Rebuilds
+ * the path fresh and retries once when a concurrent spend moved the root under us.
+ *
+ * @param appId Campaign application id.
+ * @param session Wallet session holding the signer and address.
+ * @param leaf The leaf to spend (from `fetchMyLeaves`).
+ */
+export async function refund(appId: bigint, session: WalletSession, leaf: BackerLeaf): Promise<void> {
+  const attempt = async (): Promise<bigint | undefined> => {
+    const tree = await loadTree(appId, vaultAppId(), vaultAddress())
+    const path = pathBlobForRefund(tree, leaf.position)
+    const txid = Buffer.from(leaf.txidHex, 'hex')
+    const box = await fetchVaultBox(appId)
+    if (box !== undefined && box.status === 2) {
+      const vaultClient = vaultClientFor(session)
+      const result = await vaultClient.send.refund({
+        args: { app: appId, k: leaf.position, amount: leaf.amount, txid, path },
+        sender: session.address,
+        boxReferences: vaultBoxRef(appId),
+        extraFee: microAlgos(FEE_SPEND_EXTRA),
+      })
+      return result.confirmation.confirmedRound
+    }
+
+    const client = campaignClientFor(appId, session)
+    const result = await client.send.refund({
+      args: { k: leaf.position, amount: leaf.amount, txid, path },
+      sender: session.address,
+      appReferences: [vaultAppId()],
+      boxReferences: vaultBoxRef(appId),
+      extraFee: microAlgos(FEE_SPEND_EXTRA),
+    })
+    return result.confirmation.confirmedRound
+  }
+
+  const confirmedRound = await submitWithFreshProof(attempt)
+  if (confirmedRound !== undefined) {
+    await waitForIndexerRound(confirmedRound)
+  }
+}
+
+/**
+ * Claim the campaign funds (creator only, after deadline, goal reached). The vault pays the derived live total.
  *
  * @param appId Campaign application id.
  * @param session Wallet session holding the signer and address.
  */
 export async function claim(appId: bigint, session: WalletSession): Promise<void> {
-  const claimAsa = await requireClaimAsa(appId)
   const client = campaignClientFor(appId, session)
   const result = await client.send.claim({
     args: [],
     appReferences: [vaultAppId()],
-    assetReferences: [claimAsa],
-    boxReferences: vaultBoxRefs(appId, ['a', 'd', 'o', 's']),
-    extraFee: microAlgos(2000),
+    boxReferences: vaultBoxRef(appId),
+    extraFee: microAlgos(FEE_CLAIM_EXTRA),
   })
 
   const confirmedRound = result.confirmation.confirmedRound
@@ -261,138 +399,20 @@ export async function claim(appId: bigint, session: WalletSession): Promise<void
 }
 
 /**
- * Refund the caller's whole pledge by surrendering all their claim units. While the campaign is alive the payout is driven through the
- * campaign; once a failed campaign has been deleted, the refund goes directly through the vault — permanent, permissionless.
- *
- * @param appId Campaign application id.
- * @param session Wallet session holding the signer and address.
- */
-export async function refund(appId: bigint, session: WalletSession): Promise<void> {
-  const claimAsa = await requireClaimAsa(appId)
-  const { balance } = await fetchClaimHolding(appId, session.address)
-  if (balance <= 0n) {
-    throw new Error('no claim units to refund')
-  }
-
-  const axfer = await algorand.createTransaction.assetTransfer({
-    sender: session.address,
-    assetId: claimAsa,
-    receiver: vaultAddress(),
-    amount: balance,
-  })
-
-  // A deleted campaign can no longer drive the payout — the vault's settled-failed record serves the refund directly.
-  const response = await indexer.lookupApplications(appId).do()
-  const deleted = response.application?.deleted === true
-
-  if (deleted) {
-    const vaultClient = vaultClientFor(session)
-    const result = await vaultClient.send.refund({
-      args: { app: appId, axfer },
-      appReferences: [appId],
-      extraFee: microAlgos(1000),
-    })
-    const confirmedRound = result.confirmation.confirmedRound
-    if (confirmedRound !== undefined) {
-      await waitForIndexerRound(confirmedRound)
-    }
-    return
-  }
-
-  const client = campaignClientFor(appId, session)
-  const result = await client.send.refund({
-    args: { axfer },
-    appReferences: [vaultAppId(), appId],
-    boxReferences: vaultBoxRefs(appId, ['a', 'd']),
-    extraFee: microAlgos(2000),
-  })
-  const confirmedRound = result.confirmation.confirmedRound
-  if (confirmedRound !== undefined) {
-    await waitForIndexerRound(confirmedRound)
-  }
-}
-
-/**
- * Withdraw the caller's pledge before the deadline (backer, while the campaign is still open) by surrendering all their claim units.
- *
- * @param appId Campaign application id.
- * @param session Wallet session holding the signer and address.
- */
-export async function cancelPledge(appId: bigint, session: WalletSession): Promise<void> {
-  const claimAsa = await requireClaimAsa(appId)
-  const { balance } = await fetchClaimHolding(appId, session.address)
-  if (balance <= 0n) {
-    throw new Error('no claim units to cancel')
-  }
-
-  const client = campaignClientFor(appId, session)
-  const result = await client.send.cancelPledge({
-    args: {
-      axfer: await algorand.createTransaction.assetTransfer({
-        sender: session.address,
-        assetId: claimAsa,
-        receiver: vaultAddress(),
-        amount: balance,
-      }),
-    },
-    appReferences: [vaultAppId(), appId],
-    boxReferences: vaultBoxRefs(appId, ['a', 'd']),
-    extraFee: microAlgos(2000),
-  })
-
-  const confirmedRound = result.confirmation.confirmedRound
-  if (confirmedRound !== undefined) {
-    await waitForIndexerRound(confirmedRound)
-  }
-}
-
-/**
- * Close out the caller's claim holding on a successful campaign, recovering their 0.1 ALGO opt-in minimum balance. No payout.
- *
- * @param appId Campaign application id.
- * @param session Wallet session holding the signer and address.
- */
-export async function closeOut(appId: bigint, session: WalletSession): Promise<void> {
-  const claimAsa = await requireClaimAsa(appId)
-  const client = campaignClientFor(appId, session)
-
-  const result = await client.send.closeOut({
-    args: {
-      axfer: await algorand.createTransaction.assetTransfer({
-        sender: session.address,
-        assetId: claimAsa,
-        receiver: vaultAddress(),
-        amount: 0n,
-        closeAssetTo: vaultAddress(),
-      }),
-    },
-    appReferences: [vaultAppId()],
-  })
-
-  const confirmedRound = result.confirmation.confirmedRound
-  if (confirmedRound !== undefined) {
-    await waitForIndexerRound(confirmedRound)
-  }
-}
-
-/**
- * Delete a settled campaign (creator only): settles the vault on the failed path, closes the escrow's claim holding to the vault and the
- * escrow to the creator, and unregisters from the Factory (returning the registration deposit). One O(1) call on both paths.
+ * Delete a settled campaign (creator only): settles the vault on the failed path, closes the escrow to the creator,
+ * and unregisters from the Factory (returning the registration deposit). One O(1) call on every path.
  *
  * @param appId Campaign application id.
  * @param session Wallet session holding the signer and address.
  */
 export async function deleteCampaign(appId: bigint, session: WalletSession): Promise<void> {
   const client = campaignClientFor(appId, session)
-  const claimAsa = await fetchClaimAsaId(appId)
 
-  // The delete needs the Claim ASA and the vault's campaign boxes as references; a never-funded campaign has none.
   const result = await client.send.delete.delete({
     args: [],
     appReferences: [vaultAppId()],
-    assetReferences: claimAsa !== undefined ? [claimAsa] : [],
-    boxReferences: claimAsa !== undefined ? vaultBoxRefs(appId, ['a', 'd', 's']) : [],
-    extraFee: microAlgos(claimAsa !== undefined ? 3000 : 1000),
+    boxReferences: vaultBoxRef(appId),
+    extraFee: microAlgos(FEE_DELETE_EXTRA),
   })
 
   const confirmedRound = result.confirmation.confirmedRound
@@ -405,21 +425,7 @@ export async function deleteCampaign(appId: bigint, session: WalletSession): Pro
     await factoryClient.send.unregister({
       args: { app: appId },
       appReferences: [appId],
-      extraFee: microAlgos(1000),
+      extraFee: microAlgos(FEE_UNREGISTER_EXTRA),
     })
   }
-}
-
-/**
- * The campaign's Claim ASA id, throwing a friendly error when the campaign was never funded.
- *
- * @param appId Campaign application id.
- * @returns The Claim ASA id.
- */
-async function requireClaimAsa(appId: bigint): Promise<bigint> {
-  const claimAsa = await fetchClaimAsaId(appId)
-  if (claimAsa === undefined) {
-    throw new Error('Campaign has no claim asset (has the creator funded it?)')
-  }
-  return claimAsa
 }

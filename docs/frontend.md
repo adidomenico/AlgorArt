@@ -6,7 +6,7 @@ the indexer, and it assembles + signs transaction groups for the user's wallet.
 It never holds keys, never holds funds, and never decides a campaign outcome.
 
 > Contract internals: [`campaign.md`](campaign.md) and
-> [`claim-asa-redesign.md`](claim-asa-redesign.md). Factory & catalog:
+> [`claim-tree-protocol.md`](claim-tree-protocol.md). Factory & catalog:
 > [`architecture.md`](architecture.md).
 
 ## Principles
@@ -19,8 +19,10 @@ It never holds keys, never holds funds, and never decides a campaign outcome.
    wallet (Pera / Defly / LocalNet KMD) holds the keys.
 3. **Reads go through the indexer, writes go through the generated clients.**
    One code path for data, one code path for transactions.
-4. **The Claim ASA is the pledge ledger.** A backer's pledge is their asset
-   balance — no tree reconstruction, no proofs.
+4. **Receipts are reconstructed, never trusted.** A backer's pledge is their
+   leaf in the campaign's frontier-Merkle tree — the UI replays pledge/null
+   events from the indexer into frontiers and paths (`lib/claimtree.ts`) and
+   the contract authenticates every proof.
 
 ## Structure (implemented)
 
@@ -30,15 +32,17 @@ projects/frontend/src/
 │   ├── campaigns/            # create, browse, details
 │   │   ├── CampaignList.tsx        # browse all campaigns
 │   │   ├── CampaignCard.tsx        # one card in the list
-│   │   ├── CampaignDetail.tsx      # single campaign + pledge/claim/refund/cancel/closeOut/delete
-│   │   ├── CreateCampaignForm.tsx  # create → fund → register → issueClaimAsa → attachClaimAsa → seedSupply action
-│   │   └── PledgeForm.tsx          # pledge() ABI call (opt-in + payment to the vault + app call)
+│   │   ├── CampaignDetail.tsx      # single campaign + per-leaf pledge/cancel/refund, claim/delete, window banner
+│   │   ├── CreateCampaignForm.tsx  # create → register action
+│   │   └── PledgeForm.tsx          # pledge() amount input (+ fee note)
 │   └── app/                  # shared app chrome
 │       └── Nav.tsx                 # brand, wallet button, address badge
 ├── lib/                      # shared services
 │   ├── algorand.ts           # lazy AlgorandClient + IndexerClient singletons
-│   ├── campaign.ts           # indexer -> CampaignViewModel mapping + Claim ASA reads + Factory box search
-│   ├── transaction.ts        # create/fund/register/issue/attach/seed/pledge/claim/refund/cancel/closeOut/delete send helpers
+│   ├── campaign.ts           # indexer -> CampaignViewModel mapping + Factory box search
+│   ├── claimtree.ts          # proof builder: indexer event replay → frontiers/paths (see below)
+│   ├── claimtree.vectors.ts  # committed oracle vectors (generated, do not edit)
+│   ├── transaction.ts        # create/register/pledge/claim/refund/cancel/delete send helpers
 │   └── format.ts             # microAlgo / deadline formatting
 ├── contracts/                # generated typed clients (gitignored)
 │   ├── Campaign.ts
@@ -57,9 +61,9 @@ navigation (selected campaign id) is enough.
 | View | Content | Reads | Writes |
 | --- | --- | --- | --- |
 | **Browse** | Grid of campaign cards, Factory-registered only | indexer list + Factory box search | — |
-| **Detail** | Full campaign state, progress bar, action buttons | indexer detail + Claim ASA balance | pledge / claim / refund / cancelPledge / closeOut / delete |
-| **Create** | Title + metadata URI + goal (ALGO) + deadline form | — | `create()` + `fund()` + `factory.register()` |
-| **Pledge** | Amount input on the detail page | — | opt-in (if needed) + `pledge()` |
+| **Detail** | Full campaign state, progress bar, per-pledge actions | indexer detail + live leaves + vault box | pledge / claim / refund / cancelPledge / delete |
+| **Create** | Title + metadata URI + goal (ALGO) + deadline form | — | `create()` + `factory.register()` |
+| **Pledge** | Amount input on the detail page | tree replay (frontier) | payment + `pledge()` + `credit()` (one atomic group) |
 
 ## Data model
 
@@ -67,8 +71,9 @@ The indexer exposes each campaign as an `Application` (`id` + `params`). The
 contract's global state arrives as `params.global-state`: a list of
 `{ key, value }` pairs where each key is the base64 of the UTF-8 key name
 (`creator`, `title`, `metadataUri`, `goal`, `deadline`, `raised`, `status`,
-`claimAsa`). A backer's pledge is **their Claim ASA balance** — one indexer
-lookup, no history reconstruction.
+`root`, `n`). A backer's pledge is **their live leaves** — `fetchMyLeaves`
+replays their pledge positions and drops the spent ones; the pledge total is
+the live sum.
 
 ```ts
 // lib/campaign.ts — the shape the UI renders
@@ -83,8 +88,7 @@ interface CampaignViewModel {
   raisedMicroAlgos: bigint
   deadlineSeconds: bigint
   status: CampaignStatus
-  claimAsaId?: bigint          // set once fund() issued the Claim ASA
-  myPledgeMicroAlgos?: bigint  // the viewer's claim-unit balance
+  myPledgeMicroAlgos?: bigint          // live-leaf sum for the viewer
 }
 ```
 
@@ -110,9 +114,11 @@ All reads use `algosdk.Indexer` configured from the same env as algod:
   unset, the registration filter is skipped (dev mode).
 - **One campaign** — `indexer.lookupApplications(appId).do()` for the global
   state.
-- **The Claim ASA id** — `claimAsa` in the campaign's global state.
-- **My pledge** — `indexer.lookupAccountAssets(address).assetId(claimAsa)`:
-  the balance is the pledge (1 unit = 1 µA); a 404 means not opted in yet.
+- **My pledges** — `fetchMyLeaves`: replay the campaign's pledge calls (with
+  group payments paired by block position) and vault/campaign spends, keep the
+  viewer's unspent positions with amounts and payment TxIDs for proofs.
+- **Vault box / window** — fresh reads (algod, not the indexer) drive refund
+  routing (campaign vs vault path) and the refund-window banner.
 
 ## Writes (generated clients)
 
@@ -122,7 +128,7 @@ edited by hand). Pledges pay the **vault** (its app address, derived from
 `VITE_VAULT_APP_ID` via `algosdk.getApplicationAddress`), never the campaign
 escrow.
 
-### create — the full setup chain
+### create — create + register
 
 ```ts
 const { result } = await new CampaignFactory({ algorand, defaultSender, defaultSigner }).send.create.create({
@@ -130,102 +136,80 @@ const { result } = await new CampaignFactory({ algorand, defaultSender, defaultS
   appReferences: [vaultAppId()],
 })
 
-// fund(): 0.2 ALGO storage deposit (escrow MBR: base + Claim ASA opt-in).
-await client.send.fund({ args: { payment }, extraFee: microAlgos(1000) })
-
 // factory.register(): official-campaign proof; ~0.019 ALGO refundable deposit.
 await factoryClient.send.register({ args: { app: appId, payment }, appReferences: [appId] })
-
-// The vault issues the Claim ASA (program hash + Factory registration verified on-chain via an inner call — the Factory's
-// registration box must be referenced); the campaign attaches it (self-opt-in + attach notification); the vault seeds the supply.
-await vaultClient.send.issueClaimAsa({
-  args: { app: appId },
-  appReferences: [appId, factoryAppId()],
-  boxReferences: factoryRegistrationBox(appId),
-  extraFee: microAlgos(2000),
-})
-const claimAsa = await vaultClient.state.box.asaOf.value(appId)
-await client.send.attachClaimAsa({
-  args: { asset: claimAsa },
-  appReferences: [vaultAppId()],
-  assetReferences: [claimAsa],
-  boxReferences: vaultBoxRefs(appId, ['a', 'd', 't']),
-  extraFee: microAlgos(2000),
-})
-await vaultClient.send.seedSupply({ args: { app: appId }, appReferences: [appId], assetReferences: [claimAsa], extraFee: microAlgos(1000) })
 ```
 
-### pledge — opt-in, then payment to the vault + app call
+No funding step exists — the v2 escrow never holds funds.
+
+### pledge — one atomic group with a fresh frontier
 
 ```ts
-const { optedIn } = await fetchClaimHolding(appId, address)
-if (!optedIn) await algorand.send.assetOptIn({ sender: address, assetId: claimAsa })
-
-await client.send.pledge({
-  args: { payment },                      // backer -> VAULT, the pledge amount
-  appReferences: [vaultAppId()],          // the campaign reads the vault's address
-  assetReferences: [claimAsa],            // the inner mint references the Claim ASA
-  extraFee: microAlgos(1000),
-})
+// The wallet signer is registered for composer resolution, then:
+const tree = await loadTree(appId, vaultAppId(), vaultAddress())
+const composer = algorand.send.newGroup()
+composer.addAppCallMethodCall(await campaignClient.params.pledge({
+  args: { payment, frontier: frontierForPledge(tree) },  // backer -> VAULT, the pledge amount
+  sender,
+}))
+composer.addAppCallMethodCall(await vaultClient.params.credit({
+  args: { app: appId, amount },
+  sender,
+  appReferences: [factoryAppId()],                       // inner isRegistered target
+  boxReferences: [vaultCampaignBox, factoryRegistrationBox],
+  extraFee: microAlgos(1000),                            // first-touch factory check
+}))
+await composer.send()
 ```
 
-### claim — the vault pays from unit conservation
+The frontier is rebuilt from the indexer right before submitting; on a
+`stale or forged frontier` rejection the helper rebuilds once and retries.
+The payment TxID must be read from the confirmed group (it commits to the
+group assignment) — never precomputed.
+
+### claim — the vault pays the derived live total
 
 ```ts
 await client.send.claim({
   args: [],
   appReferences: [vaultAppId()],          // inner call target
-  assetReferences: [claimAsa],            // the vault reads holdings
-  boxReferences: vaultBoxRefs(appId, ['a', 'd', 'o', 's']),  // the vault's boxes touched by the inner call
+  boxReferences: [vaultCampaignBox],      // the one 65-byte campaign box
   extraFee: microAlgos(2000),             // inner app call + inner payment
 })
 ```
 
-### refund / cancelPledge — surrender claim units to the vault
+### refund / cancelPledge — one leaf per call, routed by the vault box
 
-While the campaign is alive, the campaign drives the payout (inner app call to
-the vault):
+Each spend carries a freshly rebuilt path for one position. Routing reads the
+vault box fresh from algod: an `Open`/missing box goes through the campaign,
+a `Failed` box goes straight to `vault.refund` (covers post-settle and
+post-delete with the same proofs):
 
 ```ts
-const axfer = await algorand.createTransaction.assetTransfer({
-  sender: address, assetId: claimAsa, receiver: vaultAddress(), amount: balance,
-})
 await client.send.refund({
-  args: { axfer },
-  appReferences: [vaultAppId(), appId],             // the vault's payBack reads the campaign's raised (derived payout)
-  boxReferences: vaultBoxRefs(appId, ['a', 'd']),   // the vault's boxes the inner payBack touches
-  extraFee: microAlgos(2000),
+  args: { k: position, amount, txid, path },
+  appReferences: [vaultAppId()],
+  boxReferences: [vaultCampaignBox],
+  extraFee: microAlgos(3000),             // 1 OpUp iteration + inner payBack
 })
-// …or client.send.cancelPledge({ … same shape … })
+// …or vaultClient.send.refund({
+//   args: { app: appId, k: position, amount, txid, path },
+//   boxReferences: [vaultCampaignBox],
+//   extraFee: microAlgos(3000),
+// })
 ```
 
-Once a **failed campaign has been deleted** (the indexer reports
-`application.deleted === true`), the refund goes **directly through the vault**
-— permanent, permissionless, campaign-independent:
+A `proof does not match root` rejection rebuilds once and retries (a
+concurrent spend moved the root).
+
+### deleteCampaign — settle + close + unregister, one O(1) call
 
 ```ts
-await vaultClient.send.refund({ args: { app: appId, axfer }, appReferences: [appId], extraFee: microAlgos(1000) })
-```
-
-### closeOut — dump worthless units after a successful claim
-
-```ts
-const axfer = await algorand.createTransaction.assetTransfer({
-  sender: address, assetId: claimAsa, receiver: vaultAddress(),
-  amount: 0n, closeAssetTo: vaultAddress(),   // note: `closeAssetTo`, not `closeRemainderTo`
-})
-await client.send.closeOut({ args: { axfer }, appReferences: [vaultAppId()] })
-```
-
-### deleteCampaign — settle + sweep + unregister, one O(1) call
-
-```ts
-await client.send.delete.delete({             // the generated client nests delete
+await client.send.delete.delete({
   args: [],
   appReferences: [vaultAppId()],
-  assetReferences: claimAsa !== undefined ? [claimAsa] : [],
-  boxReferences: claimAsa !== undefined ? vaultBoxRefs(appId, ['a', 'd', 's']) : [],
-  extraFee: microAlgos(claimAsa !== undefined ? 3000 : 1000),
+  boxReferences: [vaultCampaignBox],     // always declared; settle no-ops without one
+  extraFee: microAlgos(2000),            // inner settle/notify + escrow close
 })
 await factoryClient.send.unregister({ args: { app: appId }, appReferences: [appId], extraFee: microAlgos(1000) })
 ```
@@ -244,18 +228,19 @@ fees.
 
 ## Refund UX & fee disclaimers
 
-A failed campaign keeps the backers' funds at the vault until they reclaim them,
-and a refund is itself a transaction the backer signs and pays for. The UI
-states the estimated network fee beside every money-moving action:
+A failed campaign keeps the backers' funds at the vault until they reclaim them
+(one leaf per call), and every spend is itself a transaction the backer signs
+and pays for. The detail page states the estimated network fee beside every
+money-moving action, and shows the refund-window banner (window end + sweep
+target) once settled:
 
 | Action | Transactions | Estimated network fee |
 | --- | --- | --- |
-| `pledge()` (first time) | 1 opt-in + 1 payment + 1 app call + 1 inner axfer | ≈ 0.004 ALGO |
-| `pledge()` (re-pledge) | 1 payment + 1 app call + 1 inner axfer | ≈ 0.003 ALGO |
-| `refund()` / `cancelPledge()` | 1 axfer + 1 app call + 1 inner app call + 1 inner payment | ≈ 0.004 ALGO |
-| `refund()` via the vault (post-delete) | 1 axfer + 1 vault call + 1 inner payment | ≈ 0.003 ALGO |
-| `closeOut()` | 1 axfer + 1 app call | ≈ 0.002 ALGO |
-| `delete()` | 1 app call + 2–3 inner txns (+ 1 unregister call) | ≈ 0.003–0.004 ALGO |
+| `pledge()` | 1 payment + 2 app calls | ≈ 0.004 ALGO |
+| `refund()` / `cancelPledge()` | 1 app call + 1 OpUp iteration + 1 inner app call + 1 inner payment | ≈ 0.004 ALGO |
+| `refund()` via the vault (post-settle) | 1 app call + 1 OpUp iteration + 1 inner payment | ≈ 0.004 ALGO |
+| `claim()` | 1 app call + 1 inner app call + 1 inner payment | ≈ 0.003 ALGO |
+| `delete()` (+ `unregister()`) | 1 app call + 2 inner txns (+ 1 unregister call) | ≈ 0.003 + 0.002 ALGO |
 
 ## Edge cases & gotchas
 
@@ -269,28 +254,31 @@ states the estimated network fee beside every money-moving action:
   before opening the wallet.
 - **Approval race.** The user signs a pledge/cancel, but the deadline passes before
   submission — the transaction fails; handle the message gracefully.
-- **Opt-in race.** Two tabs pledging at once can double-opt-in; the opt-in
-  check-then-send is best-effort and a failed opt-in just surfaces an error.
-- **Close-out needs the exact `closeAssetTo` parameter** (asset transfers use
-  `closeAssetTo`, not `closeRemainderTo`).
+- **Proof race.** A concurrent pledge/refund can move the tree root between the
+  UI's read and its submit — the helpers rebuild proofs once and retry; only a
+  second failure surfaces, with a retry hint.
+- **Close-out needs the exact `closeRemainderTo` parameter** (the escrow close
+  is a payment with `closeRemainderTo`, set by the contract, not the UI).
 - **The Factory and the vault must be funded.** `register()` needs the Factory's
   app account to hold the registration deposits; the vault's app account holds
-  the pooled pledges plus its parked per-campaign MBR. The deploy scripts fund
-  both once.
+  the pooled pledges plus its parked per-campaign MBR (32,100 µA per box). The
+  deploy scripts fund both once.
 - **`VITE_FACTORY_APP_ID` / `VITE_VAULT_APP_ID`.** The browse filter and every
   pledge/refund depend on these env vars matching the deployed apps; an empty
   Factory id disables the official-campaign filter.
 - **Inner vault calls need box references.** `claim()`, `refund()`,
-  `cancelPledge()`, and `delete()` inner-call the vault, whose BoxMap reads and
-  writes require the box names to be declared on the outer transaction
-  (`boxReferences` built from the vault app id + the campaign app id) — the
-  AVM rejects undeclared box access. The vault's own methods get their boxes
-  auto-populated from the ARC-56 spec.
+  `cancelPledge()`, and `delete()` inner-call the vault, whose box read/write
+  requires the campaign box (`'c' + appId`) declared on the outer transaction
+  — the AVM rejects undeclared box access. First-touch `credit` additionally
+  declares the Factory app and its registration box.
 - **The vault address is the pledge receiver.** `pledge()` rejects payments
   sent anywhere else, so the helper derives the address from
   `algosdk.getApplicationAddress(VITE_VAULT_APP_ID)`.
-- **Suppress pledge readout on `claimed`.** `closeOut()` removes the units, so
-  the detail view's "Your pledge" reflects the live balance naturally.
+- **The composer does not dedupe.** Pass each transaction either explicitly
+  (`addTransaction`) or by method-arg reference, never both — otherwise the
+  group carries it twice.
+- **Suppress pledge readout on `claimed`.** Spent leaves drop out of the live
+  set, so the detail view's "Your pledge" reflects the live total naturally.
 
 ## Wallet integration
 
@@ -305,8 +293,8 @@ Already present and unchanged: `App.tsx` builds a `WalletManager`
   `algo()` / `microAlgos()` from `@algorandfoundation/algokit-utils`.
 - **Deadline** is a UNIX timestamp in seconds; the UI renders a local date and a
   countdown.
-- **Claim units** are microAlgo-denominated (1 unit = 1 µA, 0 decimals) and are
-  displayed as ALGO alongside pledges.
+- **Pledge positions** are 0-based leaf indices, stable forever (positions are
+  never reused); the detail view labels them "Pledge #k".
 
 ## Testing (Vitest)
 
@@ -318,11 +306,14 @@ Coverage gates **components and utils** (the app shell and generated clients are
 excluded), with thresholds of 90% across lines/branches/functions/statements:
 
 - `lib/format.ts` — ALGO/microAlgo conversion, deadline/countdown formatting.
-- `lib/campaign.ts` — global-state decoding, status derivation, Claim ASA reads,
-  Factory box decoding, and the indexer-backed read helpers.
+- `lib/campaign.ts` — global-state decoding, status derivation, tree-sum pledge
+  reads, Factory box decoding, and the indexer-backed read helpers.
+- `lib/claimtree.ts` — the proof builder (tree math + indexer replay), proven
+  against committed oracle vectors (`claimtree.vectors.ts`, regenerated by
+  `scripts/generate-claimtree-vectors.py`).
 - `lib/algorand.ts` / `lib/transaction.ts` — client singletons and the
-  create/fund/register/pledge/claim/refund/cancel/closeOut/delete helpers
-  (mocked at the `CampaignClient`/`FactoryClient` boundary).
+  create/register/pledge/claim/refund/cancel/delete helpers (mocked at the
+  client/composer boundary, proof builder mocked for flow tests).
 - `features/campaigns/*` and the rest of `features/app/Nav`, `components/*`,
   `utils/*`.
 

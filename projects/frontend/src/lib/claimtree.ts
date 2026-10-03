@@ -500,6 +500,30 @@ export async function loadTree(campaignId: bigint, vaultId: bigint, vaultAddress
   return state
 }
 
+/**
+ * The viewer's live leaves: pledge positions they own whose leaf is not yet nulled. Drives per-leaf refund/cancel
+ * buttons and the pledge total (the sum replaces the old Claim ASA balance read).
+ *
+ * @param campaignId Campaign application id.
+ * @param vaultId Vault application id.
+ * @param vaultAddress Vault app address (the pledge payment receiver).
+ * @param address Viewer address.
+ * @returns Live leaves owned by the viewer, with positions, amounts, and payment TxIDs for proofs.
+ */
+export async function fetchMyLeaves(
+  campaignId: bigint,
+  vaultId: bigint,
+  vaultAddress: string,
+  address: string,
+): Promise<{ position: number; amount: bigint; txidHex: string }[]> {
+  const pledges = await fetchPledges(campaignId, vaultAddress)
+  const spent = new Set((await fetchSpends(campaignId, vaultId)).map((spend) => spend.position))
+  return pledges
+    .map((pledge, index) => ({ ...pledge, position: index }))
+    .filter((pledge) => pledge.backer === address && !spent.has(pledge.position))
+    .map(({ position, amount, txidHex }) => ({ position, amount, txidHex }))
+}
+
 /** Decode an unpadded RFC 4648 base32 string (confirmed transaction IDs) to bytes. */
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
 

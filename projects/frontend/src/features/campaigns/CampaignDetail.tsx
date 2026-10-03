@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState } from 'react'
 import type { CampaignViewModel } from '../../lib/campaign'
 import { getCampaign } from '../../lib/campaign'
 import { formatAlgo, formatCountdown, formatDeadline } from '../../lib/format'
-import { cancelPledge, claim, closeOut, deleteCampaign, refund } from '../../lib/transaction'
+import type { BackerLeaf } from '../../lib/transaction'
+import { cancelPledge, claim, deleteCampaign, fetchMyLeaves, fetchVaultBox, fetchVaultConfig, refund } from '../../lib/transaction'
 import PledgeForm from './PledgeForm'
 
 interface CampaignDetailProps {
@@ -11,12 +12,25 @@ interface CampaignDetailProps {
   onBack: () => void
 }
 
+interface WindowInfo {
+  /** Refund window ends at this UNIX timestamp (seconds). */
+  endsAt: bigint
+  /** Where unclaimed residuals go after the window. */
+  sweepTarget: string
+}
+
+const NETWORK_FEE_ALGO = '≈0.004 ALGO'
+const CLAIM_FEE_ALGO = '≈0.003 ALGO'
+
 const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   const { activeAddress, activeWallet, transactionSigner } = useWallet()
   const [campaign, setCampaign] = useState<CampaignViewModel | null>(null)
+  const [leaves, setLeaves] = useState<BackerLeaf[]>([])
+  const [windowInfo, setWindowInfo] = useState<WindowInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [busyAction, setBusyAction] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -28,6 +42,27 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
         setError('Campaign not found (or it is not a Campaign app).')
       } else {
         setCampaign(result)
+      }
+      if (activeAddress) {
+        try {
+          setLeaves(await fetchMyLeaves(appId, activeAddress))
+        } catch {
+          setLeaves([])
+        }
+      } else {
+        setLeaves([])
+      }
+      // Refund-window banner data (failed campaigns only): fresh vault box + configured window.
+      const box = await fetchVaultBox(appId).catch(() => undefined)
+      if (box !== undefined && box.status === 2 && box.settledAt > 0n) {
+        const config = await fetchVaultConfig().catch(() => undefined)
+        if (config !== undefined) {
+          setWindowInfo({ endsAt: box.settledAt + config.window, sweepTarget: config.sweepTarget })
+        } else {
+          setWindowInfo(null)
+        }
+      } else {
+        setWindowInfo(null)
       }
     } catch {
       setError('Failed to load campaign. Is the indexer reachable?')
@@ -48,51 +83,46 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   const percent = campaign.goalMicroAlgos > 0n ? Number((campaign.raisedMicroAlgos * 100n) / campaign.goalMicroAlgos) : 0
   const connected = Boolean(activeWallet && activeAddress)
   const isCreator = connected && campaign.creator !== '' && activeAddress === campaign.creator
-  const hasPledge = (campaign.myPledgeMicroAlgos ?? 0n) > 0n
+  const hasPledge = leaves.length > 0
   const canPledge = campaign.status === 'open' && connected && !isCreator
   const canClaim = campaign.status === 'funded' && isCreator
   const canRefund = campaign.status === 'failed' && connected && hasPledge
   const canCancelPledge = campaign.status === 'open' && connected && hasPledge
-  const canCloseOut = campaign.status === 'claimed' && connected && hasPledge
   const canDelete = isCreator && (campaign.status !== 'open' || campaign.raisedMicroAlgos === 0n)
 
-  const runAction = async (action: () => Promise<void>, success: string) => {
+  const runAction = async (key: string, action: () => Promise<void>, success: string) => {
     setBusy(true)
+    setBusyAction(key)
     setMessage(null)
     try {
       await action()
       setMessage(success)
       await load()
     } catch {
-      setMessage('Transaction failed. Please try again.')
+      setMessage('Transaction failed. Another pledge or refund may have landed first — please try again.')
     } finally {
       setBusy(false)
+      setBusyAction(null)
     }
   }
 
+  const sessionOf = () => {
+    if (!activeAddress) throw new Error('no wallet')
+    return { address: activeAddress, signer: transactionSigner }
+  }
+
   const handleClaim = () => {
-    if (!activeAddress) return
-    void runAction(() => claim(appId, { address: activeAddress, signer: transactionSigner }), 'Claim submitted!')
-  }
-
-  const handleRefund = () => {
-    if (!activeAddress) return
-    void runAction(() => refund(appId, { address: activeAddress, signer: transactionSigner }), 'Refund submitted!')
-  }
-
-  const handleCancelPledge = () => {
-    if (!activeAddress) return
-    void runAction(() => cancelPledge(appId, { address: activeAddress, signer: transactionSigner }), 'Pledge withdrawn!')
-  }
-
-  const handleCloseOut = () => {
-    if (!activeAddress) return
-    void runAction(() => closeOut(appId, { address: activeAddress, signer: transactionSigner }), 'Claim closed out!')
+    void runAction('claim', () => claim(appId, sessionOf()), 'Claim submitted!')
   }
 
   const handleDelete = () => {
-    if (!activeAddress) return
-    void runAction(() => deleteCampaign(appId, { address: activeAddress, signer: transactionSigner }), 'Campaign deleted!')
+    void runAction('delete', () => deleteCampaign(appId, sessionOf()), 'Campaign deleted!')
+  }
+
+  const handleSpend = (leaf: BackerLeaf, kind: 'cancel' | 'refund') => {
+    const key = `${kind}-${leaf.position.toString()}`
+    const action = kind === 'cancel' ? () => cancelPledge(appId, sessionOf(), leaf) : () => refund(appId, sessionOf(), leaf)
+    void runAction(key, action, kind === 'cancel' ? 'Pledge withdrawn!' : 'Refund submitted!')
   }
 
   return (
@@ -134,6 +164,13 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
           </div>
         </dl>
 
+        {campaign.status === 'failed' && windowInfo && (
+          <p className="detail__banner">
+            Refunds are open until {formatDeadline(windowInfo.endsAt)}. After that, unclaimed funds go to {windowInfo.sweepTarget}. Each
+            refund is one pledge at a time.
+          </p>
+        )}
+
         {canPledge && <PledgeForm appId={campaign.id} onPledged={() => void load()} />}
 
         {canClaim && (
@@ -146,40 +183,66 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
                 handleClaim()
               }}
             >
-              {busy ? 'Claiming…' : 'Claim funds'}
+              {busy && busyAction === 'claim' ? 'Claiming…' : 'Claim funds'}
             </button>
-          </div>
-        )}
-
-        {canRefund && (
-          <div className="detail__actions">
-            <button type="button" className="btn btn--primary" disabled={busy} onClick={handleRefund}>
-              {busy ? 'Refunding…' : 'Refund my pledge'}
-            </button>
+            <p className="detail__fee">Network fee {CLAIM_FEE_ALGO}. No backer action needed after success.</p>
           </div>
         )}
 
         {canCancelPledge && (
           <div className="detail__actions">
-            <button type="button" className="btn" disabled={busy} onClick={handleCancelPledge}>
-              {busy ? 'Withdrawing…' : 'Cancel my pledge'}
-            </button>
+            <h3 className="detail__subtitle">Your pledges</h3>
+            {leaves.map((leaf) => (
+              <div key={leaf.position} className="detail__leaf">
+                <span>
+                  Pledge #{leaf.position.toString()}: {formatAlgo(leaf.amount)} ALGO
+                </span>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={busy}
+                  onClick={() => {
+                    handleSpend(leaf, 'cancel')
+                  }}
+                >
+                  {busy && busyAction === `cancel-${leaf.position.toString()}` ? 'Withdrawing…' : 'Cancel pledge'}
+                </button>
+              </div>
+            ))}
+            <p className="detail__fee">Network fee {NETWORK_FEE_ALGO} per cancellation.</p>
           </div>
         )}
 
-        {canCloseOut && (
+        {canRefund && (
           <div className="detail__actions">
-            <button type="button" className="btn" disabled={busy} onClick={handleCloseOut}>
-              {busy ? 'Closing…' : 'Close out my claim'}
-            </button>
+            <h3 className="detail__subtitle">Your pledges</h3>
+            {leaves.map((leaf) => (
+              <div key={leaf.position} className="detail__leaf">
+                <span>
+                  Pledge #{leaf.position.toString()}: {formatAlgo(leaf.amount)} ALGO
+                </span>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  disabled={busy}
+                  onClick={() => {
+                    handleSpend(leaf, 'refund')
+                  }}
+                >
+                  {busy && busyAction === `refund-${leaf.position.toString()}` ? 'Refunding…' : 'Refund my pledge'}
+                </button>
+              </div>
+            ))}
+            <p className="detail__fee">Network fee {NETWORK_FEE_ALGO} per refund.</p>
           </div>
         )}
 
         {canDelete && (
           <div className="detail__actions">
             <button type="button" className="btn btn--danger" disabled={busy} onClick={handleDelete}>
-              {busy ? 'Deleting…' : 'Delete campaign'}
+              {busy && busyAction === 'delete' ? 'Deleting…' : 'Delete campaign'}
             </button>
+            <p className="detail__fee">Network fee {CLAIM_FEE_ALGO}.</p>
           </div>
         )}
 

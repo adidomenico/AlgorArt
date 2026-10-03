@@ -24,7 +24,7 @@ function appParams(globalState: algosdk.indexerModels.TealKeyValue[]): algosdk.i
   })
 }
 
-function campaignApp(overrides: { status?: bigint; raised?: bigint; claimAsa?: bigint } = {}): algosdk.indexerModels.Application {
+function campaignApp(overrides: { status?: bigint; raised?: bigint } = {}): algosdk.indexerModels.Application {
   const globalState = [
     kv('creator', tealBytes(algosdk.decodeAddress(ZERO_ADDRESS).publicKey)),
     kv('title', tealBytes(new TextEncoder().encode('My first novel'))),
@@ -33,7 +33,8 @@ function campaignApp(overrides: { status?: bigint; raised?: bigint; claimAsa?: b
     kv('deadline', tealUint(2_000n)),
     kv('raised', tealUint(overrides.raised ?? 5_000_000n)),
     kv('status', tealUint(overrides.status ?? 0n)),
-    kv('claimAsa', tealUint(overrides.claimAsa ?? 777n)),
+    kv('root', tealBytes(new Uint8Array(32))),
+    kv('n', tealUint(0n)),
   ]
   return new algosdk.indexerModels.Application({ id: 42n, params: appParams(globalState) })
 }
@@ -45,7 +46,7 @@ describe('factoryAppId', () => {
 })
 
 describe('decodeGlobalState', () => {
-  it('decodes creator, title, metadata uri, goal, deadline, raised, status, and claimAsa', () => {
+  it('decodes creator, title, metadata uri, goal, deadline, raised, and status', () => {
     const app = campaignApp()
     const state = decodeGlobalState(app)
     expect(state.creator).toBe(ZERO_ADDRESS)
@@ -55,7 +56,6 @@ describe('decodeGlobalState', () => {
     expect(state.deadline).toBe(2_000n)
     expect(state.raised).toBe(5_000_000n)
     expect(state.status).toBe(0n)
-    expect(state.claimAsa).toBe(777n)
   })
 
   it('ignores unknown keys', () => {
@@ -84,7 +84,7 @@ describe('isCampaignApp', () => {
     expect(isCampaignApp(campaignApp())).toBe(true)
   })
 
-  it('returns false when the claimAsa key is missing', () => {
+  it('returns false when the root key is missing', () => {
     const app = new algosdk.indexerModels.Application({
       id: 1n,
       params: appParams([
@@ -153,13 +153,7 @@ describe('toCampaignViewModel', () => {
     expect(vm.raisedMicroAlgos).toBe(10_000_000n)
     expect(vm.deadlineSeconds).toBe(2_000n)
     expect(vm.status).toBe('funded')
-    expect(vm.claimAsaId).toBe(777n)
     expect(vm.myPledgeMicroAlgos).toBe(250_000n)
-  })
-
-  it('omits the claim ASA id when it is not issued yet', () => {
-    const vm = toCampaignViewModel(campaignApp({ claimAsa: 0n }), 3_000n)
-    expect(vm.claimAsaId).toBeUndefined()
   })
 
   it('defaults missing goal/raised to zero', () => {

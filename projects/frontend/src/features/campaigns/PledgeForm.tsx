@@ -51,6 +51,7 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
       <button type="button" className="btn btn--primary" disabled={!canSubmit} onClick={() => void handleSubmit()}>
         {busy ? 'Sending…' : 'Pledge'}
       </button>
+      <p className="pledge__fee">Network fee ≈0.004 ALGO. Refunds stay open after failure — no opt-ins needed.</p>
       {message && <p className="pledge__message">{message}</p>}
     </div>
   )

@@ -73,9 +73,9 @@ stays green (format, lint, types, offline coverage at 100%, integration on Local
 
 ### C3 — frontend: claim-tree flows
 
-- [ ] `transaction.ts` — `[pay, pledge, credit]` groups, cancel/refund/claim/delete with box/app refs and
+- [x] `transaction.ts` — `[pay, pledge, credit]` groups, cancel/refund/claim/delete with box/app refs and
       OpUp `extraFee`; delete all ASA flows (issue/attach/seed/sweep/destroy/opt-in).
-- [ ] UI — proof-building states (loading frontier/path, stale-proof retry), fee disclaimers, 730-day
+- [x] UI — proof-building states (loading frontier/path, stale-proof retry), fee disclaimers, 730-day
       refund-window banner; covers the unchecked Frontend UX items above. Update
       [`frontend.md`](frontend.md) in the same set.
 

@@ -1,16 +1,21 @@
 import algosdk from 'algosdk'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchClaimAsaId, fetchClaimHolding, fetchMyPledge, fetchRegisteredCampaignIds, getCampaign, listCampaigns } from './campaign'
+import { fetchMyPledge, fetchRegisteredCampaignIds, getCampaign, listCampaigns } from './campaign'
 
 const indexerMock = vi.hoisted(() => ({
   lookupApplications: vi.fn(),
-  lookupAccountAssets: vi.fn(),
   searchForApplications: vi.fn(),
   searchForApplicationBoxes: vi.fn(),
 }))
 
+const fetchMyLeavesMock = vi.hoisted(() => vi.fn())
+
 vi.mock('./algorand', () => ({
   indexer: indexerMock,
+}))
+
+vi.mock('./claimtree', () => ({
+  fetchMyLeaves: (...args: unknown[]) => fetchMyLeavesMock(...args),
 }))
 
 const ZERO_ADDRESS = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ'
@@ -27,7 +32,7 @@ function kv(key: string, value: algosdk.indexerModels.TealValue): algosdk.indexe
   return new algosdk.indexerModels.TealKeyValue({ key: new TextEncoder().encode(key), value })
 }
 
-function campaignApp(overrides: { claimAsa?: bigint; id?: bigint } = {}): algosdk.indexerModels.Application {
+function campaignApp(overrides: { id?: bigint } = {}): algosdk.indexerModels.Application {
   const globalState = [
     kv('creator', tealBytes(algosdk.decodeAddress(ZERO_ADDRESS).publicKey)),
     kv('title', tealBytes(new TextEncoder().encode('My first novel'))),
@@ -36,7 +41,8 @@ function campaignApp(overrides: { claimAsa?: bigint; id?: bigint } = {}): algosd
     kv('deadline', tealUint(2_000n)),
     kv('raised', tealUint(5_000_000n)),
     kv('status', tealUint(0n)),
-    kv('claimAsa', tealUint(overrides.claimAsa ?? 777n)),
+    kv('root', tealBytes(new Uint8Array(32))),
+    kv('n', tealUint(0n)),
   ]
   return new algosdk.indexerModels.Application({
     id: overrides.id ?? 42n,
@@ -91,52 +97,17 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('fetchClaimAsaId', () => {
-  it('returns the Claim ASA id from global state', async () => {
-    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp() }))
-    expect(await fetchClaimAsaId(42n)).toBe(777n)
-  })
-
-  it('returns undefined when the campaign has not been funded', async () => {
-    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp({ claimAsa: 0n }) }))
-    expect(await fetchClaimAsaId(42n)).toBeUndefined()
-  })
-
-  it('returns undefined when the app is missing', async () => {
-    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: undefined }))
-    expect(await fetchClaimAsaId(42n)).toBeUndefined()
-  })
-})
-
-describe('fetchClaimHolding', () => {
-  it('returns the opted-in balance', async () => {
-    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp() }))
-    indexerMock.lookupAccountAssets.mockImplementation(() => lookupBuilder({ assets: [{ amount: 250_000n }] }))
-    expect(await fetchClaimHolding(42n, 'ADDRESS')).toEqual({ optedIn: true, balance: 250_000n })
-  })
-
-  it('returns opted out when the asset lookup 404s', async () => {
-    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp() }))
-    indexerMock.lookupAccountAssets.mockImplementation(() => lookupBuilder({}, true))
-    expect(await fetchClaimHolding(42n, 'ADDRESS')).toEqual({ optedIn: false, balance: 0n })
-  })
-
-  it('returns opted out when the campaign has no Claim ASA', async () => {
-    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp({ claimAsa: 0n }) }))
-    expect(await fetchClaimHolding(42n, 'ADDRESS')).toEqual({ optedIn: false, balance: 0n })
-  })
-})
-
 describe('fetchMyPledge', () => {
-  it('returns the claim balance when positive', async () => {
-    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp() }))
-    indexerMock.lookupAccountAssets.mockImplementation(() => lookupBuilder({ assets: [{ amount: 1_000_000n }] }))
+  it('sums the viewer’s live leaves', async () => {
+    fetchMyLeavesMock.mockResolvedValue([
+      { position: 0, amount: 600_000n, txidHex: 'aa' },
+      { position: 2, amount: 400_000n, txidHex: 'bb' },
+    ])
     expect(await fetchMyPledge(42n, 'ADDRESS')).toBe(1_000_000n)
   })
 
-  it('returns undefined when the backer holds no units', async () => {
-    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp() }))
-    indexerMock.lookupAccountAssets.mockImplementation(() => lookupBuilder({}, true))
+  it('returns undefined when the viewer has no live leaves', async () => {
+    fetchMyLeavesMock.mockResolvedValue([])
     expect(await fetchMyPledge(42n, 'ADDRESS')).toBeUndefined()
   })
 })
@@ -180,7 +151,7 @@ describe('listCampaigns', () => {
 describe('getCampaign', () => {
   it('returns the campaign with the viewer pledge', async () => {
     indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp() }))
-    indexerMock.lookupAccountAssets.mockImplementation(() => lookupBuilder({ assets: [{ amount: 250_000n }] }))
+    fetchMyLeavesMock.mockResolvedValue([{ position: 0, amount: 250_000n, txidHex: 'aa' }])
     const vm = await getCampaign(42n, 3_000n, 'ADDRESS')
     expect(vm?.id).toBe(42n)
     expect(vm?.myPledgeMicroAlgos).toBe(250_000n)
