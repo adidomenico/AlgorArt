@@ -43,9 +43,9 @@ stays green (format, lint, types, offline coverage at 100%, integration on Local
 
 ### Phase 0 — decisions (block C1, no code)
 
-- [ ] **`sweepTarget` + window** — who receives the post-window residual, and confirm 730 days
-      (see [`claim-tree-protocol.md`](claim-tree-protocol.md) → Refund window decision). The vault's
-      `finalize` needs the address source.
+- [x] **`sweepTarget` + window** — platform treasury with a 730-day window, disclosed in the UI at pledge time
+      (see [`claim-tree-protocol.md`](claim-tree-protocol.md) → Refund window decision; revisit before any real deploy).
+      The vault takes the address as a creation parameter, so no contract change is needed either way.
 - [ ] **Spike retirement** — migrate the differential asserts into the campaign suite, delete
       `smart_contracts/claimtree/`, remove the coverage exclusion.
 - [ ] **Confirm the drops** — `fund()`, `attachClaimAsa`, `closeOut`, `claimAsa`/`deposit` state,
@@ -113,7 +113,8 @@ stays green (format, lint, types, offline coverage at 100%, integration on Local
 - [ ] **TestNet smoke test** — deploy the Factory + Campaign contracts, fund via the dispenser, and run
       create → pledge → claim, and → refund with a real wallet (Pera/Defly). This de-risks
       wallet + public-network integration and is independent of styling.
-- [ ] **Lock the contract shape** (decide `updateMetadata()`) before the v2 demo deploy.
+- [x] **Lock the contract shape** — decided: no `updateMetadata()`; title and metadata URI stay immutable
+      (a backer's pledge can never be re-described under them; mutability can come later via the off-chain JSON).
 - [ ] Deploy the frontend to a **free static host** (GitHub Pages / Cloudflare Pages / Netlify).
 
 ## Backend & archival
@@ -141,8 +142,8 @@ discovery and the outcome record; the catalog is for search/filter/history UX.
 ## Open design questions
 
 - [ ] **Residual + cleanup cadence.** Successful campaigns delete O(1) with nothing parked;
-      failed campaigns hold the pool until `finalize` sweeps the residual to `sweepTarget` after the
-      window. Decide `sweepTarget` (Phase 0 above), and whether the platform or the community drives
+      failed campaigns hold the pool until `finalize` sweeps the residual to the treasury `sweepTarget` after the
+      window (decided, Phase 0 above). Still open: whether the platform or the community drives
       `finalize` (see [`claim-tree-protocol.md`](claim-tree-protocol.md) → Refund window decision).
 - [ ] **Pooled-custody review.** The vault concentrates all campaign funds; consider a
       third-party audit of the vault before TestNet.

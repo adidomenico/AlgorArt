@@ -421,11 +421,10 @@ wants zero self-enrichment optics, `sweepTarget` can be a documented community f
 
 **Recommendation: Option B.**
 
-**Governance decision required before TestNet (not a protocol change):** who `sweepTarget` is. Options: (i) platform treasury
-(simplest; self-enrichment optics — disclose the window and the target in the UI at pledge time); (ii) a documented community fund
-or the campaign creator (kills the optics; the address must be fixed at vault creation); (iii) a longer window (e.g. 5 years) with
-(i)/(ii) unchanged. The address is immutable once the vault is created. This is the one open item in this section; everything else
-stands.
+**Governance decision (recorded September 2026, revisit before any real deploy):** `sweepTarget` is the platform treasury.
+The 730-day window and the sweep destination are disclosed in the UI at pledge time (refund-window banner). Rationale:
+residuals will be dust; a future vault can point at a community fund instead — the address is a vault-creation parameter,
+so no contract change is needed either way. The creator as sweep target was rejected (rewards failure, looks like a backdoor).
 
 ## 14. Opcode and resource analysis
 
