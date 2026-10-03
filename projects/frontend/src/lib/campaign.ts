@@ -264,10 +264,19 @@ export async function listCampaigns(nowSeconds: bigint, viewerAddress?: string):
   const factoryId = factoryAppId()
   const registered = factoryId > 0n ? await fetchRegisteredCampaignIds(factoryId) : undefined
 
-  const response = await indexer.searchForApplications().limit(100).do()
+  // Paginate: playground chains accumulate hundreds of apps and the ids we want can sit far past the first page.
+  const applications: algosdk.indexerModels.Application[] = []
+  let nextToken: string | undefined
+  do {
+    let query = indexer.searchForApplications().limit(100)
+    if (nextToken !== undefined) query = query.nextToken(nextToken)
+    const response = await query.do()
+    applications.push(...response.applications)
+    nextToken = response.nextToken
+  } while (nextToken !== undefined)
 
   const campaigns: CampaignViewModel[] = []
-  for (const app of response.applications) {
+  for (const app of applications) {
     if (!isCampaignApp(app)) continue
     if (registered !== undefined && !registered.has(app.id)) continue
     let myPledge: bigint | undefined
