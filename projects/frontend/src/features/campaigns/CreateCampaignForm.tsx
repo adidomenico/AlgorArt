@@ -1,5 +1,6 @@
 import { useWallet } from '@txnlab/use-wallet-react'
 import { useState } from 'react'
+import { fetchChainTimestamp } from '../../lib/algorand'
 import { parseAlgoToMicroAlgos } from '../../lib/format'
 import { createCampaign } from '../../lib/transaction'
 
@@ -47,7 +48,7 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
         setMessage('Duration must be a positive number of days.')
         return
       }
-      const deadlineSeconds = BigInt(Math.floor(Date.now() / 1000) + daysNumber * 86_400)
+      const deadlineSeconds = (await fetchChainTimestamp()) + BigInt(Math.floor(daysNumber)) * 86_400n
 
       const { appId } = await createCampaign(
         { address: activeAddress, signer: transactionSigner },

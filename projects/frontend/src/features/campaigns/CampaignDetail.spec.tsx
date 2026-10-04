@@ -33,6 +33,12 @@ vi.mock('../../lib/transaction', () => ({
 
 const useWalletMock = vi.fn()
 
+const fetchChainTimestampMock = vi.fn()
+
+vi.mock('../../lib/algorand', () => ({
+  fetchChainTimestamp: (...args: unknown[]) => fetchChainTimestampMock(...args),
+}))
+
 vi.mock('@txnlab/use-wallet-react', () => ({
   useWallet: () => useWalletMock(),
 }))
@@ -71,6 +77,7 @@ describe('CampaignDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', activeWallet: {}, transactionSigner: {} })
+    fetchChainTimestampMock.mockResolvedValue(1_000_000_000n)
     fetchMyLeavesMock.mockResolvedValue([])
     fetchVaultBoxMock.mockResolvedValue(undefined)
     fetchVaultConfigMock.mockResolvedValue(undefined)

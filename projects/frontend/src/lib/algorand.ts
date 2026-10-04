@@ -37,6 +37,20 @@ export const algorand = AlgorandClient.fromConfig({
 })
 
 /**
+ * The chain's current timestamp (latest block header), in seconds.
+ *
+ * Wall-clock time (`Date.now()`) is wrong on time-traveled LocalNet chains and can drift from consensus time
+ * anywhere — every deadline/status/countdown decision in the UI must use this instead.
+ *
+ * @returns UNIX timestamp in seconds.
+ */
+export async function fetchChainTimestamp(): Promise<bigint> {
+  const status = await algorand.client.algod.status().do()
+  const block = await algorand.client.algod.block(status.lastRound).do()
+  return BigInt(block.block.header.timestamp)
+}
+
+/**
  * Poll the indexer until it has indexed at least the given round.
  *
  * Reads made immediately after a confirmed write can race the indexer: the transaction is on-chain, but the indexer may not have applied it

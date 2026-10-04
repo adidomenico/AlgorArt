@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CampaignViewModel } from '../../lib/campaign'
 import CampaignList from './CampaignList'
 
@@ -39,6 +39,7 @@ const campaigns: CampaignViewModel[] = [
 ]
 
 const listCampaignsMock = vi.fn()
+const fetchChainTimestampMock = vi.fn()
 
 vi.mock('../../lib/campaign', async () => {
   const actual = await vi.importActual('../../lib/campaign')
@@ -48,7 +49,15 @@ vi.mock('../../lib/campaign', async () => {
   }
 })
 
+vi.mock('../../lib/algorand', () => ({
+  fetchChainTimestamp: (...args: unknown[]) => fetchChainTimestampMock(...args),
+}))
+
 describe('CampaignList', () => {
+  beforeEach(() => {
+    fetchChainTimestampMock.mockResolvedValue(1_000_000_000n)
+  })
+
   it('renders campaign cards when campaigns are loaded', async () => {
     listCampaignsMock.mockResolvedValue(campaigns)
     render(<CampaignList onSelectCampaign={() => {}} />)

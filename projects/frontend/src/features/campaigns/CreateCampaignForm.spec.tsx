@@ -4,9 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import CreateCampaignForm from './CreateCampaignForm'
 
 const createCampaignMock = vi.fn()
+const fetchChainTimestampMock = vi.fn()
 
 vi.mock('../../lib/transaction', () => ({
   createCampaign: (...args: unknown[]) => createCampaignMock(...args),
+}))
+
+vi.mock('../../lib/algorand', () => ({
+  fetchChainTimestamp: (...args: unknown[]) => fetchChainTimestampMock(...args),
 }))
 
 const useWalletMock = vi.fn()
@@ -19,6 +24,7 @@ describe('CreateCampaignForm', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', transactionSigner: {} })
+    fetchChainTimestampMock.mockResolvedValue(1_000_000_000n)
   })
 
   it('creates a campaign and calls onCreated with the new app id', async () => {

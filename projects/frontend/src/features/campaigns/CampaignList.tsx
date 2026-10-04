@@ -1,5 +1,6 @@
 import { useWallet } from '@txnlab/use-wallet-react'
 import { useEffect, useState } from 'react'
+import { fetchChainTimestamp } from '../../lib/algorand'
 import type { CampaignViewModel } from '../../lib/campaign'
 import { listCampaigns } from '../../lib/campaign'
 import CampaignCard from './CampaignCard'
@@ -12,6 +13,7 @@ interface CampaignListProps {
 const CampaignList = ({ onSelectCampaign }: CampaignListProps) => {
   const { activeAddress } = useWallet()
   const [campaigns, setCampaigns] = useState<CampaignViewModel[]>([])
+  const [nowSeconds, setNowSeconds] = useState<bigint | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -20,9 +22,14 @@ const CampaignList = ({ onSelectCampaign }: CampaignListProps) => {
     setLoading(true)
     setError(null)
 
-    listCampaigns(BigInt(Math.floor(Date.now() / 1000)), activeAddress ?? undefined)
+    fetchChainTimestamp()
+      .then((now) => {
+        if (cancelled) return null
+        setNowSeconds(now)
+        return listCampaigns(now, activeAddress ?? undefined)
+      })
       .then((result) => {
-        if (!cancelled) setCampaigns(result)
+        if (!cancelled && result) setCampaigns(result)
       })
       .catch(() => {
         if (!cancelled) setError('Failed to load campaigns. Is the indexer reachable?')
@@ -36,7 +43,7 @@ const CampaignList = ({ onSelectCampaign }: CampaignListProps) => {
     }
   }, [activeAddress])
 
-  if (loading) {
+  if (loading || nowSeconds === null) {
     return (
       <div className="campaign-list">
         <p className="campaign-list__status">Loading campaigns…</p>
@@ -64,7 +71,7 @@ const CampaignList = ({ onSelectCampaign }: CampaignListProps) => {
     <div className="campaign-list">
       <div className="campaign-list__grid">
         {campaigns.map((campaign) => (
-          <CampaignCard key={campaign.id.toString()} campaign={campaign} onSelect={onSelectCampaign} />
+          <CampaignCard key={campaign.id.toString()} campaign={campaign} nowSeconds={nowSeconds} onSelect={onSelectCampaign} />
         ))}
       </div>
     </div>

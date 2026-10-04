@@ -1,5 +1,6 @@
 import { useWallet } from '@txnlab/use-wallet-react'
 import { useCallback, useEffect, useState } from 'react'
+import { fetchChainTimestamp } from '../../lib/algorand'
 import type { CampaignViewModel } from '../../lib/campaign'
 import { getCampaign } from '../../lib/campaign'
 import { formatAlgo, formatCountdown, formatDeadline } from '../../lib/format'
@@ -25,6 +26,7 @@ const CLAIM_FEE_ALGO = '≈0.003 ALGO'
 const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   const { activeAddress, activeWallet, transactionSigner } = useWallet()
   const [campaign, setCampaign] = useState<CampaignViewModel | null>(null)
+  const [nowSeconds, setNowSeconds] = useState<bigint | null>(null)
   const [leaves, setLeaves] = useState<BackerLeaf[]>([])
   const [windowInfo, setWindowInfo] = useState<WindowInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -37,7 +39,9 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
     setLoading(true)
     setError(null)
     try {
-      const result = await getCampaign(appId, BigInt(Math.floor(Date.now() / 1000)), activeAddress ?? undefined)
+      const now = await fetchChainTimestamp()
+      setNowSeconds(now)
+      const result = await getCampaign(appId, now, activeAddress ?? undefined)
       if (!result) {
         setError('Campaign not found (or it is not a Campaign app).')
       } else {
@@ -75,11 +79,10 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
     void load()
   }, [load])
 
-  if (loading) return <p className="detail__status">Loading campaign…</p>
+  if (loading || nowSeconds === null) return <p className="detail__status">Loading campaign…</p>
   if (error) return <p className="detail__status detail__status--error">{error}</p>
   if (!campaign) return null
 
-  const nowSeconds = BigInt(Math.floor(Date.now() / 1000))
   const percent = campaign.goalMicroAlgos > 0n ? Number((campaign.raisedMicroAlgos * 100n) / campaign.goalMicroAlgos) : 0
   const connected = Boolean(activeWallet && activeAddress)
   const isCreator = connected && campaign.creator !== '' && activeAddress === campaign.creator

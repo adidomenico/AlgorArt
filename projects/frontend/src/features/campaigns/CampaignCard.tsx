@@ -3,11 +3,12 @@ import { formatAlgo, formatCountdown, formatDeadline } from '../../lib/format'
 
 interface CampaignCardProps {
   campaign: CampaignViewModel
+  /** Chain timestamp (seconds) for the countdown — never wall-clock (see `fetchChainTimestamp`). */
+  nowSeconds: bigint
   onSelect: (id: bigint) => void
 }
 
-const CampaignCard = ({ campaign, onSelect }: CampaignCardProps) => {
-  const nowSeconds = BigInt(Math.floor(Date.now() / 1000))
+const CampaignCard = ({ campaign, nowSeconds, onSelect }: CampaignCardProps) => {
   const percent = campaign.goalMicroAlgos > 0n ? Number((campaign.raisedMicroAlgos * 100n) / campaign.goalMicroAlgos) : 0
 
   return (
