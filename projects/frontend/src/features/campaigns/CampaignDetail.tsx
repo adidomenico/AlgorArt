@@ -139,6 +139,7 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
           <h2 className="detail__title">{campaign.title || `Campaign #${campaign.id.toString()}`}</h2>
           <span className={`campaign-card__badge campaign-card__badge--${campaign.status}`}>{campaign.status}</span>
         </div>
+        <p className="detail__appid">App id {campaign.id.toString()}</p>
 
         <div className="detail__creator">
           Created by {campaign.creator}
