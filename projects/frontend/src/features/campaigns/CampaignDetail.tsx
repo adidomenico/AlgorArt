@@ -119,13 +119,50 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   }
 
   const handleDelete = () => {
-    void runAction('delete', () => deleteCampaign(appId, sessionOf()), 'Campaign deleted!')
+    void runAction('delete', () => deleteCampaign(appId, sessionOf()), 'Campaign deleted!').then(() => {
+      onBack()
+    })
   }
 
   const handleSpend = (leaf: BackerLeaf, kind: 'cancel' | 'refund') => {
     const key = `${kind}-${leaf.position.toString()}`
     const action = kind === 'cancel' ? () => cancelPledge(appId, sessionOf(), leaf) : () => refund(appId, sessionOf(), leaf)
     void runAction(key, action, kind === 'cancel' ? 'Pledge withdrawn!' : 'Refund submitted!')
+  }
+
+  // Deleted on-chain (global state gone): no actions except vault-direct refunds of live leaves.
+  if (campaign.deleted === true) {
+    return (
+      <div className="detail">
+        <button type="button" className="btn btn--link" onClick={onBack}>
+          ← Back to campaigns
+        </button>
+        <div className="detail__card">
+          <h2 className="detail__title">Campaign #{campaign.id.toString()} has been deleted</h2>
+          <p className="detail__banner">
+            Its on-chain state is gone, but the vault still holds live pledges until the refund window closes. Refund below — each refund
+            comes straight from the vault.
+          </p>
+          {leaves.length > 0 && (
+            <div className="detail__actions">
+              <h3 className="detail__subtitle">Your pledges</h3>
+              {leaves.map((leaf) => (
+                <div key={leaf.position} className="detail__leaf">
+                  <span>
+                    Pledge #{leaf.position.toString()}: {formatAlgo(leaf.amount)} ALGO
+                  </span>
+                  <button type="button" className="btn btn--primary" disabled={busy} onClick={() => handleSpend(leaf, 'refund')}>
+                    {busy && busyAction === `refund-${leaf.position.toString()}` ? 'Refunding…' : 'Refund my pledge'}
+                  </button>
+                </div>
+              ))}
+              <p className="detail__fee">Network fee {NETWORK_FEE_ALGO} per refund.</p>
+            </div>
+          )}
+          {message && <p className="detail__message">{message}</p>}
+        </div>
+      </div>
+    )
   }
 
   return (

@@ -56,10 +56,12 @@ function campaignApp(overrides: { id?: bigint } = {}): algosdk.indexerModels.App
 
 // A chainable indexer builder for lookup endpoints.
 function lookupBuilder(response: unknown, throws = false): unknown {
-  return {
-    assetId: () => lookupBuilder(response, throws),
+  const builder = {
+    assetId: () => builder,
+    includeAll: () => builder,
     do: () => (throws ? Promise.reject(new Error('not found')) : Promise.resolve(response)),
   }
+  return builder
 }
 
 function searchBuilder(getApplications: () => algosdk.indexerModels.Application[]): unknown {
@@ -155,6 +157,21 @@ describe('getCampaign', () => {
     const vm = await getCampaign(42n, 3_000n, 'ADDRESS')
     expect(vm?.id).toBe(42n)
     expect(vm?.myPledgeMicroAlgos).toBe(250_000n)
+  })
+
+  it('returns a deleted marker for a deleted app', async () => {
+    const deleted = new algosdk.indexerModels.Application({
+      id: 44n,
+      deleted: true,
+      params: new algosdk.indexerModels.ApplicationParams({
+        approvalProgram: new Uint8Array(),
+        clearStateProgram: new Uint8Array(),
+      }),
+    })
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: deleted }))
+    const vm = await getCampaign(44n, 3_000n)
+    expect(vm?.deleted).toBe(true)
+    expect(vm?.id).toBe(44n)
   })
 
   it('returns undefined for a non-campaign app', async () => {

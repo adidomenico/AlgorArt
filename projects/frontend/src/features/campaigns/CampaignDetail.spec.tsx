@@ -240,6 +240,30 @@ describe('CampaignDetail', () => {
     expect(await screen.findByText(/Refunds are open until/)).toBeInTheDocument()
   })
 
+  it('shows the deleted state with vault refunds for live leaves', async () => {
+    getCampaignMock.mockResolvedValue({ ...viewModel('failed'), deleted: true })
+    fetchMyLeavesMock.mockResolvedValue([{ position: 3, amount: 1_000_000n, txidHex: 'aa' }])
+    refundMock.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    expect(await screen.findByText(/has been deleted/)).toBeInTheDocument()
+    await user.click(await screen.findByText('Refund my pledge'))
+    expect(refundMock).toHaveBeenCalledWith(42n, { address: 'ADDRESS', signer: {} }, { position: 3, amount: 1_000_000n, txidHex: 'aa' })
+  })
+
+  it('navigates back after a successful delete', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('failed', { creator: 'ADDRESS' }))
+    deleteCampaignMock.mockResolvedValue(undefined)
+    const onBack = vi.fn()
+    const user = userEvent.setup()
+    render(<CampaignDetail appId={42n} onBack={onBack} />)
+
+    await user.click(await screen.findByText('Delete campaign'))
+    expect(deleteCampaignMock).toHaveBeenCalled()
+    expect(onBack).toHaveBeenCalled()
+  })
+
   it('shows an error when the indexer fetch throws', async () => {
     getCampaignMock.mockRejectedValue(new Error('boom'))
     render(<CampaignDetail appId={42n} onBack={() => {}} />)

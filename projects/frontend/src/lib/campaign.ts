@@ -39,6 +39,8 @@ export interface CampaignViewModel {
   status: CampaignStatus
   /** The connected wallet's live pledge total (microAlgos), or undefined if it has no live leaves. */
   myPledgeMicroAlgos?: bigint | undefined
+  /** True when the application was deleted on-chain (global state is gone; only history remains). */
+  deleted?: boolean
 }
 
 /**
@@ -297,9 +299,25 @@ export async function listCampaigns(nowSeconds: bigint, viewerAddress?: string):
  * @returns The campaign, or undefined if not found or not a campaign app.
  */
 export async function getCampaign(appId: bigint, nowSeconds: bigint, viewerAddress?: string): Promise<CampaignViewModel | undefined> {
-  const response = await indexer.lookupApplications(appId).do()
+  // Deleted apps are excluded by default — include them so the detail page can render the deleted state
+  // (backers refund from the vault after deletion).
+  const response = await indexer.lookupApplications(appId).includeAll(true).do()
   const app = response.application
-  if (!app || !isCampaignApp(app)) return undefined
+  if (!app) return undefined
+  if (app.deleted === true) {
+    return {
+      id: app.id,
+      creator: '',
+      title: '',
+      metadataUri: '',
+      goalMicroAlgos: 0n,
+      raisedMicroAlgos: 0n,
+      deadlineSeconds: 0n,
+      status: 'failed',
+      deleted: true,
+    }
+  }
+  if (!isCampaignApp(app)) return undefined
 
   let myPledge: bigint | undefined
   if (viewerAddress) {
