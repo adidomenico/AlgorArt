@@ -81,6 +81,11 @@ class as it does not extend Contract or BaseContract".
 - LocalNet algod runs in **dev mode**: block timestamp = previous tip timestamp +
   offset. `advanceTime(n)` sets the offset, produces any transaction (a self-payment
   "time bump"), then resets the offset in a `finally`.
+- Two hand-testing scripts live in `projects/contracts/scripts/` (LocalNet only,
+  run with `npx ts-node --transpile-only scripts/<name>.ts`):
+  `fund-account.ts` (`ADDRESS=… [ALGO=…]`, dispenser-funds any empty wallet) and
+  `advance-time.ts` (`SECONDS=…`, moves the chain clock past deadlines; the
+  offset persists until changed, so new campaigns use it as their baseline).
 - Inner transactions need fee pooling via `extraFee: (1000).microAlgo()` per
   inner txn — and each OpUp iteration submits *two* inners (create + delete), so
   `ensureBudget` calls cost double: pledge group (pay + pledge + credit with
