@@ -36,8 +36,8 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
   }
 
   return (
-    <div className="pledge">
-      <h3 className="pledge__title">Back this campaign</h3>
+    <div className="mt-5 border-t border-line pt-5">
+      <h3 className="m-0 mb-3 text-lg">Back this campaign</h3>
       <input
         type="text"
         inputMode="decimal"
@@ -46,13 +46,18 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
         onChange={(e) => {
           setAmount(e.target.value)
         }}
-        className="pledge__input"
+        className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
       />
-      <button type="button" className="btn btn--primary" disabled={!canSubmit} onClick={() => void handleSubmit()}>
+      <button
+        type="button"
+        className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={!canSubmit}
+        onClick={() => void handleSubmit()}
+      >
         {busy ? 'Sending…' : 'Pledge'}
       </button>
-      <p className="pledge__fee">Network fee ≈0.004 ALGO. Refunds stay open after failure — no opt-ins needed.</p>
-      {message && <p className="pledge__message">{message}</p>}
+      <p className="text-sm text-muted">Network fee ≈0.004 ALGO. Refunds stay open after failure — no opt-ins needed.</p>
+      {message && <p className="mb-0 mt-3 text-sm text-muted">{message}</p>}
     </div>
   )
 }
