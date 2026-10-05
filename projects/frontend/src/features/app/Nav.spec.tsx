@@ -43,14 +43,14 @@ describe('Nav', () => {
     expect(screen.getByText('Select wallet provider')).toBeInTheDocument()
   })
 
-  it('closes the wallet modal via the modal Close button', async () => {
+  it('toggles the wallet banner when the connect button is clicked twice', async () => {
     useWalletMock.mockReturnValue({ activeAddress: null, wallets: [] })
     const user = userEvent.setup()
     render(<Nav onNavigateHome={() => {}} />)
     await user.click(screen.getByText('Connect wallet'))
     const dialog = document.getElementById('connect_wallet_modal')
     expect(dialog).not.toHaveClass('hidden')
-    await user.click(screen.getByText('Close'))
+    await user.click(screen.getByText('Connect wallet'))
     expect(dialog).toHaveClass('hidden')
   })
 })

@@ -4,10 +4,9 @@ import Account from './Account'
 
 interface ConnectWalletInterface {
   openModal: boolean
-  closeModal: () => void
 }
 
-const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
+const ConnectWallet = ({ openModal }: ConnectWalletInterface) => {
   const { wallets, activeAddress } = useWallet()
 
   const isKmd = (wallet: Wallet) => wallet.id === WalletId.KMD
@@ -15,10 +14,10 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
   return (
     <dialog
       id="connect_wallet_modal"
-      className={`fixed inset-0 z-[9999] m-0 h-full max-h-none w-full max-w-none overflow-auto bg-transparent p-0 ${openModal ? 'block' : 'hidden'}`}
+      className={`fixed right-6 top-16 left-auto z-[9999] m-0 w-[22em] max-w-[calc(100vw-2rem)] border-0 bg-transparent p-0 ${openModal ? 'block' : 'hidden'}`}
       style={{ display: openModal ? 'block' : 'none' }}
     >
-      <form method="dialog" className="ml-auto mr-6 mt-4 w-[26em] max-w-[90vw] rounded-lg bg-white p-6">
+      <form method="dialog" className="w-full rounded-lg border border-line bg-white p-6">
         <h3 className="font-bold text-2xl">{activeAddress ? 'Account' : 'Select wallet provider'}</h3>
 
         <div className="grid m-2 gap-2 pt-5">
@@ -49,16 +48,6 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
         </div>
 
         <div className="mt-4 grid gap-2">
-          <button
-            type="button"
-            data-test-id="close-wallet-modal"
-            className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => {
-              closeModal()
-            }}
-          >
-            Close
-          </button>
           {activeAddress && (
             <button
               type="button"

@@ -23,19 +23,14 @@ const Nav = ({ onNavigateHome }: NavProps) => {
           type="button"
           className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => {
-            setWalletOpen(true)
+            setWalletOpen((open) => !open)
           }}
         >
           {activeAddress ? 'Account' : 'Connect wallet'}
         </button>
       </div>
 
-      <ConnectWallet
-        openModal={walletOpen}
-        closeModal={() => {
-          setWalletOpen(false)
-        }}
-      />
+      <ConnectWallet openModal={walletOpen} />
     </nav>
   )
 }
