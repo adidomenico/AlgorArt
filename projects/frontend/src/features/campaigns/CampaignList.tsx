@@ -45,31 +45,31 @@ const CampaignList = ({ onSelectCampaign }: CampaignListProps) => {
 
   if (loading || nowSeconds === null) {
     return (
-      <div className="campaign-list">
-        <p className="campaign-list__status">Loading campaigns…</p>
+      <div>
+        <p className="text-muted">Loading campaigns…</p>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="campaign-list">
-        <p className="campaign-list__status campaign-list__status--error">{error}</p>
+      <div>
+        <p className="text-badge-failed">{error}</p>
       </div>
     )
   }
 
   if (campaigns.length === 0) {
     return (
-      <div className="campaign-list">
-        <p className="campaign-list__status">No campaigns yet. Create the first one!</p>
+      <div>
+        <p className="text-muted">No campaigns yet. Create the first one!</p>
       </div>
     )
   }
 
   return (
-    <div className="campaign-list">
-      <div className="campaign-list__grid">
+    <div>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(16rem,1fr))] gap-4">
         {campaigns.map((campaign) => (
           <CampaignCard key={campaign.id.toString()} campaign={campaign} nowSeconds={nowSeconds} onSelect={onSelectCampaign} />
         ))}
