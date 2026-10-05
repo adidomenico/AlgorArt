@@ -127,6 +127,11 @@ class as it does not extend Contract or BaseContract".
 
 All LocalNet integration tests in the repo (run with `npm run test:integration`; 16
 tests across 3 files). Each file deploys its own fixture chain to a live algod.
+Files run **sequentially** (`--no-file-parallelism`): they share one LocalNet
+sandbox, and `setBlockOffsetTimestamp` time-travel is chain-global — parallel
+files can jump the clock between another file's deploy and pledge, flaking with
+`pledging is closed`. Sequential files keep each suite's chain-relative
+deadlines (`+600s` at deploy) valid.
 Offline specs live next to each contract (`contract.algo.spec.ts`: 35 campaign +
 50 vault + 16 factory tests, all green with 100% line/branch/function coverage).
 

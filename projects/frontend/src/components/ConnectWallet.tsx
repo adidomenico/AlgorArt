@@ -15,17 +15,17 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
   return (
     <dialog
       id="connect_wallet_modal"
-      className={`modal ${openModal ? 'modal-open' : ''}`}
+      className={`fixed inset-0 z-[9999] overflow-auto bg-black/60 ${openModal ? 'block' : 'hidden'}`}
       style={{ display: openModal ? 'block' : 'none' }}
     >
-      <form method="dialog" className="modal-box">
+      <form method="dialog" className="mx-auto w-[26em] max-w-[90vw] rounded-lg bg-white p-6">
         <h3 className="font-bold text-2xl">Select wallet provider</h3>
 
-        <div className="grid m-2 pt-5">
+        <div className="grid m-2 gap-2 pt-5">
           {activeAddress && (
             <>
               <Account />
-              <div className="divider" />
+              <div className="my-4 border-t border-line" />
             </>
           )}
 
@@ -34,29 +34,25 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
               <button
                 type="button"
                 data-test-id={`${wallet.id}-connect`}
-                className="btn border-teal-800 border-1  m-2"
+                className="m-2 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-teal-dark bg-card px-4 py-2 text-sm text-ink hover:border-teal disabled:cursor-not-allowed disabled:opacity-50"
                 key={`provider-${wallet.id}`}
                 onClick={() => {
                   void wallet.connect()
                 }}
               >
                 {!isKmd(wallet) && (
-                  <img
-                    alt={`wallet_icon_${wallet.id}`}
-                    src={wallet.metadata.icon}
-                    style={{ objectFit: 'contain', width: '30px', height: 'auto' }}
-                  />
+                  <img alt={`wallet_icon_${wallet.id}`} src={wallet.metadata.icon} className="h-auto w-[30px] object-contain" />
                 )}
                 <span>{isKmd(wallet) ? 'LocalNet Wallet' : wallet.metadata.name}</span>
               </button>
             ))}
         </div>
 
-        <div className="modal-action grid">
+        <div className="mt-4 grid gap-2">
           <button
             type="button"
             data-test-id="close-wallet-modal"
-            className="btn"
+            className="cursor-pointer rounded-md border border-line bg-card px-4 py-2 text-sm text-ink hover:border-teal disabled:cursor-not-allowed disabled:opacity-50"
             onClick={() => {
               closeModal()
             }}
@@ -66,7 +62,7 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
           {activeAddress && (
             <button
               type="button"
-              className="btn btn-warning"
+              className="cursor-pointer rounded-md border border-warning bg-warning px-4 py-2 text-sm text-white hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50"
               data-test-id="logout"
               onClick={() => {
                 void (async () => {

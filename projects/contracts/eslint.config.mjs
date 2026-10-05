@@ -19,7 +19,14 @@ export default defineConfig(
       },
       parserOptions: {
         projectService: {
-          allowDefaultProject: ['eslint.config.mjs', 'vitest.config.mts', 'vitest.setup.ts', 'scripts/seed-demo.ts'],
+          allowDefaultProject: [
+            'eslint.config.mjs',
+            'vitest.config.mts',
+            'vitest.setup.ts',
+            'scripts/seed-demo.ts',
+            'scripts/advance-time.ts',
+            'scripts/fund-account.ts',
+          ],
         },
         tsconfigRootDir: import.meta.dirname,
       },
