@@ -102,6 +102,19 @@ stays green (format, lint, types, offline coverage at 100%, integration on Local
 - [x] "Close out my claim" action on claimed campaigns.
 - [x] "Delete campaign" action for creators on settled campaigns.
 - [ ] Handle the known UI edge cases (indexer lag, clock drift, wallet/network mismatch) — see [`frontend.md`](frontend.md).
+- [ ] **App chrome: navbar + footer** — navbar: logo left (home), search box center,
+      hamburger menu right; footer: brand + `© <year> AlgorArt`, Contacts, Privacy
+      Policy, non-custodial disclaimer. New `features/app/` components, Tailwind.
+- [ ] **Search** — navbar search filters the browse list by title client-side
+      (state in `CampaignList`); indexer/catalog-backed search stays a Backend item.
+- [ ] **Hamburger menu** — Profile, My pledges, My projects, Settings. The wallet
+      button stays persistent top-right *outside* the menu: connection state must
+      always be visible (see edge cases in [`frontend.md`](frontend.md)), and
+      connect/disconnect is too frequent to bury behind two taps.
+- [ ] **Profile section** — address + network, my pledges (live leaves via
+      `fetchMyLeaves`), my projects (campaigns filtered by creator).
+- [ ] **Settings section** — network/wallet info now; theme and notification
+      prefs later (see Product & design).
 
 ## Content & metadata
 
