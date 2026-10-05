@@ -103,6 +103,16 @@ The contract stores a short `title` on-chain plus a `metadataUri` pointer to
 off-chain JSON (see [`campaign.md`](campaign.md)). The 128-byte cap on both
 fields is enforced on-chain and re-checked in the create form.
 
+The JSON follows an ARC-3-style shape (`{name, description, image, category}`,
+all optional; `lib/metadata.ts`). `ipfs://` URIs resolve through the public
+`https://ipfs.io/ipfs/` gateway; `https://` URLs pass through. `CampaignImage`
+(`features/campaigns/`) renders the blob's `image` (or the URI itself when it
+points straight at an image file) in the card and detail views, hiding itself
+on any failure; the detail view also shows `description` and `category`. A blob
+with none of the four fields is treated as absent, so seed/legacy URIs render
+nothing instead of erroring. Upload/pinning is out of scope — creators paste a
+URI today; server-side pinning rides with the catalog backend.
+
 ## Reads (indexer)
 
 All reads use `algosdk.Indexer` configured from the same env as algod:

@@ -6,7 +6,9 @@ import { getCampaign } from '../../lib/campaign'
 import { formatAlgo, formatCountdown, formatDeadline } from '../../lib/format'
 import type { BackerLeaf } from '../../lib/transaction'
 import { cancelPledge, claim, deleteCampaign, fetchMyLeaves, fetchVaultBox, fetchVaultConfig, refund } from '../../lib/transaction'
+import CampaignImage from './CampaignImage'
 import PledgeForm from './PledgeForm'
+import { useCampaignMetadata } from './useCampaignMetadata'
 
 interface CampaignDetailProps {
   appId: bigint
@@ -85,6 +87,8 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   useEffect(() => {
     void load()
   }, [load])
+
+  const metadata = useCampaignMetadata(campaign?.metadataUri ?? '')
 
   if (loading || nowSeconds === null) return <p className="text-muted">Loading campaign…</p>
   if (error) return <p className="text-badge-failed">{error}</p>
@@ -208,6 +212,14 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
           Created by {campaign.creator}
           {campaign.metadataUri !== '' && <span className="break-all text-teal-dark"> · {campaign.metadataUri}</span>}
         </div>
+
+        <CampaignImage
+          metadataUri={campaign.metadataUri}
+          title={campaign.title || `Campaign #${campaign.id.toString()}`}
+          className="mb-4 max-h-80 w-full rounded-md object-cover"
+        />
+        {metadata?.description && <p className="mb-4 text-sm text-muted">{metadata.description}</p>}
+        {metadata?.category && <p className="mb-4 text-sm text-muted">Category: {metadata.category}</p>}
 
         <div className="mb-3 h-2 overflow-hidden rounded-full bg-line">
           <div data-testid="progress-fill" className="h-full bg-teal" style={{ width: `${String(Math.min(percent, 100))}%` }} />

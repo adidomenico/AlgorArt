@@ -118,7 +118,7 @@ stays green (format, lint, types, offline coverage at 100%, integration on Local
 
 ## Content & metadata
 
-- [ ] Rich off-chain rendering (IPFS image/description/category) — `title` + `metadataUri` are implemented; rendering the JSON blob is not.
+- [x] Rich off-chain rendering (IPFS image/description/category) — ARC-3-style blob rendered in card/detail via the public gateway; upload/pinning still open (see [`frontend.md`](frontend.md) → Campaign metadata).
 - [ ] Real styled UI: design tokens, layout, cards, detail page, create flow, states, accessibility — see [`design.md`](design.md).
 
 ## TestNet & deployment

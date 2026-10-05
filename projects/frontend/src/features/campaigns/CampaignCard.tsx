@@ -1,5 +1,6 @@
 import type { CampaignViewModel } from '../../lib/campaign'
 import { formatAlgo, formatCountdown, formatDeadline } from '../../lib/format'
+import CampaignImage from './CampaignImage'
 
 interface CampaignCardProps {
   campaign: CampaignViewModel
@@ -36,6 +37,8 @@ const CampaignCard = ({ campaign, nowSeconds, onSelect }: CampaignCardProps) => 
       </div>
 
       <h3 className="m-0 mb-3 text-lg font-semibold text-ink">{campaign.title}</h3>
+
+      <CampaignImage metadataUri={campaign.metadataUri} title={campaign.title} className="mb-3 h-40 w-full rounded-md object-cover" />
 
       <div className="mb-3 h-2 overflow-hidden rounded-full bg-line">
         <div data-testid="progress-fill" className="h-full bg-teal" style={{ width: `${String(Math.min(percent, 100))}%` }} />
