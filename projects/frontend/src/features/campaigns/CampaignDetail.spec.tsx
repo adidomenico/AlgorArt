@@ -316,7 +316,7 @@ describe('CampaignDetail', () => {
     render(<CampaignDetail appId={42n} onBack={() => {}} />)
 
     await screen.findByText('Campaign #42')
-    const fill = document.querySelector('.detail__progress-fill') as HTMLElement
+    const fill = screen.getByTestId('progress-fill')
     expect(fill.style.width).toBe('100%')
   })
 

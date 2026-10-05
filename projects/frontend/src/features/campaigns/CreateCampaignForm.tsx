@@ -66,9 +66,9 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
   }
 
   return (
-    <div className="create">
-      <h3 className="create__title">Create a campaign</h3>
-      <label className="create__field">
+    <div className="mt-5 border-t border-line pt-5">
+      <h3 className="m-0 mb-3 text-lg">Create a campaign</h3>
+      <label className="mb-3 block text-sm text-muted">
         Title
         <input
           type="text"
@@ -77,9 +77,10 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
           onChange={(e) => {
             setTitle(e.target.value)
           }}
+          className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
         />
       </label>
-      <label className="create__field">
+      <label className="mb-3 block text-sm text-muted">
         Metadata URI (optional)
         <input
           type="text"
@@ -88,9 +89,10 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
           onChange={(e) => {
             setMetadataUri(e.target.value)
           }}
+          className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
         />
       </label>
-      <label className="create__field">
+      <label className="mb-3 block text-sm text-muted">
         Goal (ALGO)
         <input
           type="number"
@@ -101,9 +103,10 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
           onChange={(e) => {
             setGoal(e.target.value)
           }}
+          className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
         />
       </label>
-      <label className="create__field">
+      <label className="mb-3 block text-sm text-muted">
         Duration (days)
         <input
           type="number"
@@ -112,17 +115,27 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
           onChange={(e) => {
             setDays(e.target.value)
           }}
+          className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
         />
       </label>
-      <div className="create__actions">
-        <button type="button" className="btn" onClick={onCancel}>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="cursor-pointer rounded-md border border-line bg-card px-4 py-2 text-sm text-ink hover:border-teal disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={onCancel}
+        >
           Cancel
         </button>
-        <button type="button" className="btn btn--primary" disabled={!canSubmit} onClick={() => void handleSubmit()}>
+        <button
+          type="button"
+          className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!canSubmit}
+          onClick={() => void handleSubmit()}
+        >
           {busy ? 'Creating…' : 'Create'}
         </button>
       </div>
-      {message && <p className="create__message">{message}</p>}
+      {message && <p className="mb-0 mt-3 text-sm text-muted">{message}</p>}
     </div>
   )
 }

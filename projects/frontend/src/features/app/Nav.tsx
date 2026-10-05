@@ -12,16 +12,16 @@ const Nav = ({ onNavigateHome }: NavProps) => {
   const [walletOpen, setWalletOpen] = useState(false)
 
   return (
-    <nav className="nav">
-      <button type="button" className="nav__brand" onClick={onNavigateHome}>
+    <nav className="flex items-center justify-between border-b border-line bg-card px-6 py-3">
+      <button type="button" className="cursor-pointer border-0 bg-transparent text-xl font-bold text-teal-dark" onClick={onNavigateHome}>
         AlgorArt
       </button>
 
-      <div className="nav__actions">
-        {activeAddress && <span className="nav__address">{ellipseAddress(activeAddress)}</span>}
+      <div className="flex items-center gap-3">
+        {activeAddress && <span className="text-sm text-muted">{ellipseAddress(activeAddress)}</span>}
         <button
           type="button"
-          className="btn"
+          className="cursor-pointer rounded-md border border-line bg-card px-4 py-2 text-sm text-ink hover:border-teal disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => {
             setWalletOpen(true)
           }}
