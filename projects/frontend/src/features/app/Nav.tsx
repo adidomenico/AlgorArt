@@ -21,7 +21,7 @@ const Nav = ({ onNavigateHome }: NavProps) => {
         {activeAddress && <span className="text-sm text-muted">{ellipseAddress(activeAddress)}</span>}
         <button
           type="button"
-          className="cursor-pointer rounded-md border border-line bg-card px-4 py-2 text-sm text-ink hover:border-teal disabled:cursor-not-allowed disabled:opacity-50"
+          className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => {
             setWalletOpen(true)
           }}

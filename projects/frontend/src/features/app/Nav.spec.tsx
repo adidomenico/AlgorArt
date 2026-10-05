@@ -25,7 +25,7 @@ describe('Nav', () => {
     useWalletMock.mockReturnValue({ activeAddress: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789' })
     render(<Nav onNavigateHome={() => {}} />)
     expect(screen.getByText('ABCDEF...456789')).toBeInTheDocument()
-    expect(screen.getByText('Account')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Account' })).toBeInTheDocument()
   })
 
   it('calls onNavigateHome when the brand is clicked', async () => {

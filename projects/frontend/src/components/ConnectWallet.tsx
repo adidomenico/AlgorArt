@@ -15,11 +15,11 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
   return (
     <dialog
       id="connect_wallet_modal"
-      className={`fixed inset-0 z-[9999] overflow-auto bg-black/60 ${openModal ? 'block' : 'hidden'}`}
+      className={`fixed inset-0 z-[9999] m-0 h-full max-h-none w-full max-w-none overflow-auto bg-transparent p-0 ${openModal ? 'block' : 'hidden'}`}
       style={{ display: openModal ? 'block' : 'none' }}
     >
-      <form method="dialog" className="mx-auto w-[26em] max-w-[90vw] rounded-lg bg-white p-6">
-        <h3 className="font-bold text-2xl">Select wallet provider</h3>
+      <form method="dialog" className="ml-auto mr-6 mt-4 w-[26em] max-w-[90vw] rounded-lg bg-white p-6">
+        <h3 className="font-bold text-2xl">{activeAddress ? 'Account' : 'Select wallet provider'}</h3>
 
         <div className="grid m-2 gap-2 pt-5">
           {activeAddress && (
@@ -34,7 +34,7 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
               <button
                 type="button"
                 data-test-id={`${wallet.id}-connect`}
-                className="m-2 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-teal-dark bg-card px-4 py-2 text-sm text-ink hover:border-teal disabled:cursor-not-allowed disabled:opacity-50"
+                className="m-2 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
                 key={`provider-${wallet.id}`}
                 onClick={() => {
                   void wallet.connect()
@@ -52,7 +52,7 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
           <button
             type="button"
             data-test-id="close-wallet-modal"
-            className="cursor-pointer rounded-md border border-line bg-card px-4 py-2 text-sm text-ink hover:border-teal disabled:cursor-not-allowed disabled:opacity-50"
+            className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
             onClick={() => {
               closeModal()
             }}
