@@ -53,4 +53,20 @@ describe('Nav', () => {
     await user.click(screen.getByText('Connect wallet'))
     expect(dialog).toHaveClass('hidden')
   })
+
+  it('closes the wallet banner when clicking outside the nav', async () => {
+    useWalletMock.mockReturnValue({ activeAddress: null, wallets: [] })
+    const user = userEvent.setup()
+    render(
+      <>
+        <Nav onNavigateHome={() => {}} />
+        <main>page content</main>
+      </>,
+    )
+    await user.click(screen.getByText('Connect wallet'))
+    const dialog = document.getElementById('connect_wallet_modal')
+    expect(dialog).not.toHaveClass('hidden')
+    await user.click(screen.getByText('page content'))
+    expect(dialog).toHaveClass('hidden')
+  })
 })

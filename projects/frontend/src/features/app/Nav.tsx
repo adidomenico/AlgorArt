@@ -1,5 +1,5 @@
 import { useWallet } from '@txnlab/use-wallet-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ConnectWallet from '../../components/ConnectWallet'
 import { ellipseAddress } from '../../utils/ellipseAddress'
 
@@ -10,9 +10,22 @@ interface NavProps {
 const Nav = ({ onNavigateHome }: NavProps) => {
   const { activeAddress } = useWallet()
   const [walletOpen, setWalletOpen] = useState(false)
+  const navRef = useRef<HTMLElement>(null)
+
+  // The banner is a dropdown: any pointer-down outside the nav closes it.
+  useEffect(() => {
+    if (!walletOpen) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (navRef.current && !navRef.current.contains(event.target as Node)) setWalletOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [walletOpen])
 
   return (
-    <nav className="flex items-center justify-between border-b border-line bg-card px-6 py-3">
+    <nav ref={navRef} className="flex items-center justify-between border-b border-line bg-card px-6 py-3">
       <button type="button" className="cursor-pointer border-0 bg-transparent text-xl font-bold text-teal-dark" onClick={onNavigateHome}>
         AlgorArt
       </button>
