@@ -141,7 +141,11 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   if (campaign.deleted === true) {
     return (
       <div>
-        <button type="button" className="mb-4 cursor-pointer border-0 bg-transparent p-0 text-teal-dark underline" onClick={onBack}>
+        <button
+          type="button"
+          className="mb-4 cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={onBack}
+        >
           ← Back to campaigns
         </button>
         <div className="rounded-lg border border-line bg-card p-6">
@@ -181,7 +185,11 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
 
   return (
     <div>
-      <button type="button" className="mb-4 cursor-pointer border-0 bg-transparent p-0 text-teal-dark underline" onClick={onBack}>
+      <button
+        type="button"
+        className="mb-4 cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
+        onClick={onBack}
+      >
         ← Back to campaigns
       </button>
 
