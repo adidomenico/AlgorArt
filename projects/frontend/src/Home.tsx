@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import Footer from './features/app/Footer'
 import Nav from './features/app/Nav'
 import CampaignDetail from './features/campaigns/CampaignDetail'
 import CampaignList from './features/campaigns/CampaignList'
@@ -80,6 +81,8 @@ const Home = () => {
           />
         )}
       </main>
+
+      <Footer />
     </div>
   )
 }
