@@ -3,7 +3,7 @@ import { fetchCampaignMetadata, parseCampaignMetadata, resolveImageSrc, resolveI
 
 describe('resolveIpfsUri', () => {
   it('maps ipfs:// URIs onto the gateway', () => {
-    expect(resolveIpfsUri('ipfs://QmExample/image.png')).toBe('https://ipfs.io/ipfs/QmExample/image.png')
+    expect(resolveIpfsUri('ipfs://QmExample/image.png')).toBe('https://gateway.pinata.cloud/ipfs/QmExample/image.png')
   })
 
   it('passes https URLs through and trims whitespace', () => {
@@ -46,7 +46,7 @@ describe('fetchCampaignMetadata', () => {
       image: 'ipfs://QmImg',
       category: undefined,
     })
-    expect(fetchMock).toHaveBeenCalledWith('https://ipfs.io/ipfs/QmMeta')
+    expect(fetchMock).toHaveBeenCalledWith('https://gateway.pinata.cloud/ipfs/QmMeta')
   })
 
   it('returns null without fetching on blank URIs', async () => {
@@ -66,7 +66,7 @@ describe('fetchCampaignMetadata', () => {
 
 describe('resolveImageSrc', () => {
   it('prefers the blob image field', () => {
-    expect(resolveImageSrc('ipfs://QmMeta', { image: 'ipfs://QmImg' })).toBe('https://ipfs.io/ipfs/QmImg')
+    expect(resolveImageSrc('ipfs://QmMeta', { image: 'ipfs://QmImg' })).toBe('https://gateway.pinata.cloud/ipfs/QmImg')
   })
 
   it('falls back to the URI itself for direct image links', () => {

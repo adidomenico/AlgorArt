@@ -11,7 +11,7 @@ describe('CampaignImage', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ image: 'ipfs://QmImg' }) }))
     render(<CampaignImage metadataUri="ipfs://QmMeta" title="Novel" />)
     const img = await screen.findByAltText('Novel')
-    expect(img.getAttribute('src')).toBe('https://ipfs.io/ipfs/QmImg')
+    expect(img.getAttribute('src')).toBe('https://gateway.pinata.cloud/ipfs/QmImg')
   })
 
   it('renders nothing for blank URIs', () => {
