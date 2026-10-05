@@ -21,6 +21,9 @@ documents the reasoning behind the split.
 - **CI calls the per-project npm scripts directly** (`npm run lint`, …), not
   `algokit project run`. The algokit wrapper is a local convenience and runs
   projects sequentially.
+- **Run once per change.** Both workflows trigger on `pull_request` (any branch)
+  and on `push` to `main` only — a same-repo branch would otherwise fire both
+  `push` and `pull_request` events and run everything twice.
 
 ## Job graph
 
