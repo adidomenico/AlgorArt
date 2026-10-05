@@ -23,6 +23,13 @@ interface WindowInfo {
 const NETWORK_FEE_ALGO = '≈0.004 ALGO'
 const CLAIM_FEE_ALGO = '≈0.003 ALGO'
 
+const badgeBg: Record<CampaignViewModel['status'], string> = {
+  open: 'bg-badge-open',
+  funded: 'bg-badge-funded',
+  failed: 'bg-badge-failed',
+  claimed: 'bg-badge-claimed',
+}
+
 const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   const { activeAddress, activeWallet, transactionSigner } = useWallet()
   const [campaign, setCampaign] = useState<CampaignViewModel | null>(null)
@@ -79,8 +86,8 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
     void load()
   }, [load])
 
-  if (loading || nowSeconds === null) return <p className="detail__status">Loading campaign…</p>
-  if (error) return <p className="detail__status detail__status--error">{error}</p>
+  if (loading || nowSeconds === null) return <p className="text-muted">Loading campaign…</p>
+  if (error) return <p className="text-badge-failed">{error}</p>
   if (!campaign) return null
 
   const percent = campaign.goalMicroAlgos > 0n ? Number((campaign.raisedMicroAlgos * 100n) / campaign.goalMicroAlgos) : 0
@@ -133,80 +140,93 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   // Deleted on-chain (global state gone): no actions except vault-direct refunds of live leaves.
   if (campaign.deleted === true) {
     return (
-      <div className="detail">
-        <button type="button" className="btn btn--link" onClick={onBack}>
+      <div>
+        <button type="button" className="mb-4 cursor-pointer border-0 bg-transparent p-0 text-teal-dark underline" onClick={onBack}>
           ← Back to campaigns
         </button>
-        <div className="detail__card">
-          <h2 className="detail__title">Campaign #{campaign.id.toString()} has been deleted</h2>
-          <p className="detail__banner">
+        <div className="rounded-lg border border-line bg-card p-6">
+          <h2 className="m-0 mb-1 text-2xl">Campaign #{campaign.id.toString()} has been deleted</h2>
+          <p className="rounded-md border border-line bg-mist p-3 text-sm text-muted">
             Its on-chain state is gone, but the vault still holds live pledges until the refund window closes. Refund below — each refund
             comes straight from the vault.
           </p>
           {leaves.length > 0 && (
-            <div className="detail__actions">
-              <h3 className="detail__subtitle">Your pledges</h3>
+            <div className="mt-5 border-t border-line pt-5">
+              <h3 className="m-0 mb-3 text-lg">Your pledges</h3>
               {leaves.map((leaf) => (
-                <div key={leaf.position} className="detail__leaf">
+                <div key={leaf.position} className="flex items-center justify-between gap-2 py-2">
                   <span>
                     Pledge #{leaf.position.toString()}: {formatAlgo(leaf.amount)} ALGO
                   </span>
-                  <button type="button" className="btn btn--primary" disabled={busy} onClick={() => handleSpend(leaf, 'refund')}>
+                  <button
+                    type="button"
+                    className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={busy}
+                    onClick={() => {
+                      handleSpend(leaf, 'refund')
+                    }}
+                  >
                     {busy && busyAction === `refund-${leaf.position.toString()}` ? 'Refunding…' : 'Refund my pledge'}
                   </button>
                 </div>
               ))}
-              <p className="detail__fee">Network fee {NETWORK_FEE_ALGO} per refund.</p>
+              <p className="text-sm text-muted">Network fee {NETWORK_FEE_ALGO} per refund.</p>
             </div>
           )}
-          {message && <p className="detail__message">{message}</p>}
+          {message && <p className="mb-0 mt-3 text-sm text-muted">{message}</p>}
         </div>
       </div>
     )
   }
 
   return (
-    <div className="detail">
-      <button type="button" className="btn btn--link" onClick={onBack}>
+    <div>
+      <button type="button" className="mb-4 cursor-pointer border-0 bg-transparent p-0 text-teal-dark underline" onClick={onBack}>
         ← Back to campaigns
       </button>
 
-      <div className="detail__card">
-        <div className="detail__header">
-          <h2 className="detail__title">{campaign.title || `Campaign #${campaign.id.toString()}`}</h2>
-          <span className={`campaign-card__badge campaign-card__badge--${campaign.status}`}>{campaign.status}</span>
+      <div className="rounded-lg border border-line bg-card p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="m-0 mb-1 text-2xl">{campaign.title || `Campaign #${campaign.id.toString()}`}</h2>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-bold uppercase tracking-[0.05em] text-white ${badgeBg[campaign.status]}`}
+          >
+            {campaign.status}
+          </span>
         </div>
-        <p className="detail__appid">App id {campaign.id.toString()}</p>
+        <p className="text-sm text-muted">App id {campaign.id.toString()}</p>
 
-        <div className="detail__creator">
+        <div className="mb-4 break-all text-sm text-muted">
           Created by {campaign.creator}
-          {campaign.metadataUri !== '' && <span className="detail__metadata-uri"> · {campaign.metadataUri}</span>}
+          {campaign.metadataUri !== '' && <span className="break-all text-teal-dark"> · {campaign.metadataUri}</span>}
         </div>
 
-        <div className="detail__progress">
-          <div className="detail__progress-fill" style={{ width: `${String(Math.min(percent, 100))}%` }} />
+        <div className="mb-3 h-2 overflow-hidden rounded-full bg-line">
+          <div data-testid="progress-fill" className="h-full bg-teal" style={{ width: `${String(Math.min(percent, 100))}%` }} />
         </div>
-        <p className="detail__raised">
+        <p className="text-sm text-muted">
           {formatAlgo(campaign.raisedMicroAlgos)} ALGO raised of {formatAlgo(campaign.goalMicroAlgos)} ALGO goal
         </p>
 
-        <dl className="detail__stats">
+        <dl className="my-4 grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-4">
           <div>
-            <dt>Deadline</dt>
-            <dd>{formatDeadline(campaign.deadlineSeconds)}</dd>
+            <dt className="text-xs uppercase tracking-[0.03em] text-muted">Deadline</dt>
+            <dd className="m-0 text-sm font-semibold">{formatDeadline(campaign.deadlineSeconds)}</dd>
           </div>
           <div>
-            <dt>Time left</dt>
-            <dd>{formatCountdown(campaign.deadlineSeconds, nowSeconds)}</dd>
+            <dt className="text-xs uppercase tracking-[0.03em] text-muted">Time left</dt>
+            <dd className="m-0 text-sm font-semibold">{formatCountdown(campaign.deadlineSeconds, nowSeconds)}</dd>
           </div>
           <div>
-            <dt>Your pledge</dt>
-            <dd>{campaign.myPledgeMicroAlgos !== undefined ? `${formatAlgo(campaign.myPledgeMicroAlgos)} ALGO` : '—'}</dd>
+            <dt className="text-xs uppercase tracking-[0.03em] text-muted">Your pledge</dt>
+            <dd className="m-0 text-sm font-semibold">
+              {campaign.myPledgeMicroAlgos !== undefined ? `${formatAlgo(campaign.myPledgeMicroAlgos)} ALGO` : '—'}
+            </dd>
           </div>
         </dl>
 
         {campaign.status === 'failed' && windowInfo && (
-          <p className="detail__banner">
+          <p className="rounded-md border border-line bg-mist p-3 text-sm text-muted">
             Refunds are open until {formatDeadline(windowInfo.endsAt)}. After that, unclaimed funds go to {windowInfo.sweepTarget}. Each
             refund is one pledge at a time.
           </p>
@@ -215,10 +235,10 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
         {canPledge && <PledgeForm appId={campaign.id} onPledged={() => void load()} />}
 
         {canClaim && (
-          <div className="detail__actions">
+          <div className="mt-5 border-t border-line pt-5">
             <button
               type="button"
-              className="btn btn--primary"
+              className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
               disabled={busy}
               onClick={() => {
                 handleClaim()
@@ -226,21 +246,21 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
             >
               {busy && busyAction === 'claim' ? 'Claiming…' : 'Claim funds'}
             </button>
-            <p className="detail__fee">Network fee {CLAIM_FEE_ALGO}. No backer action needed after success.</p>
+            <p className="text-sm text-muted">Network fee {CLAIM_FEE_ALGO}. No backer action needed after success.</p>
           </div>
         )}
 
         {canCancelPledge && (
-          <div className="detail__actions">
-            <h3 className="detail__subtitle">Your pledges</h3>
+          <div className="mt-5 border-t border-line pt-5">
+            <h3 className="m-0 mb-3 text-lg">Your pledges</h3>
             {leaves.map((leaf) => (
-              <div key={leaf.position} className="detail__leaf">
+              <div key={leaf.position} className="flex items-center justify-between gap-2 py-2">
                 <span>
                   Pledge #{leaf.position.toString()}: {formatAlgo(leaf.amount)} ALGO
                 </span>
                 <button
                   type="button"
-                  className="btn"
+                  className="cursor-pointer rounded-md border border-line bg-card px-4 py-2 text-sm text-ink hover:border-teal disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={busy}
                   onClick={() => {
                     handleSpend(leaf, 'cancel')
@@ -250,21 +270,21 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
                 </button>
               </div>
             ))}
-            <p className="detail__fee">Network fee {NETWORK_FEE_ALGO} per cancellation.</p>
+            <p className="text-sm text-muted">Network fee {NETWORK_FEE_ALGO} per cancellation.</p>
           </div>
         )}
 
         {canRefund && (
-          <div className="detail__actions">
-            <h3 className="detail__subtitle">Your pledges</h3>
+          <div className="mt-5 border-t border-line pt-5">
+            <h3 className="m-0 mb-3 text-lg">Your pledges</h3>
             {leaves.map((leaf) => (
-              <div key={leaf.position} className="detail__leaf">
+              <div key={leaf.position} className="flex items-center justify-between gap-2 py-2">
                 <span>
                   Pledge #{leaf.position.toString()}: {formatAlgo(leaf.amount)} ALGO
                 </span>
                 <button
                   type="button"
-                  className="btn btn--primary"
+                  className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={busy}
                   onClick={() => {
                     handleSpend(leaf, 'refund')
@@ -274,20 +294,25 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
                 </button>
               </div>
             ))}
-            <p className="detail__fee">Network fee {NETWORK_FEE_ALGO} per refund.</p>
+            <p className="text-sm text-muted">Network fee {NETWORK_FEE_ALGO} per refund.</p>
           </div>
         )}
 
         {canDelete && (
-          <div className="detail__actions">
-            <button type="button" className="btn btn--danger" disabled={busy} onClick={handleDelete}>
+          <div className="mt-5 border-t border-line pt-5">
+            <button
+              type="button"
+              className="cursor-pointer rounded-md border border-danger bg-danger px-4 py-2 text-sm text-white hover:brightness-90 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={busy}
+              onClick={handleDelete}
+            >
               {busy && busyAction === 'delete' ? 'Deleting…' : 'Delete campaign'}
             </button>
-            <p className="detail__fee">Network fee {CLAIM_FEE_ALGO}.</p>
+            <p className="text-sm text-muted">Network fee {CLAIM_FEE_ALGO}.</p>
           </div>
         )}
 
-        {message && <p className="detail__message">{message}</p>}
+        {message && <p className="mb-0 mt-3 text-sm text-muted">{message}</p>}
       </div>
     </div>
   )

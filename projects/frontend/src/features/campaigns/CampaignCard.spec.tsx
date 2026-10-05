@@ -48,7 +48,7 @@ describe('CampaignCard', () => {
         onSelect={() => {}}
       />,
     )
-    const fill = document.querySelector('.campaign-card__progress-fill') as HTMLElement
+    const fill = screen.getByTestId('progress-fill')
     expect(fill.style.width).toBe('100%')
   })
 
@@ -56,7 +56,7 @@ describe('CampaignCard', () => {
     render(
       <CampaignCard campaign={{ ...campaign, goalMicroAlgos: 0n, raisedMicroAlgos: 0n }} nowSeconds={9_999_999_999n} onSelect={() => {}} />,
     )
-    const fill = document.querySelector('.campaign-card__progress-fill') as HTMLElement
+    const fill = screen.getByTestId('progress-fill')
     expect(fill.style.width).toBe('0%')
   })
 })

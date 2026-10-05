@@ -296,6 +296,14 @@ Already present and unchanged: `App.tsx` builds a `WalletManager`
 - **Pledge positions** are 0-based leaf indices, stable forever (positions are
   never reused); the detail view labels them "Pledge #k".
 
+## Styling (Tailwind CSS v4)
+
+All styling is Tailwind utilities. The palette lives as `@theme` tokens in
+`projects/frontend/src/styles/App.css` (`bg-teal`, `text-ink`, `border-line`,
+`bg-badge-open`, …) — no BEM classes, no separate stylesheet per component.
+Status badges map via a `badgeBg` record so class names stay static for the
+Tailwind scanner (never `bg-badge-${status}`).
+
 ## Testing (Vitest)
 
 The frontend has its own Vitest config (jsdom environment) plus

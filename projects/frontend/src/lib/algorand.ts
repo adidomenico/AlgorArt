@@ -47,7 +47,7 @@ export const algorand = AlgorandClient.fromConfig({
 export async function fetchChainTimestamp(): Promise<bigint> {
   const status = await algorand.client.algod.status().do()
   const block = await algorand.client.algod.block(status.lastRound).do()
-  return BigInt(block.block.header.timestamp)
+  return block.block.header.timestamp
 }
 
 /**
