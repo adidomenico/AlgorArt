@@ -1,20 +1,35 @@
 import type { AlgoViteClientConfig, AlgoViteKMDConfig } from '../../interfaces/network'
 
 /**
+ * App environment merged from both sources, read live at call time (module scope would freeze test stubs).
+ * import.meta.env only exists under Vite (tsx leaves it empty); process.env covers node scripts.
+ *
+ * @returns The merged environment.
+ */
+function appEnv(): Record<string, string | undefined> {
+  return {
+    ...(typeof process === 'undefined' ? {} : process.env),
+    ...import.meta.env,
+  }
+}
+
+/**
  * Read the algod client config from the Vite environment.
  *
  * @returns Algod client config.
  */
 export function getAlgodConfigFromViteEnvironment(): AlgoViteClientConfig {
-  if (!import.meta.env.VITE_ALGOD_SERVER) {
+  const env = appEnv()
+  const server = env.VITE_ALGOD_SERVER
+  if (!server) {
     throw new Error('Attempt to get default algod configuration without specifying VITE_ALGOD_SERVER in the environment variables')
   }
 
   return {
-    server: import.meta.env.VITE_ALGOD_SERVER,
-    port: import.meta.env.VITE_ALGOD_PORT,
-    token: import.meta.env.VITE_ALGOD_TOKEN,
-    network: import.meta.env.VITE_ALGOD_NETWORK,
+    server,
+    port: env.VITE_ALGOD_PORT ?? '',
+    token: env.VITE_ALGOD_TOKEN ?? '',
+    network: env.VITE_ALGOD_NETWORK ?? '',
   }
 }
 
@@ -24,15 +39,17 @@ export function getAlgodConfigFromViteEnvironment(): AlgoViteClientConfig {
  * @returns Indexer client config.
  */
 export function getIndexerConfigFromViteEnvironment(): AlgoViteClientConfig {
-  if (!import.meta.env.VITE_INDEXER_SERVER) {
+  const env = appEnv()
+  const server = env.VITE_INDEXER_SERVER
+  if (!server) {
     throw new Error('Attempt to get default algod configuration without specifying VITE_INDEXER_SERVER in the environment variables')
   }
 
   return {
-    server: import.meta.env.VITE_INDEXER_SERVER,
-    port: import.meta.env.VITE_INDEXER_PORT,
-    token: import.meta.env.VITE_INDEXER_TOKEN,
-    network: import.meta.env.VITE_ALGOD_NETWORK,
+    server,
+    port: env.VITE_INDEXER_PORT ?? '',
+    token: env.VITE_INDEXER_TOKEN ?? '',
+    network: env.VITE_ALGOD_NETWORK ?? '',
   }
 }
 
@@ -42,15 +59,17 @@ export function getIndexerConfigFromViteEnvironment(): AlgoViteClientConfig {
  * @returns KMD client config.
  */
 export function getKmdConfigFromViteEnvironment(): AlgoViteKMDConfig {
-  if (!import.meta.env.VITE_KMD_SERVER) {
+  const env = appEnv()
+  const server = env.VITE_KMD_SERVER
+  if (!server) {
     throw new Error('Attempt to get default kmd configuration without specifying VITE_KMD_SERVER in the environment variables')
   }
 
   return {
-    server: import.meta.env.VITE_KMD_SERVER,
-    port: import.meta.env.VITE_KMD_PORT,
-    token: import.meta.env.VITE_KMD_TOKEN,
-    wallet: import.meta.env.VITE_KMD_WALLET,
-    password: import.meta.env.VITE_KMD_PASSWORD,
+    server,
+    port: env.VITE_KMD_PORT ?? '',
+    token: env.VITE_KMD_TOKEN ?? '',
+    wallet: env.VITE_KMD_WALLET ?? '',
+    password: env.VITE_KMD_PASSWORD ?? '',
   }
 }

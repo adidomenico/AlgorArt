@@ -351,7 +351,8 @@ remaining questions to settle before implementing:
   click-driven flows; Vitest browser mode keeps it in the existing runner).
 - How to seed campaigns idempotently before each run (`npm run seed` / `npm run unseed` in
   `projects/contracts`, state-tracked via `scripts/.seed-state.json`; LocalNet by default,
-  `DOTENV_CONFIG_PATH=.env.testnet` for TestNet).
+  `DOTENV_CONFIG_PATH=.env.testnet` for TestNet) and reclaim afterwards (`npm run reclaim` in
+  `projects/frontend`: refunds/cancels known leaves, deletes, unregisters; unknown leaves reported).
 
 ### Where it lives
 

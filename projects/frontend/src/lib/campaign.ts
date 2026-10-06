@@ -62,7 +62,11 @@ export function vaultAppId(): bigint {
 }
 
 function envAppId(key: string): bigint {
-  const raw = import.meta.env[key] as string | undefined
+  const env: Record<string, string | undefined> = {
+    ...(typeof process === 'undefined' ? {} : process.env),
+    ...import.meta.env,
+  }
+  const raw = env[key]
   if (raw === undefined || raw === '') return 0n
   const id = BigInt(raw)
   return id > 0n ? id : 0n
