@@ -68,13 +68,13 @@ export function parseCampaignMetadata(json: unknown): CampaignMetadata | null {
 }
 
 /**
- * Fetch and parse the metadata blob; null on blank URIs and any failure.
+ * Fetch and parse the metadata blob; null on blank/unresolvable URIs and any failure.
  *
  * @param uri The `metadataUri` pointer.
  * @returns The parsed metadata, or null when unavailable.
  */
 export async function fetchCampaignMetadata(uri: string): Promise<CampaignMetadata | null> {
-  if (uri.trim() === '') return null
+  if (!looksResolvable(uri)) return null
   try {
     const response = await fetch(resolveIpfsUri(uri))
     if (!response.ok) return null
@@ -98,4 +98,21 @@ export function resolveImageSrc(metadataUri: string, metadata: CampaignMetadata 
   if (metadata?.image) return resolveIpfsUri(metadata.image)
   if (IMAGE_EXTENSIONS.test(metadataUri.trim())) return resolveIpfsUri(metadataUri)
   return null
+}
+
+const MIN_CID_LENGTH = 32
+
+/**
+ * Whether a URI is worth a network round-trip. `ipfs://` pointers whose first path segment is far shorter than any
+ * real CID (e.g. the seed script's `ipfs://seed/<name>` placeholders) can never resolve, so skip them silently instead
+ * of spamming the console with gateway 400s. `https://` URLs always go through — only the fetch can judge those.
+ *
+ * @param uri The `metadataUri` pointer.
+ * @returns True when a fetch might succeed.
+ */
+export function looksResolvable(uri: string): boolean {
+  const trimmed = uri.trim()
+  if (!trimmed.startsWith('ipfs://')) return trimmed !== ''
+  const firstSegment = trimmed.slice('ipfs://'.length).split('/')[0] ?? ''
+  return firstSegment.length >= MIN_CID_LENGTH
 }

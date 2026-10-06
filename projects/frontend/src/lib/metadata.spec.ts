@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchCampaignMetadata, parseCampaignMetadata, resolveImageSrc, resolveIpfsUri } from './metadata'
+import { fetchCampaignMetadata, looksResolvable, parseCampaignMetadata, resolveImageSrc, resolveIpfsUri } from './metadata'
 
 describe('resolveIpfsUri', () => {
   it('maps ipfs:// URIs onto the gateway', () => {
@@ -17,11 +17,16 @@ describe('parseCampaignMetadata', () => {
       parseCampaignMetadata({
         name: 'Novel',
         description: 'A story',
-        image: 'ipfs://QmImg',
+        image: 'ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi',
         category: 'books',
         extra: 42,
       }),
-    ).toEqual({ name: 'Novel', description: 'A story', image: 'ipfs://QmImg', category: 'books' })
+    ).toEqual({
+      name: 'Novel',
+      description: 'A story',
+      image: 'ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi',
+      category: 'books',
+    })
   })
 
   it('returns null for non-objects and empty blobs', () => {
@@ -32,21 +37,42 @@ describe('parseCampaignMetadata', () => {
   })
 })
 
+describe('looksResolvable', () => {
+  it('accepts real CIDs and https URLs', () => {
+    expect(looksResolvable('ipfs://QmYwAPJzv9CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG')).toBe(true)
+    expect(looksResolvable('ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi')).toBe(true)
+    expect(looksResolvable('https://example.com/m.json')).toBe(true)
+  })
+
+  it('rejects blanks and obviously-fake ipfs pointers without fetching', async () => {
+    expect(looksResolvable('  ')).toBe(false)
+    expect(looksResolvable('ipfs://seed/bob')).toBe(false)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await fetchCampaignMetadata('ipfs://seed/bob')).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+})
+
 describe('fetchCampaignMetadata', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
   it('fetches and parses the blob', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ image: 'ipfs://QmImg' }) })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ image: 'ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi' }),
+    })
     vi.stubGlobal('fetch', fetchMock)
-    expect(await fetchCampaignMetadata('ipfs://QmMeta')).toEqual({
+    expect(await fetchCampaignMetadata('ipfs://QmYwAPJzv9CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG')).toEqual({
       name: undefined,
       description: undefined,
-      image: 'ipfs://QmImg',
+      image: 'ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi',
       category: undefined,
     })
-    expect(fetchMock).toHaveBeenCalledWith('https://gateway.pinata.cloud/ipfs/QmMeta')
+    expect(fetchMock).toHaveBeenCalledWith('https://gateway.pinata.cloud/ipfs/QmYwAPJzv9CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG')
   })
 
   it('returns null without fetching on blank URIs', async () => {
@@ -66,11 +92,15 @@ describe('fetchCampaignMetadata', () => {
 
 describe('resolveImageSrc', () => {
   it('prefers the blob image field', () => {
-    expect(resolveImageSrc('ipfs://QmMeta', { image: 'ipfs://QmImg' })).toBe('https://gateway.pinata.cloud/ipfs/QmImg')
+    expect(
+      resolveImageSrc('ipfs://QmYwAPJzv9CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG', {
+        image: 'ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi',
+      }),
+    ).toBe('https://gateway.pinata.cloud/ipfs/bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi')
   })
 
   it('falls back to the URI itself for direct image links', () => {
     expect(resolveImageSrc('https://example.com/cover.jpg', null)).toBe('https://example.com/cover.jpg')
-    expect(resolveImageSrc('ipfs://QmMeta', null)).toBeNull()
+    expect(resolveImageSrc('ipfs://QmYwAPJzv9CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG', null)).toBeNull()
   })
 })

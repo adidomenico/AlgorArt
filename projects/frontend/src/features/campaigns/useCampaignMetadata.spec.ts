@@ -9,7 +9,7 @@ describe('useCampaignMetadata', () => {
 
   it('returns the parsed blob', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ description: 'A story' }) }))
-    const { result } = renderHook(() => useCampaignMetadata('ipfs://QmMeta'))
+    const { result } = renderHook(() => useCampaignMetadata('ipfs://QmYwAPJzv9CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG'))
     await waitFor(() => {
       expect(result.current).toEqual({
         name: undefined,
@@ -30,7 +30,7 @@ describe('useCampaignMetadata', () => {
 
   it('returns null when the fetch fails', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
-    const { result } = renderHook(() => useCampaignMetadata('ipfs://QmMeta'))
+    const { result } = renderHook(() => useCampaignMetadata('ipfs://QmYwAPJzv9CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG'))
     await waitFor(() => {
       expect(fetch).toHaveBeenCalled()
     })
