@@ -43,6 +43,18 @@ describe('Nav', () => {
     expect(screen.getByText('Select wallet provider')).toBeInTheDocument()
   })
 
+  it('closes the wallet banner after a successful connect', async () => {
+    useWalletMock.mockReturnValue({ activeAddress: null, wallets: [] })
+    const user = userEvent.setup()
+    const { rerender } = render(<Nav onNavigateHome={() => {}} />)
+    await user.click(screen.getByText('Connect wallet'))
+    const dialog = document.getElementById('connect_wallet_modal')
+    expect(dialog).not.toHaveClass('hidden')
+    useWalletMock.mockReturnValue({ activeAddress: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', wallets: [] })
+    rerender(<Nav onNavigateHome={() => {}} />)
+    expect(dialog).toHaveClass('hidden')
+  })
+
   it('toggles the wallet banner when the connect button is clicked twice', async () => {
     useWalletMock.mockReturnValue({ activeAddress: null, wallets: [] })
     const user = userEvent.setup()

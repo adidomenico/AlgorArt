@@ -11,6 +11,15 @@ const Nav = ({ onNavigateHome }: NavProps) => {
   const { activeAddress } = useWallet()
   const [walletOpen, setWalletOpen] = useState(false)
   const navRef = useRef<HTMLElement>(null)
+  const prevActiveAddress = useRef(activeAddress)
+
+  // Close the banner on a fresh connect; reopening it while connected shows the account view.
+  useEffect(() => {
+    if (prevActiveAddress.current !== activeAddress) {
+      prevActiveAddress.current = activeAddress
+      if (activeAddress) setWalletOpen(false)
+    }
+  }, [activeAddress])
 
   // The banner is a dropdown: any pointer-down outside the nav closes it.
   useEffect(() => {
