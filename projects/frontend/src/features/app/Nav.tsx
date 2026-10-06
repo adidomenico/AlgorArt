@@ -52,7 +52,15 @@ const Nav = ({ onNavigateHome }: NavProps) => {
         </button>
       </div>
 
-      <ConnectWallet openModal={walletOpen} />
+      <ConnectWallet
+        openModal={walletOpen}
+        onHide={() => {
+          setWalletOpen(false)
+        }}
+        onShow={() => {
+          setWalletOpen(true)
+        }}
+      />
     </nav>
   )
 }

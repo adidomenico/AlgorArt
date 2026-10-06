@@ -22,7 +22,7 @@ vi.mock('./Account', () => ({
 describe('ConnectWallet', () => {
   it('renders provider buttons when disconnected', () => {
     useWalletMock.mockReturnValue({ wallets, activeAddress: null })
-    render(<ConnectWallet openModal />)
+    render(<ConnectWallet openModal onHide={() => {}} onShow={() => {}} />)
 
     expect(screen.getByText('Pera Wallet')).toBeInTheDocument()
     expect(screen.getByText('Defly Wallet')).toBeInTheDocument()
@@ -31,7 +31,7 @@ describe('ConnectWallet', () => {
   it('connects a provider when clicked', async () => {
     useWalletMock.mockReturnValue({ wallets, activeAddress: null })
     const user = userEvent.setup()
-    render(<ConnectWallet openModal />)
+    render(<ConnectWallet openModal onHide={() => {}} onShow={() => {}} />)
 
     await user.click(screen.getByText('Pera Wallet'))
     expect(wallets[0]?.connect).toHaveBeenCalled()
@@ -40,7 +40,7 @@ describe('ConnectWallet', () => {
   it('renders the account view and logout when connected', () => {
     const activeWallet = { ...wallets[0], isActive: true, disconnect: vi.fn() }
     useWalletMock.mockReturnValue({ wallets: [activeWallet], activeAddress: 'ADDRESS' })
-    render(<ConnectWallet openModal />)
+    render(<ConnectWallet openModal onHide={() => {}} onShow={() => {}} />)
 
     expect(screen.getByText('ACCOUNT_VIEW')).toBeInTheDocument()
     expect(screen.getByText('Logout')).toBeInTheDocument()
@@ -51,7 +51,7 @@ describe('ConnectWallet', () => {
     const activeWallet = { ...wallets[0], isActive: true, disconnect }
     useWalletMock.mockReturnValue({ wallets: [activeWallet], activeAddress: 'ADDRESS' })
     const user = userEvent.setup()
-    render(<ConnectWallet openModal />)
+    render(<ConnectWallet openModal onHide={() => {}} onShow={() => {}} />)
 
     await user.click(screen.getByText('Logout'))
     expect(disconnect).toHaveBeenCalled()
@@ -68,7 +68,7 @@ describe('ConnectWallet', () => {
       value: { ...window.location, reload: reloadSpy },
     })
     const user = userEvent.setup()
-    render(<ConnectWallet openModal />)
+    render(<ConnectWallet openModal onHide={() => {}} onShow={() => {}} />)
 
     await user.click(screen.getByText('Logout'))
     expect(removeItemSpy).toHaveBeenCalledWith('@txnlab/use-wallet:v3')
@@ -78,9 +78,37 @@ describe('ConnectWallet', () => {
   it('renders the KMD wallet as "LocalNet Wallet" without an icon', () => {
     const kmdWallet = { id: 'kmd', metadata: { name: 'LocalNet', icon: 'http://icon/kmd.png' }, connect: vi.fn(), isActive: false }
     useWalletMock.mockReturnValue({ wallets: [kmdWallet], activeAddress: null })
-    render(<ConnectWallet openModal />)
+    render(<ConnectWallet openModal onHide={() => {}} onShow={() => {}} />)
 
     expect(screen.getByText('LocalNet Wallet')).toBeInTheDocument()
     expect(screen.queryByAltText('wallet_icon_kmd')).not.toBeInTheDocument()
+  })
+
+  it('shows an error when connecting fails', async () => {
+    useWalletMock.mockReturnValue({ wallets, activeAddress: null })
+    const defly = wallets[1]
+    if (defly === undefined) throw new Error('defly wallet missing from mock')
+    defly.connect.mockRejectedValueOnce(new Error('no extension'))
+    const onHide = vi.fn()
+    const onShow = vi.fn()
+    const user = userEvent.setup()
+    render(<ConnectWallet openModal onHide={onHide} onShow={onShow} />)
+
+    await user.click(screen.getByText('Defly Wallet'))
+    expect(await screen.findByText(/Could not connect with Defly Wallet/)).toBeInTheDocument()
+    expect(onHide).toHaveBeenCalled()
+    expect(onShow).toHaveBeenCalled()
+  })
+
+  it('hides the menu when a provider flow starts', async () => {
+    useWalletMock.mockReturnValue({ wallets, activeAddress: null })
+    const onHide = vi.fn()
+    const onShow = vi.fn()
+    const user = userEvent.setup()
+    render(<ConnectWallet openModal onHide={onHide} onShow={onShow} />)
+
+    await user.click(screen.getByText('Defly Wallet'))
+    expect(onHide).toHaveBeenCalled()
+    expect(onShow).not.toHaveBeenCalled()
   })
 })

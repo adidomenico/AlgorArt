@@ -7,6 +7,7 @@ const useWalletMock = vi.fn()
 
 vi.mock('@txnlab/use-wallet-react', () => ({
   useWallet: () => useWalletMock(),
+  WalletId: { KMD: 'kmd' },
 }))
 
 describe('Nav', () => {
@@ -41,6 +42,21 @@ describe('Nav', () => {
     render(<Nav onNavigateHome={() => {}} />)
     await user.click(screen.getByText('Connect wallet'))
     expect(screen.getByText('Select wallet provider')).toBeInTheDocument()
+  })
+
+  it('hides the menu when a provider flow starts', async () => {
+    const connect = vi.fn().mockResolvedValue(undefined)
+    useWalletMock.mockReturnValue({
+      activeAddress: null,
+      wallets: [{ id: 'pera', metadata: { name: 'Pera Wallet', icon: '' }, connect, isActive: false }],
+    })
+    const user = userEvent.setup()
+    render(<Nav onNavigateHome={() => {}} />)
+    await user.click(screen.getByText('Connect wallet'))
+    const dialog = document.getElementById('connect_wallet_modal')
+    expect(dialog).not.toHaveClass('hidden')
+    await user.click(screen.getByText('Pera Wallet'))
+    expect(dialog).toHaveClass('hidden')
   })
 
   it('closes the wallet banner after a successful connect', async () => {
