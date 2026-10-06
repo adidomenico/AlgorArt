@@ -120,11 +120,13 @@ the pledge-time content stays frozen and always viewable.
 
 All reads use `algosdk.Indexer` configured from the same env as algod:
 
-- **List campaigns** — `indexer.searchForApplications().do()`, filtered to apps
-  whose global state has the `Campaign` keys **and** whose app id appears in the
-  Factory's registration boxes (`indexer.searchForApplicationBoxes(factoryId)`;
-  one box search, decoded `'r' + appId` names). When `VITE_FACTORY_APP_ID` is
-  unset, the registration filter is skipped (dev mode).
+- **List campaigns** — with a Factory configured, read its registration boxes
+  (`indexer.searchForApplicationBoxes(factoryId)`; one box search, decoded
+  `'r' + appId` names) and look each id up directly. The unfiltered
+  `searchForApplications` scan (key-presence discriminator) only runs when
+  `VITE_FACTORY_APP_ID` is unset (dev mode): it never finishes on
+  TestNet-scale chains, where every response carries thousands of unrelated
+  apps with full approval programs.
 - **One campaign** — `indexer.lookupApplications(appId).do()` for the global
   state.
 - **My pledges** — `fetchMyLeaves`: replay the campaign's pledge calls (with

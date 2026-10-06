@@ -130,23 +130,50 @@ describe('fetchRegisteredCampaignIds', () => {
 })
 
 describe('listCampaigns', () => {
-  it('lists campaigns filtered to the Factory registrations', async () => {
-    const official = campaignApp({ id: 42n })
-    const unregistered = campaignApp({ id: 43n })
-    const unrelated = new algosdk.indexerModels.Application({
-      id: 44n,
-      params: new algosdk.indexerModels.ApplicationParams({
-        approvalProgram: new Uint8Array(),
-        clearStateProgram: new Uint8Array(),
-        globalState: [kv('nope', tealUint(1n))],
-      }),
-    })
-
+  it('lists registered campaigns by direct lookup without scanning', async () => {
     indexerMock.searchForApplicationBoxes.mockImplementation(() => boxSearchBuilder(() => [{ name: registrationBoxName(42n) }]))
-    indexerMock.searchForApplications.mockImplementation(() => searchBuilder(() => [official, unregistered, unrelated]))
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp({ id: 42n }) }))
 
     const campaigns = await listCampaigns(1_000n)
     expect(campaigns.map((c) => c.id)).toEqual([42n])
+    expect(indexerMock.searchForApplications).not.toHaveBeenCalled()
+  })
+
+  it('skips deleted campaigns', async () => {
+    const deleted = new algosdk.indexerModels.Application({
+      id: 44n,
+      deleted: true,
+      params: new algosdk.indexerModels.ApplicationParams({
+        approvalProgram: new Uint8Array(),
+        clearStateProgram: new Uint8Array(),
+      }),
+    })
+    indexerMock.searchForApplicationBoxes.mockImplementation(() => boxSearchBuilder(() => [{ name: registrationBoxName(44n) }]))
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: deleted }))
+
+    expect(await listCampaigns(1_000n)).toEqual([])
+  })
+
+  it('falls back to the full scan without a factory', async () => {
+    vi.stubEnv('VITE_FACTORY_APP_ID', '')
+    try {
+      const official = campaignApp({ id: 42n })
+      const unrelated = new algosdk.indexerModels.Application({
+        id: 44n,
+        params: new algosdk.indexerModels.ApplicationParams({
+          approvalProgram: new Uint8Array(),
+          clearStateProgram: new Uint8Array(),
+          globalState: [kv('nope', tealUint(1n))],
+        }),
+      })
+      indexerMock.searchForApplications.mockImplementation(() => searchBuilder(() => [official, unrelated]))
+
+      const campaigns = await listCampaigns(1_000n)
+      expect(campaigns.map((c) => c.id)).toEqual([42n])
+      expect(indexerMock.searchForApplicationBoxes).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })
 

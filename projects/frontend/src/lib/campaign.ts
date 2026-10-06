@@ -255,8 +255,9 @@ export async function fetchRegisteredCampaignIds(factoryId: bigint): Promise<Set
 }
 
 /**
- * List all campaigns by scanning indexed applications for our global-state keys, filtered to Factory-registered campaigns when a Factory
- * is configured. There is no app-name filter on the indexer, so presence of the known keys is the discriminator (docs/frontend.md).
+ * List all campaigns. With a Factory configured, look each registered id up directly — the unfiltered application
+ * scan below works on sandbox-sized chains but never finishes on TestNet-scale chains (tens of thousands of apps,
+ * each response carrying full approval programs).
  *
  * @param nowSeconds Current UNIX timestamp (seconds).
  * @param viewerAddress Connected wallet address, if any.
@@ -264,9 +265,19 @@ export async function fetchRegisteredCampaignIds(factoryId: bigint): Promise<Set
  */
 export async function listCampaigns(nowSeconds: bigint, viewerAddress?: string): Promise<CampaignViewModel[]> {
   const factoryId = factoryAppId()
-  const registered = factoryId > 0n ? await fetchRegisteredCampaignIds(factoryId) : undefined
+  if (factoryId > 0n) {
+    const registered = await fetchRegisteredCampaignIds(factoryId)
+    const campaigns: CampaignViewModel[] = []
+    for (const id of registered) {
+      const campaign = await getCampaign(id, nowSeconds, viewerAddress)
+      // Deleted campaigns resolve to a stub for the detail page; the list shows live ones only.
+      if (campaign !== undefined && campaign.deleted !== true) campaigns.push(campaign)
+    }
+    return campaigns
+  }
 
-  // Paginate: playground chains accumulate hundreds of apps and the ids we want can sit far past the first page.
+  // No factory: fall back to scanning indexed applications for our global-state keys. There is no app-name filter on
+  // the indexer, so presence of the known keys is the discriminator (docs/frontend.md). Only viable on small chains.
   const applications: algosdk.indexerModels.Application[] = []
   let nextToken: string | undefined
   do {
@@ -280,7 +291,6 @@ export async function listCampaigns(nowSeconds: bigint, viewerAddress?: string):
   const campaigns: CampaignViewModel[] = []
   for (const app of applications) {
     if (!isCampaignApp(app)) continue
-    if (registered !== undefined && !registered.has(app.id)) continue
     let myPledge: bigint | undefined
     if (viewerAddress) {
       myPledge = await fetchMyPledge(app.id, viewerAddress)
