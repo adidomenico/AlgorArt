@@ -40,17 +40,17 @@ interface SeedCampaign {
 
 /** Campaigns to create: creator wallet, goal (ALGO), days until deadline, backer pledge (ALGO) or 0. */
 const CAMPAIGNS_LOCALNET: ReadonlyArray<SeedCampaign> = [
-  { creator: 'alice', goalAlgo: 10, days: 14, pledgeAlgo: 4 },
-  { creator: 'bob', goalAlgo: 25, days: 21, pledgeAlgo: 0 },
-  { creator: 'carol', goalAlgo: 50, days: 30, pledgeAlgo: 18 },
-  { creator: 'dave', goalAlgo: 5, days: 7, pledgeAlgo: 0 },
+  { creator: 'alice', goalAlgo: 10, days: 1, pledgeAlgo: 4 },
+  { creator: 'bob', goalAlgo: 25, days: 1, pledgeAlgo: 0 },
+  { creator: 'carol', goalAlgo: 50, days: 1, pledgeAlgo: 18 },
+  { creator: 'dave', goalAlgo: 5, days: 1, pledgeAlgo: 0 },
 ]
 
 // Faucet-friendly amounts for shared networks (one backer needs ~1.6 ALGO total; two creators need ~0.7 ALGO
 // each for the creation MBR + registration deposit + fees).
 const CAMPAIGNS_TESTNET: ReadonlyArray<SeedCampaign> = [
-  { creator: 'alice', goalAlgo: 2, days: 14, pledgeAlgo: 0.5 },
-  { creator: 'carol', goalAlgo: 5, days: 30, pledgeAlgo: 1 },
+  { creator: 'alice', goalAlgo: 2, days: 1, pledgeAlgo: 0.5 },
+  { creator: 'carol', goalAlgo: 5, days: 1, pledgeAlgo: 1 },
 ]
 
 function appIdBytes(appId: bigint): Buffer {
