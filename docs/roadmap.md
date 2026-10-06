@@ -123,6 +123,9 @@ stays green (format, lint, types, offline coverage at 100%, integration on Local
 
 ## TestNet & deployment
 
+- [x] **TestNet deploy (2026-10-06)** — Factory `773811780` + ClaimsVault `773811800`
+      (approval hash set at deploy; sweep target = deployer, 730-day window).
+      View on Lora: `https://lora.algokit.io/testnet/application/<id>/`.
 - [ ] **TestNet smoke test** — deploy the Factory + Campaign contracts, fund via the dispenser, and run
       create → pledge → claim, and → refund with a real wallet (Pera/Defly). This de-risks
       wallet + public-network integration and is independent of styling.
