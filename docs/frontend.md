@@ -112,7 +112,9 @@ points straight at an image file) in the card and detail views, hiding itself
 on any failure; the detail view also shows `description` and `category`. A blob
 with none of the four fields is treated as absent, so seed/legacy URIs render
 nothing instead of erroring. Upload/pinning is out of scope — creators paste a
-URI today; server-side pinning rides with the catalog backend.
+URI today; server-side pinning rides with the catalog backend. Descriptions
+evolve through the creator updates feed (roadmap), not by editing the blob —
+the pledge-time content stays frozen and always viewable.
 
 ## Reads (indexer)
 

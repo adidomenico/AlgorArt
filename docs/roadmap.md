@@ -138,6 +138,10 @@ discovery and the outcome record; the catalog is for search/filter/history UX.
 
 - [ ] **Minimal catalog backend** — API + DB storing one row per campaign (app id, creator, title, metadata URI, goal, deadline, status, outcome, raised, backer count), serving browse/detail pages for ended campaigns.
 - [ ] **Chain watcher** — observes the indexer and finalizes campaign records (created/pledged/claimed/refunded/deleted) into the catalog.
+- [ ] **Creator updates feed** — append-only, timestamped, creator-signed messages stored by the catalog and shown as history on the
+      detail page; the original description stays frozen and always viewable. No contract change: signatures are verified off-chain
+      against the on-chain creator address. Typos get corrected and progress gets shared, but silent rewrites stay impossible —
+      the decentralized equivalent of Kickstarter's Updates tab.
 
 ## Testing
 
