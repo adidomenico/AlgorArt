@@ -349,8 +349,9 @@ remaining questions to settle before implementing:
   (preview is closer to prod, dev is faster to iterate).
 - Playwright vs. Vitest browser mode (Playwright is the natural fit for
   click-driven flows; Vitest browser mode keeps it in the existing runner).
-- How to seed LocalNet campaigns idempotently before each run (the existing
-  `scripts/seed-demo.ts` is a starting point).
+- How to seed campaigns idempotently before each run (`npm run seed` / `npm run unseed` in
+  `projects/contracts`, state-tracked via `scripts/.seed-state.json`; LocalNet by default,
+  `DOTENV_CONFIG_PATH=.env.testnet` for TestNet).
 
 ### Where it lives
 

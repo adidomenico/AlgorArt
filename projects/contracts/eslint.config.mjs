@@ -24,6 +24,7 @@ export default defineConfig(
             'vitest.config.mts',
             'vitest.setup.ts',
             'scripts/seed-demo.ts',
+            'scripts/unseed-demo.ts',
             'scripts/advance-time.ts',
             'scripts/fund-account.ts',
           ],

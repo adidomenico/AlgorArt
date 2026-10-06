@@ -53,6 +53,9 @@ test-results/
 playwright-report/
 *.received.*
 
+# Local seed state (created by scripts/seed-demo.ts, consumed by unseed-demo.ts)
+projects/contracts/scripts/.seed-state.json
+
 # Tool caches
 .npm
 .eslintcache
