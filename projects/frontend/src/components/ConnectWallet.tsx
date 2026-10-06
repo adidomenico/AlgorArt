@@ -16,6 +16,12 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
   const [connectError, setConnectError] = useState<string | null>(null)
 
   const isKmd = (wallet: Wallet) => wallet.id === WalletId.KMD
+  // Only Exodus is extension-gated (window.algorand); Pera/Defly also support mobile flows, so their failures
+  // surface through the connect error below instead of a pre-check.
+  const isAvailable = (wallet: Wallet) =>
+    wallet.id !== WalletId.EXODUS || (typeof window !== 'undefined' && (window as unknown as { algorand?: unknown }).algorand !== undefined)
+
+  const unavailableHint = 'Exodus browser extension not detected — install it to use Exodus'
 
   return (
     <dialog
@@ -41,6 +47,7 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
                 data-test-id={`${wallet.id}-connect`}
                 className="m-2 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
                 key={`provider-${wallet.id}`}
+                title={!isAvailable(wallet) ? unavailableHint : undefined}
                 onClick={() => {
                   void (async () => {
                     setConnectError(null)
@@ -48,7 +55,11 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
                     try {
                       await wallet.connect()
                     } catch {
-                      setConnectError(`Could not connect with ${wallet.metadata.name}. Is it installed and unlocked?`)
+                      setConnectError(
+                        wallet.id === WalletId.EXODUS
+                          ? `Could not connect with ${wallet.metadata.name}. Install the Exodus extension to use it.`
+                          : `Could not connect with ${wallet.metadata.name}. Is it installed and unlocked?`,
+                      )
                       onShow()
                     }
                   })()

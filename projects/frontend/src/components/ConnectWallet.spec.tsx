@@ -6,13 +6,14 @@ import ConnectWallet from './ConnectWallet'
 const wallets = [
   { id: 'pera', metadata: { name: 'Pera Wallet', icon: 'http://icon/pera.png' }, connect: vi.fn(), isActive: false },
   { id: 'defly', metadata: { name: 'Defly Wallet', icon: 'http://icon/defly.png' }, connect: vi.fn(), isActive: false },
+  { id: 'exodus', metadata: { name: 'Exodus', icon: 'http://icon/exodus.png' }, connect: vi.fn(), isActive: false },
 ]
 
 const useWalletMock = vi.fn()
 
 vi.mock('@txnlab/use-wallet-react', () => ({
   useWallet: () => useWalletMock(),
-  WalletId: { KMD: 'kmd', PERA: 'pera', DEFLY: 'defly' },
+  WalletId: { KMD: 'kmd', PERA: 'pera', DEFLY: 'defly', EXODUS: 'exodus' },
 }))
 
 vi.mock('./Account', () => ({
@@ -98,6 +99,18 @@ describe('ConnectWallet', () => {
     expect(await screen.findByText(/Could not connect with Defly Wallet/)).toBeInTheDocument()
     expect(onHide).toHaveBeenCalled()
     expect(onShow).toHaveBeenCalled()
+  })
+
+  it('shows the install message when the Exodus extension is missing', async () => {
+    useWalletMock.mockReturnValue({ wallets, activeAddress: null })
+    const exodus = wallets[2]
+    if (exodus === undefined) throw new Error('exodus wallet missing from mock')
+    exodus.connect.mockRejectedValueOnce(new Error('Exodus is not available'))
+    const user = userEvent.setup()
+    render(<ConnectWallet openModal onHide={() => {}} onShow={() => {}} />)
+
+    await user.click(screen.getByRole('button', { name: /Exodus/ }))
+    expect(await screen.findByText(/Install the Exodus extension to use it/)).toBeInTheDocument()
   })
 
   it('hides the menu when a provider flow starts', async () => {
