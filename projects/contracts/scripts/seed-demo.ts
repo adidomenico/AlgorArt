@@ -100,13 +100,7 @@ void (async () => {
 
     const { result } = await campaignFactory.send.create({
       method: 'create(uint64,byte[],byte[],uint64,uint64)void',
-      args: [
-        vaultId,
-        new TextEncoder().encode(`${c.creator}'s campaign`),
-        new TextEncoder().encode(metadataUri),
-        goal,
-        deadline,
-      ],
+      args: [vaultId, new TextEncoder().encode(`${c.creator}'s campaign`), new TextEncoder().encode(metadataUri), goal, deadline],
       sender: creator.addr,
       appReferences: [vaultId],
     })

@@ -59,12 +59,12 @@ stateDiagram-v2
     [*] --> Open: create()
     Open --> Open: pledge() — appends a leaf, ALGO to the vault
     Open --> Open: cancelPledge() — nulls the leaf, vault pays back
-    Open --> Claimed: claim() — vault pays the creator; settlement recorded
-    Open --> Failed: refund() — first refund flips the status; vault pays back
+    Open --> Claimed: claim() — vault pays the creator, settlement recorded
+    Open --> Failed: refund() — first refund flips the status, vault pays back
     Failed --> Failed: refund() — while the campaign app exists
     Failed --> [*]: delete() — vault records the settlement (settle)
     Claimed --> [*]: delete() — vault releases the box (notifyDelete)
-    Open --> [*]: delete() — pristine or fully-cancelled; settle runs (no-op without a box)
+    Open --> [*]: delete() — pristine or fully-cancelled, settle runs (no-op without a box)
     Failed --> Failed: vault.refund() — backers reclaim from the vault until the window closes
     Failed --> [*]: vault.finalize() — residual to the sweep target after the window (O(1))
 ```
