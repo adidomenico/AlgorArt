@@ -143,7 +143,7 @@ Backend service (`projects/backend`, Fastify + Postgres) lands in thin slices,
 one commit each — CI wiring comes last:
 
 - [x] **Scaffold** — project skeleton with a `/health` endpoint; lint/format/type-check gates green.
-- [ ] **Postgres + migrations** — docker compose service, migration runner, `profiles` and `settings` tables.
+- [x] **Postgres + migrations** — docker compose service, migration runner, `profiles` and `settings` tables.
 - [ ] **Wallet-signature auth** — sign-in challenge + signed attestation middleware (no passwords, per
       [`design.md`](design.md)); tests included.
 - [ ] **`POST /uploads`** — server-side Pinata pinning, returns the CID; create form uses it instead of manual paste.
