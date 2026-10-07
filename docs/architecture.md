@@ -9,6 +9,42 @@ the **Factory** (canonical registration), and the optional **catalog** for disco
 > Frontend design: [`frontend.md`](frontend.md). Product design & open questions:
 > [`design.md`](design.md). Roadmap: [`roadmap.md`](roadmap.md).
 
+## Built with
+
+| Layer | Technology |
+| --- | --- |
+| Smart contracts | **Algorand TypeScript** (`@algorandfoundation/algorand-typescript`) → AVM |
+| Frontend | **React + Vite + TypeScript**, **Tailwind CSS** |
+| Wallet (non-custodial) | **`@txnlab/use-wallet`** → Pera / Defly / Exodus |
+| SDK / reads | **`algosdk`**, **Algorand Indexer** |
+| Off-chain metadata | **IPFS** (ARC-3-style JSON, Pinata gateway + pinning) |
+| Testing | **AVM simulator** (offline) + **LocalNet** integration (Vitest) |
+| Tooling | **AlgoKit CLI** + local sandbox (Docker) |
+| Backend | **None required** — contract + indexer + Factory replace it (a catalog is optional) |
+
+## Repository layout
+
+AlgoKit's standard **workspace** layout (what `algokit init` produces and the CLI expects):
+
+```text
+AlgorArt/
+├── projects/
+│   ├── contracts/                # AlgoKit contract project (TypeScript)
+│   │   ├── smart_contracts/
+│   │   │   ├── campaign/         # the escrow app + Merkle tree
+│   │   │   ├── factory/          # the canonical campaign registry
+│   │   │   ├── claimsvault/      # the pooled refund escrow
+│   │   │   └── index.ts          # deploy orchestrator
+│   │   └── scripts/              # seed-demo / unseed-demo (demo data + cleanup)
+│   └── frontend/                 # React + Vite + TypeScript dApp
+│       └── src/
+│           ├── features/         # app shell, campaigns (browse/detail/create), wallet UI
+│           ├── lib/              # algod/indexer config, campaign/transaction/metadata helpers
+│           └── styles/           # Tailwind theme tokens
+├── docs/                         # technical docs (this directory)
+└── demo-metadata/                # local campaign-metadata payloads (gitignored, never committed)
+```
+
 ## The pieces
 
 | | Campaign escrow (per campaign) | ClaimsVault (one, platform-owned) | Factory (one, platform-owned) | Catalog (optional backend) |

@@ -57,7 +57,7 @@ regardless of the backer count.
 ```mermaid
 stateDiagram-v2
     [*] --> Open: create()
-    Open --> Open: pledge() — appends a leaf; ALGO to the vault
+    Open --> Open: pledge() — appends a leaf, ALGO to the vault
     Open --> Open: cancelPledge() — nulls the leaf, vault pays back
     Open --> Claimed: claim() — vault pays the creator; settlement recorded
     Open --> Failed: refund() — first refund flips the status; vault pays back
