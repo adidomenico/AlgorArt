@@ -157,6 +157,12 @@ const { result } = await new CampaignFactory({ algorand, defaultSender, defaultS
 await factoryClient.send.register({ args: { app: appId, payment }, appReferences: [appId] })
 ```
 
+Two wallet prompts is structural, not a bug: registration references the new app id, which only exists
+after the creation round confirms, so the steps cannot share an atomic group. Inverting control
+(Factory creates campaigns) would buy a single prompt at the cost of the creator-identity model, the
+creator-pays-MBR economics, and the explicit approval-hash gate — parked unless creation UX data says
+otherwise.
+
 No funding step exists — the v2 escrow never holds funds.
 
 ### pledge — one atomic group with a fresh frontier
