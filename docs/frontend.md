@@ -105,8 +105,10 @@ fields is enforced on-chain and re-checked in the create form.
 
 The JSON follows an ARC-3-style shape (`{name, description, image, category}`,
 all optional; `lib/metadata.ts`). `ipfs://` URIs resolve through the public
-`https://gateway.pinata.cloud/ipfs/` gateway (Pinata runs independent infrastructure;
-the Shipyard-maintained `ipfs.io` gateway wound down in September 2026).
+`https://green-cooperative-koi-991.mypinata.cloud/ipfs/` gateway (demo Pinata gateway:
+the public gateway does not serve all pins since the Shipyard-maintained
+`ipfs.io` gateway wound down in September 2026; a dedicated gateway belongs
+here once the catalog backend exists).
 `https://` URLs pass through. `CampaignImage` (`features/campaigns/`) renders the blob's `image` (or the URI itself when it
 points straight at an image file) in the card and detail views, hiding itself
 on any failure; the detail view also shows `description` and `category`. A blob

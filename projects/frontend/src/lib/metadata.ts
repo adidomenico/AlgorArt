@@ -15,11 +15,10 @@
  * straight at an image file instead of a JSON blob (see `resolveImageSrc`).
  */
 
-// Public gateway for `ipfs://` URIs. Pinata runs independent infrastructure
-// (the Shipyard-maintained ipfs.io gateway wound down in September 2026, so it
-// is no longer the default). A dedicated gateway or backend-pinned URLs belong
-// here once the catalog backend exists.
-const IPFS_GATEWAY = 'https://gateway.pinata.cloud/ipfs/'
+// Public gateway for `ipfs://` URIs. Currently the demo Pinata dedicated gateway: the public
+// gateway.pinata.cloud does not serve all of our pins, and the Shipyard-maintained ipfs.io gateway wound down in
+// September 2026. A dedicated gateway or backend-pinned URLs belong here once the catalog backend exists.
+const IPFS_GATEWAY = 'https://green-cooperative-koi-991.mypinata.cloud/ipfs/'
 
 export interface CampaignMetadata {
   name?: string | undefined
