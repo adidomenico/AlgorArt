@@ -139,6 +139,17 @@ The catalog is an optional minimal backend (API + DB) — see
 [`architecture.md`](architecture.md). The Factory + indexer already cover
 discovery and the outcome record; the catalog is for search/filter/history UX.
 
+Backend service (`projects/backend`, Fastify + Postgres) lands in thin slices,
+one commit each — CI wiring comes last:
+
+- [x] **Scaffold** — project skeleton with a `/health` endpoint; lint/format/type-check gates green.
+- [ ] **Postgres + migrations** — docker compose service, migration runner, `profiles` and `settings` tables.
+- [ ] **Wallet-signature auth** — sign-in challenge + signed attestation middleware (no passwords, per
+      [`design.md`](design.md)); tests included.
+- [ ] **`POST /uploads`** — server-side Pinata pinning, returns the CID; create form uses it instead of manual paste.
+- [ ] **Profiles + settings CRUD** — display name/avatar/bio keyed by address, notification prefs; frontend profile section reads them.
+- [ ] **CI matrix** — add the backend lane to `build-and-test` (after all slices land).
+
 - [ ] **Minimal catalog backend** — API + DB storing one row per campaign (app id, creator, title, metadata URI, goal, deadline, status, outcome, raised, backer count), serving browse/detail pages for ended campaigns.
 - [ ] **Chain watcher** — observes the indexer and finalizes campaign records (created/pledged/claimed/refunded/deleted) into the catalog.
 - [ ] **Creator updates feed** — append-only, timestamped, creator-signed messages stored by the catalog and shown as history on the
