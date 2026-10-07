@@ -18,6 +18,10 @@ import path from 'node:path'
  *
  * Created campaigns are recorded in `.seed-state.json` (gitignored) for `unseed-demo.ts`.
  *
+ * Metadata URIs default to `ipfs://seed/<creator>` placeholders. Override per campaign (in table order,
+ * comma-separated) with `SEED_METADATA_URIS`, e.g. real pins from `demo-metadata/cids.json`:
+ * `SEED_METADATA_URIS=ipfs://bafkreiAAA,ipfs://bafkreiBBB npm run seed`.
+ *
  * Usage: `FACTORY_APP_ID=<id> VAULT_APP_ID=<id> npm run seed`
  */
 
@@ -82,7 +86,11 @@ void (async () => {
   const backer = await algorand.account.fromEnvironment('backer_a', (100).algo())
 
   const seeded: { appId: string; creator: string }[] = []
-  for (const c of campaigns) {
+  const metadataUris =
+    process.env.SEED_METADATA_URIS !== undefined && process.env.SEED_METADATA_URIS !== '' ? process.env.SEED_METADATA_URIS.split(',') : []
+  for (const [index, c] of campaigns.entries()) {
+    const override = metadataUris[index]
+    const metadataUri = override !== undefined && override !== '' ? override : `ipfs://seed/${c.creator}`
     const creator = await algorand.account.fromEnvironment(c.creator, (100).algo())
 
     const campaignFactory = new AppFactory({ appSpec: spec, algorand, defaultSender: creator.addr })
@@ -95,7 +103,7 @@ void (async () => {
       args: [
         vaultId,
         new TextEncoder().encode(`${c.creator}'s campaign`),
-        new TextEncoder().encode(`ipfs://seed/${c.creator}`),
+        new TextEncoder().encode(metadataUri),
         goal,
         deadline,
       ],
