@@ -145,7 +145,7 @@ describe('CampaignList', () => {
     )
     const { unmount } = render(<CampaignList onSelectCampaign={() => {}} />)
     // Let the effect reach listCampaigns so the component observes the
-    // rejection — an unobserved rejection fails the run as unhandled.
+    // rejection - an unobserved rejection fails the run as unhandled.
     await new Promise((r) => setTimeout(r, 0))
     unmount()
 

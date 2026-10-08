@@ -1,10 +1,10 @@
 # AlgorArt
 
 A **non-custodial crowdfunding dApp** on **Algorand** for funding creative
-projects — books, music, movies, art.
+projects - books, music, movies, art.
 
 Creators open a campaign with a funding goal and a deadline. Backers pledge
-real **ALGO** from their own wallets. A smart contract — not a server — holds
+real **ALGO** from their own wallets. A smart contract - not a server - holds
 the funds and enforces the rules: goal met by the deadline, the creator
 claims; otherwise every backer reclaims their pledge.
 
@@ -21,17 +21,17 @@ the source of truth.
 Technical details live in [`docs/`](docs/):
 
 - [campaign](docs/campaign.md) and [claim-tree
-  protocol](docs/claim-tree-protocol.md) — contract internals
-- [architecture](docs/architecture.md) — Factory, vault, tech stack, layout
-- [frontend](docs/frontend.md) — UI structure, wallet, metadata, testing
-- [testing](docs/testing.md) — contract and frontend test strategy
-- [CI](docs/ci.md) — workflows and checks
-- [roadmap](docs/roadmap.md) — what is left to do
-- [product design](docs/design.md) — design decisions and open questions
+  protocol](docs/claim-tree-protocol.md) - contract internals
+- [architecture](docs/architecture.md) - Factory, vault, tech stack, layout
+- [frontend](docs/frontend.md) - UI structure, wallet, metadata, testing
+- [testing](docs/testing.md) - contract and frontend test strategy
+- [CI](docs/ci.md) - workflows and checks
+- [roadmap](docs/roadmap.md) - what is left to do
+- [product design](docs/design.md) - design decisions and open questions
 
 ## Status
 
-Live on TestNet since October 2026 — Factory `773811780`, ClaimsVault
+Live on TestNet since October 2026 - Factory `773811780`, ClaimsVault
 `773811800` ([roadmap](docs/roadmap.md) records the deploy). Current work
 follows the roadmap checklist.
 
@@ -40,8 +40,8 @@ follows the roadmap checklist.
 ### Prerequisites
 
 - **Node.js LTS** (v20+ for the frontend, v22+ for contracts)
-- **Docker** — only for the LocalNet sandbox (algod + indexer)
-- **AlgoKit CLI** — compiles contracts, deploys, and manages the local sandbox
+- **Docker** - only for the LocalNet sandbox (algod + indexer)
+- **AlgoKit CLI** - compiles contracts, deploys, and manages the local sandbox
 
 ### Run it locally
 

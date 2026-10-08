@@ -58,7 +58,7 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
       >
         {busy ? 'Sending…' : 'Pledge'}
       </button>
-      <p className="text-sm text-muted">Network fee ≈0.004 ALGO. Refunds stay open after failure — no opt-ins needed.</p>
+      <p className="text-sm text-muted">Network fee ≈0.004 ALGO. Refunds stay open after failure - no opt-ins needed.</p>
       {message && <p className="mb-0 mt-3 text-sm text-muted">{message}</p>}
     </div>
   )

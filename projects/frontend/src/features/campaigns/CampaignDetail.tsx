@@ -115,7 +115,7 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
       setMessage(success)
       await load()
     } catch {
-      setMessage('Transaction failed. Another pledge or refund may have landed first — please try again.')
+      setMessage('Transaction failed. Another pledge or refund may have landed first - please try again.')
     } finally {
       setBusy(false)
       setBusyAction(null)
@@ -159,7 +159,7 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
         <div className="rounded-lg border border-line bg-card p-6">
           <h2 className="m-0 mb-1 text-2xl">Campaign #{campaign.id.toString()} has been deleted</h2>
           <p className="rounded-md border border-line bg-mist p-3 text-sm text-muted">
-            Its on-chain state is gone, but the vault still holds live pledges until the refund window closes. Refund below — each refund
+            Its on-chain state is gone, but the vault still holds live pledges until the refund window closes. Refund below - each refund
             comes straight from the vault.
           </p>
           {leaves.length > 0 && (
@@ -244,7 +244,7 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
           <div>
             <dt className="text-xs uppercase tracking-[0.03em] text-muted">Your pledge</dt>
             <dd className="m-0 text-sm font-semibold">
-              {campaign.myPledgeMicroAlgos !== undefined ? `${formatAlgo(campaign.myPledgeMicroAlgos)} ALGO` : '—'}
+              {campaign.myPledgeMicroAlgos !== undefined ? `${formatAlgo(campaign.myPledgeMicroAlgos)} ALGO` : '-'}
             </dd>
           </div>
         </dl>

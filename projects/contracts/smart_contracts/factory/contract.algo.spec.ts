@@ -12,7 +12,7 @@ import { Factory } from './contract.algo'
  * is covered offline with a synthetic application whose program hash is precomputed in the test.
  */
 
-const REGISTER_MBR = 18_900 // µA — the registration box's minimum balance
+const REGISTER_MBR = 18_900 // µA - the registration box's minimum balance
 
 // The fake campaign app: an application with a known approval program (preimage), whose SHA-256 we set as the official hash.
 const FAKE_APP_ID = 1234

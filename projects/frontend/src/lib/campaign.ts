@@ -4,11 +4,11 @@ import { indexer } from './algorand'
 import { fetchMyLeaves } from './claimtree'
 
 /**
- * Read model: maps indexer responses into a `CampaignViewModel` the UI can render. The contract is the source of truth — everything here is
+ * Read model: maps indexer responses into a `CampaignViewModel` the UI can render. The contract is the source of truth - everything here is
  * derived from the same public state the contract reads and writes.
  *
  * A backer's pledge is reconstructed from history, not read as a balance: their live leaves in the campaign's
- * frontier-Merkle tree (see `./claimtree`), summed. Which campaigns are official is decided by the Factory registry —
+ * frontier-Merkle tree (see `./claimtree`), summed. Which campaigns are official is decided by the Factory registry -
  * the list view only shows campaigns registered with the configured Factory app.
  *
  * See docs/campaign.md and docs/frontend.md for the on-chain model:
@@ -21,7 +21,7 @@ import { fetchMyLeaves } from './claimtree'
 export type CampaignStatus = 'open' | 'funded' | 'failed' | 'claimed'
 
 export interface CampaignViewModel {
-  /** Application id — the campaign's unique identifier. */
+  /** Application id - the campaign's unique identifier. */
   id: bigint
   /** Campaign creator address. */
   creator: string
@@ -81,7 +81,7 @@ const STATUS_UINT_TO_LABEL = {
 } as const
 
 /**
- * Derive the display status. `funded` and `failed` are recomputed from deadline/raised/goal — exactly the rule the contract evaluates —
+ * Derive the display status. `funded` and `failed` are recomputed from deadline/raised/goal - exactly the rule the contract evaluates -
  * because neither is materialised into global state until someone acts. The stored `status` uint only ever holds `0` (Open), `1` (Failed,
  * after a refund) or `2` (Claimed), and is authoritative for `failed`/`claimed` once set.
  *
@@ -211,7 +211,7 @@ export function toCampaignViewModel(
 
 /**
  * Fetch the connected wallet's live pledge total for a campaign: the sum of their unspent leaves. Rebuilt from
- * history (see `./claimtree`) — there is no balance to read.
+ * history (see `./claimtree`) - there is no balance to read.
  *
  * @param appId Campaign application id.
  * @param address Viewer's Algorand address.
@@ -263,7 +263,7 @@ export async function fetchRegisteredCampaignIds(factoryId: bigint): Promise<Set
 }
 
 /**
- * List all campaigns. With a Factory configured, look each registered id up directly — the unfiltered application
+ * List all campaigns. With a Factory configured, look each registered id up directly - the unfiltered application
  * scan below works on sandbox-sized chains but never finishes on TestNet-scale chains (tens of thousands of apps,
  * each response carrying full approval programs).
  *
@@ -317,7 +317,7 @@ export async function listCampaigns(nowSeconds: bigint, viewerAddress?: string):
  * @returns The campaign, or undefined if not found or not a campaign app.
  */
 export async function getCampaign(appId: bigint, nowSeconds: bigint, viewerAddress?: string): Promise<CampaignViewModel | undefined> {
-  // Deleted apps are excluded by default — include them so the detail page can render the deleted state
+  // Deleted apps are excluded by default - include them so the detail page can render the deleted state
   // (backers refund from the vault after deletion).
   const response = await indexer.lookupApplications(appId).includeAll(true).do()
   const app = response.application

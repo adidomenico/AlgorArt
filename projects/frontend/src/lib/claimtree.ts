@@ -11,17 +11,17 @@ import { indexer } from './algorand'
  *
  * - **Pure tree math** (`leafFor`, `appendLeaf`, `nullLeaf`, `treeFrontier`, `treePathFor`): a read-only TypeScript port
  *   of `docs/claim-tree-protocol-reference.py` §§2–6, proven against the committed vectors in `claimtree.vectors.ts`.
- *   Hashes use `@noble/hashes` SHA-512/256 — the same function as the AVM `sha512_256` opcode (NOT plain SHA-256).
+ *   Hashes use `@noble/hashes` SHA-512/256 - the same function as the AVM `sha512_256` opcode (NOT plain SHA-256).
  * - **Event fetching** (`fetchPledges`, `fetchSpends`, `loadTree`): replays confirmed app calls from the indexer in
  *   chain order. Only confirmed transactions are replayed, so every replayed pledge appended on-chain and every
- *   replayed spend nulled on-chain — the reconstruction matches contract state exactly.
+ *   replayed spend nulled on-chain - the reconstruction matches contract state exactly.
  *
  * Proof staleness is inherent (every null changes the root): callers rebuild right before submitting and retry once on
  * a root-mismatch rejection. See docs/claim-tree-protocol.md §7.
  */
 
 // ARC-4 selectors of the tree-relevant methods (first 4 bytes of SHA-512/256 of the signature; the contract pins them
-// with selector-bytes tests — see smart_contracts/campaign/contract.integration.test.ts).
+// with selector-bytes tests - see smart_contracts/campaign/contract.integration.test.ts).
 const SELECTOR_PLEDGE = 'a4030bd2'
 const SELECTOR_CANCEL = '457e292e'
 const SELECTOR_REFUND = '4b1a1d96'
@@ -65,7 +65,7 @@ export interface SpendEvent {
 }
 
 /**
- * A fresh consumed-leaf marker (32 zero bytes). Returned new each call — never mutate the result.
+ * A fresh consumed-leaf marker (32 zero bytes). Returned new each call - never mutate the result.
  *
  * @returns 32 zero bytes.
  */
@@ -415,7 +415,7 @@ export async function fetchPledges(campaignId: bigint, vaultAddress: string): Pr
     const ordered = [...roundCalls].sort((a, b) => (positionOf.get(a.id ?? '') ?? 0) - (positionOf.get(b.id ?? '') ?? 0))
     for (const call of ordered) {
       const callIndex = positionOf.get(call.id ?? '')
-      // A confirmed call is always in its round's block; absence means a torn indexer read — fail loudly rather
+      // A confirmed call is always in its round's block; absence means a torn indexer read - fail loudly rather
       // than shift every later position.
       if (callIndex === undefined) {
         throw new Error(`pledge call ${call.id ?? 'unknown'} not found in its round block`)
@@ -453,7 +453,7 @@ export async function fetchPledges(campaignId: bigint, vaultAddress: string): Pr
 
 /**
  * Fetch confirmed spends (campaign cancels/refunds plus vault refunds for this campaign). Only positions matter for
- * replay — amounts and proofs are caller-supplied at spend time — so no block reads are needed.
+ * replay - amounts and proofs are caller-supplied at spend time - so no block reads are needed.
  *
  * @param campaignId Campaign application id.
  * @param vaultId Vault application id.

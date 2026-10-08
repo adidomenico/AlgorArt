@@ -14,20 +14,20 @@ import { cancelPledge, claim, deleteCampaign, refund } from '../src/lib/transact
  *
  * For each campaign: route by on-chain state (claim when funded, refund/cancel known backers' leaves when
  * failed/open), then creator-`delete()` + factory-`unregister()`. Leaves from accounts without keys (e.g. manual
- * pledges from your own wallet) cannot be touched — they are reported with amounts so you can see them and refund
+ * pledges from your own wallet) cannot be touched - they are reported with amounts so you can see them and refund
  * through the UI. Action failures are reported, never fatal (a rejection is also how the bad paths show up).
  *
- * Known accounts come from `<NAME>_MNEMONIC` env vars (any name works — the address is derived). Reuses the exact
+ * Known accounts come from `<NAME>_MNEMONIC` env vars (any name works - the address is derived). Reuses the exact
  * transaction flows as the UI (`lib/transaction.ts`), so this also exercises them.
  *
  * Usage (from projects/frontend):
  *   npm run reclaim -- [appId...]
- * TestNet mnemonics live in ../../contracts/.env.testnet — export them first:
+ * TestNet mnemonics live in ../../contracts/.env.testnet - export them first:
  *   set -a; source ../contracts/.env.testnet; set +a
  * With no app ids, falls back to the seed state file (`npm run seed` output).
  */
 
-// Frontend config (VITE_*) lives in .env next to package.json — load it (tsx leaves import.meta.env empty).
+// Frontend config (VITE_*) lives in .env next to package.json - load it (tsx leaves import.meta.env empty).
 process.loadEnvFile()
 
 const SEED_STATE_PATH = path.resolve(process.cwd(), '../contracts/scripts/.seed-state.json')
@@ -96,7 +96,7 @@ void (async () => {
     const known = leaves.filter((leaf) => sessions.has(leaf.backer))
     const unknown = leaves.filter((leaf) => !sessions.has(leaf.backer))
     for (const leaf of unknown) {
-      leftover(`#${id}: live pledge ${formatAlgo(leaf.amount)} ALGO by ${leaf.backer} (no keys — refund via UI)`)
+      leftover(`#${id}: live pledge ${formatAlgo(leaf.amount)} ALGO by ${leaf.backer} (no keys - refund via UI)`)
     }
 
     const creatorSession = sessions.get(campaign.creator)

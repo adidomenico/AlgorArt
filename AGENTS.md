@@ -9,25 +9,25 @@ workspace: an Algorand TypeScript smart contract plus a React + Vite frontend.
 
 ## Layout
 
-- `projects/contracts/` — AlgoKit contract project (Algorand TypeScript → AVM)
-  - `smart_contracts/campaign/contract.algo.ts` — the `Campaign` escrow app
+- `projects/contracts/` - AlgoKit contract project (Algorand TypeScript → AVM)
+  - `smart_contracts/campaign/contract.algo.ts` - the `Campaign` escrow app
     (`create`, `fund`, `attachClaimAsa`, `pledge`, `claim`, `refund`,
     `cancelPledge`, `closeOut`, `delete`); its escrow holds only the creator's
     deposit
-  - `smart_contracts/claimsvault/contract.algo.ts` — the `ClaimsVault`: pooled
+  - `smart_contracts/claimsvault/contract.algo.ts` - the `ClaimsVault`: pooled
     refund escrow + per-campaign Claim ASA issuer (`issueClaimAsa`, `seedSupply`,
     `payBack`, `payClaim`, `settle`, `refund`, `sweepClaimAsa`, `destroyClaimAsa`)
-  - `smart_contracts/factory/contract.algo.ts` — the on-chain `Factory`
+  - `smart_contracts/factory/contract.algo.ts` - the on-chain `Factory`
     registry (owner-configured approval hash, `register`/`unregister`)
-  - `smart_contracts/artifacts/` — **generated** (compiled TEAL, ARC-32/56 specs, clients)
-- `projects/frontend/` — React + Vite + TypeScript dApp
-- [`docs/`](docs/) — technical docs: [`campaign.md`](docs/campaign.md)
+  - `smart_contracts/artifacts/` - **generated** (compiled TEAL, ARC-32/56 specs, clients)
+- `projects/frontend/` - React + Vite + TypeScript dApp
+- [`docs/`](docs/) - technical docs: [`campaign.md`](docs/campaign.md)
   (internals), [`claim-asa-redesign.md`](docs/claim-asa-redesign.md)
   (design rationale), [`testing.md`](docs/testing.md),
   [`frontend.md`](docs/frontend.md), [`ci.md`](docs/ci.md),
   [`conventions.md`](docs/conventions.md) (lint/format/tsconfig rules),
   [`roadmap.md`](docs/roadmap.md) (checklist), [`design.md`](docs/design.md) (product plan)
-- [`README.md`](README.md) — the project specification (contract design, roadmap, testing strategy)
+- [`README.md`](README.md) - the project specification (contract design, roadmap, testing strategy)
 
 ## Commands
 
@@ -64,7 +64,7 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
 - **Confirm assumptions against real documentation.** Algorand behavior (box MBR,
   app lifecycle, indexer retention, transaction semantics, inner-txn fees) changes
   over time and is easy to misremember. Do not assert how the chain works from
-  memory — check the official Algorand docs (see [References](#references)) before
+  memory - check the official Algorand docs (see [References](#references)) before
   writing docs or code that depends on a protocol detail, and cite the source in
   the docs. When the docs are ambiguous, test on LocalNet rather than guessing.
 - When you edit any Markdown file, lint it with the command in
@@ -73,17 +73,17 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
 ## Conventions
 
 - **Generated files are gitignored.** `smart_contracts/artifacts/` (compiled TEAL, specs,
-  `*Client.ts`) and the frontend's linked clients are build outputs — never edit or commit
+  `*Client.ts`) and the frontend's linked clients are build outputs - never edit or commit
   them. Rebuild instead.
 - **Never commit secrets.** `.env` files are gitignored; mnemonics/API keys never go in code.
 - **Lint, format, and compiler rules** (ESLint, Prettier, and `tsconfig.json` options)
   are documented in [`docs/conventions.md`](docs/conventions.md).
 - **Algorand TypeScript gotchas** (contracts use `@algorandfoundation/algorand-typescript`):
-  - `assert` must be imported explicitly — it is not a global.
+  - `assert` must be imported explicitly - it is not a global.
   - `GlobalState`/`BoxMap` class properties require the options object
     (e.g. `BoxMap<Account, uint64>({ keyPrefix: 'p' })`).
   - Create-time methods use `@abimethod({ onCreate: 'require' })`.
-  - Reading a `BoxMap` entry `.value` fails if the box is missing — use
+  - Reading a `BoxMap` entry `.value` fails if the box is missing - use
     `.get({ default: 0 })` for first-write patterns.
   - ABI payment arguments are `gtxn.PaymentTxn`; asset-transfer arguments are
     `gtxn.AssetTransferTxn`; the escrow address is
@@ -92,32 +92,32 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
     and wrapped with `Asset(...)` where a reference type is needed.
   - Inner asset transactions (`itxn.assetTransfer`/`itxn.assetConfig`) and
     `op.AssetHolding.assetBalance` require the asset to be in the **outer call's
-    foreign assets** — the frontend passes `assetReferences: [assetId]` (grouped
+    foreign assets** - the frontend passes `assetReferences: [assetId]` (grouped
     gtxn transfers pool their own assets, so `refund(axfer)` needs none).
   - Destroy an ASA with `itxn.assetConfig({ configAsset, fee: Uint64(0) })` (no
-    other fields) — only valid when the creator account holds the full supply.
+    other fields) - only valid when the creator account holds the full supply.
   - **Box access needs declared references on the outer txn** (AVM): inner app
     calls that read/write another app's BoxMaps fail with "invalid Box
     reference" unless `boxReferences` lists the box names. Keep BoxMap keys
     derivable from ABI args so `populateAppCallResources` can fill them; names
     derived from inner-created ids (e.g. a created asset id) can never be
-    declared — avoid that keying.
+    declared - avoid that keying.
   - Inner app calls use raw ARC-4 selectors (the emitted signatures flatten
-    `Application`→`uint64`, `Account`→`address`) — compute them from the emitted
+    `Application`→`uint64`, `Account`→`address`) - compute them from the emitted
     ARC-56 and keep them in sync with a test. A readonly bool return arrives as
     the inner call's `lastLog`: the ARC-4 prefix `0x151f7c75` + `0x80`/`0x00`.
-  - `app_global_get_ex` **fails on deleted apps** (not exists=false) — never
+  - `app_global_get_ex` **fails on deleted apps** (not exists=false) - never
     make vault logic depend on reading a possibly-deleted campaign's state; use
     vault-local markers written by the campaign (e.g. the `attached` box set by
     `notifyAttach`) instead.
-  - Box MBR: a box written by an app is charged to that app's account — the
+  - Box MBR: a box written by an app is charged to that app's account - the
     Factory app account must be platform-funded before `register()` can write
     its registration box.
   - A zero-amount asset transfer only opts a receiver in when sender == receiver
     (self-opt-in); one app cannot opt another account in on its behalf.
   - Reading a foreign app's global state works via
     `op.AppGlobal.getExUint64/getExBytes(app, key)`; foreign **box** reads have
-    no opcode — derive lookups from caller-supplied ids verified against local
+    no opcode - derive lookups from caller-supplied ids verified against local
     mappings instead.
 - **Keep docs aligned.** Whenever a change affects behavior, structure, commands, or
   conventions, update the relevant docs in the same change set:
@@ -134,8 +134,8 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
 
 ## Definition of done
 
-Before marking work complete, run the checks from [Commands](#commands) in order —
-format, lint, check-types, then the relevant test suite — and fix everything until
+Before marking work complete, run the checks from [Commands](#commands) in order -
+format, lint, check-types, then the relevant test suite - and fix everything until
 green. Don't skip a step because the change "looks small."
 
 ## Commits & pull requests
@@ -159,18 +159,18 @@ the short status summary.
 
 ## References
 
-Official Algorand docs — consult these (and cite them in `docs/`) instead of
+Official Algorand docs - consult these (and cite them in `docs/`) instead of
 working from memory on protocol details:
 
-- [Applications](https://dev.algorand.co/concepts/smart-contracts/apps/) — app
+- [Applications](https://dev.algorand.co/concepts/smart-contracts/apps/) - app
   lifecycle, `DeleteApplication`, inner transactions.
-- [Box Storage](https://dev.algorand.co/concepts/smart-contracts/storage/box/) —
+- [Box Storage](https://dev.algorand.co/concepts/smart-contracts/storage/box/) -
   box MBR, box deletion, app-deletion caveats.
-- [Inner Transactions](https://dev.algorand.co/concepts/smart-contracts/inner-txn/) —
+- [Inner Transactions](https://dev.algorand.co/concepts/smart-contracts/inner-txn/) -
   app-account payments and inner-txn fees.
-- [Transaction Types](https://dev.algorand.co/concepts/transactions/types/) —
+- [Transaction Types](https://dev.algorand.co/concepts/transactions/types/) -
   payment `close`, application call transaction kinds.
-- [Indexer REST API](https://dev.algorand.co/reference/rest-api/indexer/) —
+- [Indexer REST API](https://dev.algorand.co/reference/rest-api/indexer/) -
   application `deleted` / `deleted-at-round`, `include-all`, box lookup.
-- [Algorand TypeScript](https://dev.algorand.co/get-started/algokit/) — AlgoKit and
+- [Algorand TypeScript](https://dev.algorand.co/get-started/algokit/) - AlgoKit and
   `algorand-typescript` entry points.

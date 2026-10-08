@@ -176,7 +176,7 @@ describe('fetchPledges', () => {
       blockMock(
         new Map([
           // Scan skips (examined backwards from callA): id-less full match, zero amount, wrong receiver, app call
-          // without payment fields, wrong sender — then the real payment. (On-chain groups are contiguous; the
+          // without payment fields, wrong sender - then the real payment. (On-chain groups are contiguous; the
           // interleaving here only exercises the skip branches.)
           [100n, [payA, decoySender, decoyApp, decoyReceiver, decoyZero, decoyNoId, callA, payB, callB]],
           [101n, [payC, callC]],

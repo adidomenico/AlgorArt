@@ -11,7 +11,7 @@ import { frontierForPledge, fetchMyLeaves as loadBackerLeaves, loadTree, pathBlo
 /**
  * Write path: assembles + signs transactions through the generated `CampaignClient`, `ClaimsVaultClient`, and
  * `FactoryClient`, plus a manual composer for the two-app pledge group. Each helper takes the wallet's signer/address
- * so the wallet — never the app — holds the keys.
+ * so the wallet - never the app - holds the keys.
  *
  * The claim-tree design (see docs/campaign.md):
  *
@@ -49,7 +49,7 @@ export interface VaultBoxView {
 // The Factory registration deposit: the registration box's minimum balance, returned by `unregister()`.
 const REGISTER_DEPOSIT_MICRO_ALGOS = 18_900n
 
-// Fee headroom per call (measured on LocalNet — see docs/campaign.md "Minimum balances"): the outer call always covers
+// Fee headroom per call (measured on LocalNet - see docs/campaign.md "Minimum balances"): the outer call always covers
 // its inners via fee pooling, so every extra inner transaction costs one more minimum fee on the outer call.
 const FEE_CREDIT_EXTRA = 1_000n // possible first-touch factory check
 const FEE_SPEND_EXTRA = 3_000n // 1 OpUp iteration (create+delete) + payout call
@@ -57,7 +57,7 @@ const FEE_CLAIM_EXTRA = 2_000n // inner payClaim + inner payment
 const FEE_DELETE_EXTRA = 2_000n // inner settle/notify + escrow close
 const FEE_UNREGISTER_EXTRA = 1_000n // inner deposit-back
 
-// Contract error fragments that mean "rebuilt tree state moved under us" — safe to retry once with fresh proofs.
+// Contract error fragments that mean "rebuilt tree state moved under us" - safe to retry once with fresh proofs.
 const STALE_PROOF_PATTERN = /stale or forged frontier|proof does not match root/
 
 function campaignClientFor(appId: bigint, session: WalletSession): CampaignClient {
@@ -88,7 +88,7 @@ function factoryClientFor(session: WalletSession): FactoryClient {
 }
 
 /**
- * The vault's campaign box reference (key prefix 'c' + 8-byte big-endian app id) — inner vault calls require it
+ * The vault's campaign box reference (key prefix 'c' + 8-byte big-endian app id) - inner vault calls require it
  * declared on the outer transaction.
  *
  * @param appId The campaign application id.
@@ -105,7 +105,7 @@ function vaultBoxRef(appId: bigint): { appId: bigint; name: Uint8Array }[] {
 }
 
 /**
- * The Factory's registration box for a campaign (prefix 'r' + 8-byte big-endian app id) — the inner `isRegistered`
+ * The Factory's registration box for a campaign (prefix 'r' + 8-byte big-endian app id) - the inner `isRegistered`
  * check needs it.
  *
  * @param appId The campaign application id.
@@ -131,7 +131,7 @@ export function vaultAddress(): string {
 }
 
 /**
- * Read and unpack a campaign's vault box (fresh from algod — routing decisions must not use stale indexer state).
+ * Read and unpack a campaign's vault box (fresh from algod - routing decisions must not use stale indexer state).
  *
  * @param appId Campaign application id.
  * @returns The unpacked box, or undefined when no box exists yet.
@@ -187,7 +187,7 @@ async function submitWithFreshProof(run: () => Promise<bigint | undefined>): Pro
 }
 
 /**
- * Deploy a new campaign: create → register with the Factory. Nothing is funded — the v2 escrow never holds funds.
+ * Deploy a new campaign: create → register with the Factory. Nothing is funded - the v2 escrow never holds funds.
  *
  * @param session Wallet session holding the signer and address.
  * @param title Short campaign title (stored on-chain).
@@ -254,7 +254,7 @@ export async function createCampaign(
  * @param amountMicroAlgos Pledge amount in microAlgos.
  */
 export async function pledge(appId: bigint, session: WalletSession, amountMicroAlgos: bigint): Promise<void> {
-  // The manual composer resolves signers by sender address — register the wallet signer for this address first.
+  // The manual composer resolves signers by sender address - register the wallet signer for this address first.
   algorand.account.setSigner(session.address, session.signer)
 
   const attempt = async (): Promise<bigint | undefined> => {

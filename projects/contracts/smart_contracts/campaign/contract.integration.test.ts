@@ -14,7 +14,7 @@ import { beforeAll, describe, expect, test } from 'vitest'
 
 /**
  * LocalNet integration tests for the claim-tree architecture: deploy the Factory + ClaimsVault + Campaign v2 TEAL to a
- * live algod and exercise full lifecycles end-to-end with **differential tree assertions and fund accounting** — every
+ * live algod and exercise full lifecycles end-to-end with **differential tree assertions and fund accounting** - every
  * pledge/cancel/refund asserts root/n/raised (and the vault box's paidIn/paidOut) against the Python reference oracle
  * (`../oracle.py`), driven with the REAL confirmed payment TxIDs; every payout asserts µA-exact fund movement; and the
  * attack matrix covers double-spends, stale/forged proofs, unregistered credit, top-level inner-only calls, the
@@ -291,7 +291,7 @@ describe('Campaign + ClaimsVault claim-tree (localnet)', () => {
     const pay = await algorand.createTransaction.payment({ sender: backerAddr, receiver: vaultAddress, amount: microAlgos(amount) })
     const composer = algorand.send.newGroup()
     // The payment object is referenced by the pledge call, which pulls it into the group ahead of the call.
-    // (Do NOT also pass it via addTransaction — the composer does not dedupe and the group would carry it twice.)
+    // (Do NOT also pass it via addTransaction - the composer does not dedupe and the group would carry it twice.)
     composer.addAppCallMethodCall({
       appId,
       method: ABIMethod.fromSignature('pledge(pay,byte[])void'),
@@ -403,7 +403,7 @@ describe('Campaign + ClaimsVault claim-tree (localnet)', () => {
     // A pledged twice: 2 payments + 2 pledge calls + 2 credits (extraFee headroom charged on each).
     expect(await balanceOf(addrA)).toEqual(balA0 - 5n * ALGO - (2n * FEE + 2n * FEE_PLEDGE_CALL + 2n * FEE_CREDIT))
 
-    // Forged frontier: same length, one flipped byte — the fold check rejects, state untouched.
+    // Forged frontier: same length, one flipped byte - the fold check rejects, state untouched.
     const front = oracle('frontier') as { peaks: string[] }
     const forged = Buffer.concat(front.peaks.map((p) => Buffer.from(p, 'hex')))
     forged[0] = forged[0] === 0 ? 1 : 0
@@ -714,7 +714,7 @@ describe('Campaign + ClaimsVault claim-tree (localnet)', () => {
     })
     expect((await boxOf(appId)).status).toEqual(2)
 
-    // The campaign path now fails at the vault (box not open) — the backer must use vault.refund instead.
+    // The campaign path now fails at the vault (box not open) - the backer must use vault.refund instead.
     const path = oracle('path', '0') as OraclePath
     const blob = concatHex([...path.siblings, ...(path.top === null ? [] : [path.top]), ...path.lower])
     await expect(

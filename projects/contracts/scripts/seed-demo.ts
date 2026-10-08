@@ -121,7 +121,7 @@ void (async () => {
       appReferences: [result.appId],
     })
 
-    let pledged = '—'
+    let pledged = '-'
     if (c.pledgeAlgo > 0) {
       // Pledge through the real group [pay, campaign.pledge, vault.credit]. Each campaign gets a single pledge, so
       // the frontier is always empty (N == 0 takes the empty-frontier branch).

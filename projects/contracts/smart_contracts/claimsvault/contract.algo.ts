@@ -19,21 +19,21 @@ import {
 } from '@algorandfoundation/algorand-typescript'
 
 /**
- * ClaimsVault — the permanent, pooled refund escrow for AlgorArt campaigns (claim-tree design, see
+ * ClaimsVault - the permanent, pooled refund escrow for AlgorArt campaigns (claim-tree design, see
  * docs/claim-tree-protocol.md).
  *
  * The vault separates **backers' pledged ALGO** from campaign apps: pledges are paid to the vault and recorded per
  * campaign with `credit()`, and the vault alone pays out cancellations, refunds, and successful claims. There is no
- * Claim ASA and no per-backer on-chain state anywhere — a backer's receipt is their pledge leaf in the campaign's
+ * Claim ASA and no per-backer on-chain state anywhere - a backer's receipt is their pledge leaf in the campaign's
  * frontier-Merkle tree, and refunds null the leaf in place (see the campaign contract).
  *
  * The vault holds all campaigns' funds in one pooled account. Cross-campaign isolation is enforced by per-campaign
  * balance guards: every method that pays out asserts `amount ≤ paidIn − paidOut` for that campaign's box, so a bug (or
- * a malicious campaign program, which cannot exist — campaigns are hash-verified at Factory registration and
+ * a malicious campaign program, which cannot exist - campaigns are hash-verified at Factory registration and
  * non-updatable) in one campaign can never drain another's funds.
  *
  * Trust model: `payBack`, `payClaim`, `settle`, and `notifyDelete` are reachable only as inner app calls from the
- * campaign's own app account (`Txn.sender == app.address` — unforgeable, and app addresses are distinct per app id).
+ * campaign's own app account (`Txn.sender == app.address` - unforgeable, and app addresses are distinct per app id).
  * `credit`, `settleOpen`, `refund`, and `finalize` are permissionless top-level calls whose every effect is verified
  * against the vault's own boxes and the caller's group.
  */
@@ -46,7 +46,7 @@ const BOX_CLAIMED = Bytes.fromHex('03')
 // Packed vault box layout (65 bytes): paidIn[0:8] ‖ paidOut[8:16] ‖ root[16:48] ‖ n[48:56] ‖ status[56:57] ‖ settledAt[57:65].
 
 // ARC-4 method selector for the Factory's `isRegistered(uint64)bool` readonly method (the Factory is unchanged by the
-// claim-tree rewrite, so this selector is unchanged — verified on-chain via an inner call before a campaign's first box
+// claim-tree rewrite, so this selector is unchanged - verified on-chain via an inner call before a campaign's first box
 // is created, so an unregistered campaign can never park the vault's minimum balance).
 const FACTORY_IS_REGISTERED_SELECTOR = Bytes.fromHex('716a3d0e')
 
@@ -91,7 +91,7 @@ export class ClaimsVault extends Contract {
    *
    * Permissionless top-level call, normally grouped as `[Payment, Campaign.pledge, Vault.credit]`. The payment is
    * **independently verified**: the vault scans its own group for a payment from the caller to the vault for `amount`
-   * (no pledge-presence check is needed — a `credit` without a matching `pledge`, or vice versa, strands only the
+   * (no pledge-presence check is needed - a `credit` without a matching `pledge`, or vice versa, strands only the
    * deviator's own funds under the per-campaign balance guard). On first touch the campaign must be Factory-registered.
    *
    * @param app The campaign application.
@@ -122,7 +122,7 @@ export class ClaimsVault extends Contract {
 
     if (existing.length === Uint64(0)) {
       this.checkRegistration(app)
-      /* v8 ignore next — see checkRegistration; covered on LocalNet. */
+      /* v8 ignore next - see checkRegistration; covered on LocalNet. */
       this.createBox(app.id, amount)
     } else {
       const paidIn: uint64 = op.btoi(existing.slice(0, 8))
@@ -143,7 +143,7 @@ export class ClaimsVault extends Contract {
    *
    * @param app The campaign application.
    */
-  /* v8 ignore next — the offline ledger executes the inner call but cannot emulate its log; the registration gate is
+  /* v8 ignore next - the offline ledger executes the inner call but cannot emulate its log; the registration gate is
    * covered by the LocalNet integration tests (contract.integration.test.ts). */
   private checkRegistration(app: Application): void {
     const registrationCheck = itxn
@@ -162,7 +162,7 @@ export class ClaimsVault extends Contract {
    * @param appId The campaign application id.
    * @param amount The first verified inflow, in microAlgos.
    */
-  /* v8 ignore next — reachable only for registered campaigns (see checkRegistration); covered on LocalNet. */
+  /* v8 ignore next - reachable only for registered campaigns (see checkRegistration); covered on LocalNet. */
   private createBox(appId: uint64, amount: uint64): void {
     this.campaignBox(appId).value = this.packBox(amount, Uint64(0), this.zeroRoot(), Uint64(0), BOX_OPEN, Uint64(0))
   }
@@ -247,7 +247,7 @@ export class ClaimsVault extends Contract {
    *
    * Writes the campaign's final root/N into the box (backers' proofs verify against it after the campaign is gone) and
    * flips an Open box to Failed; already-Failed is a no-op, and a missing box is a no-op too (a pristine campaign with
-   * no box — including one with a stray no-pledge inflow — deletes cleanly, and the stray case becomes finalizable).
+   * no box - including one with a stray no-pledge inflow - deletes cleanly, and the stray case becomes finalizable).
    * After this, campaign-driven `payBack` is rejected and all refunds flow through `refund()`.
    *
    * @param app The campaign application.
@@ -291,7 +291,7 @@ export class ClaimsVault extends Contract {
     assert(box.slice(56, 57) === BOX_OPEN, 'campaign is not open')
 
     // The campaign app still exists here, so its global state is readable (this is never attempted after deletion).
-    /* v8 ignore start — every created campaign writes all six globals, so the missing-key branches are defensive only;
+    /* v8 ignore start - every created campaign writes all six globals, so the missing-key branches are defensive only;
      * the guards below (claimed/deadline/goal) run offline and the whole path runs on LocalNet. */
     const statusState = op.AppGlobal.getExUint64(app, Bytes('status'))
     const raisedState = op.AppGlobal.getExUint64(app, Bytes('raised'))
@@ -316,10 +316,10 @@ export class ClaimsVault extends Contract {
   }
 
   /**
-   * Refund one pledge of a settled-failed campaign, directly — works after the campaign app has been deleted.
+   * Refund one pledge of a settled-failed campaign, directly - works after the campaign app has been deleted.
    *
    * Permissionless: the leaf is rebuilt from the caller + proof (never trusted) and verified against the box's stored
-   * root; a second refund of the same position — or a proof built against any older root — reconstructs a non-stored
+   * root; a second refund of the same position - or a proof built against any older root - reconstructs a non-stored
    * root and is rejected. Runs entirely from vault-local state. Only within the refund window.
    *
    * @param app The settled-failed campaign application.
@@ -379,7 +379,7 @@ export class ClaimsVault extends Contract {
   /**
    * Release a claimed campaign's box, driven by the campaign app during `delete()`.
    *
-   * Requires the box Claimed with inflows fully paid out — O(1), and the vault parks nothing for successful campaigns.
+   * Requires the box Claimed with inflows fully paid out - O(1), and the vault parks nothing for successful campaigns.
    *
    * @param app The campaign application.
    */
@@ -424,7 +424,7 @@ export class ClaimsVault extends Contract {
   }
 
   /**
-   * The caller of the campaign-driven methods must be the campaign app's own account (matched by app address —
+   * The caller of the campaign-driven methods must be the campaign app's own account (matched by app address -
    * unforgeable, and app addresses are distinct per app id), and its box must exist.
    *
    * @param app The campaign application.
@@ -471,7 +471,7 @@ export class ClaimsVault extends Contract {
   }
 
   /**
-   * Hash two child nodes into their parent (SHA-512/256 — the AVM `sha512_256` opcode, *not* `sha256`).
+   * Hash two child nodes into their parent (SHA-512/256 - the AVM `sha512_256` opcode, *not* `sha256`).
    *
    * @param left Left child.
    * @param right Right child.
@@ -482,7 +482,7 @@ export class ClaimsVault extends Contract {
   }
 
   /**
-   * Test the lowest bit (the PuyaTs arithmetic operators cover `+ - *` and comparisons only — shifts and bitwise
+   * Test the lowest bit (the PuyaTs arithmetic operators cover `+ - *` and comparisons only - shifts and bitwise
    * operators fall back to JS `number` semantics, so this helper uses `op.shr`/`op.shl` instead of `& 1`).
    *
    * @param n The value to test.
@@ -509,7 +509,7 @@ export class ClaimsVault extends Contract {
         count = count + Uint64(1)
       }
     }
-    /* v8 ignore next — reachable only for N = 2^64 − 1 (no early exit in 64 iterations); defensive cap. */
+    /* v8 ignore next - reachable only for N = 2^64 − 1 (no early exit in 64 iterations); defensive cap. */
     return count
   }
 
@@ -535,7 +535,7 @@ export class ClaimsVault extends Contract {
         return r
       }
     }
-    /* v8 ignore next — reachable only for trees of depth 64 (no missing level); defensive cap. */
+    /* v8 ignore next - reachable only for trees of depth 64 (no missing level); defensive cap. */
     return r
   }
 

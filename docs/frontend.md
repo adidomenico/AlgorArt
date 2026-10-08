@@ -20,7 +20,7 @@ It never holds keys, never holds funds, and never decides a campaign outcome.
 3. **Reads go through the indexer, writes go through the generated clients.**
    One code path for data, one code path for transactions.
 4. **Receipts are reconstructed, never trusted.** A backer's pledge is their
-   leaf in the campaign's frontier-Merkle tree — the UI replays pledge/null
+   leaf in the campaign's frontier-Merkle tree - the UI replays pledge/null
    events from the indexer into frontiers and paths (`lib/claimtree.ts`) and
    the contract authenticates every proof.
 
@@ -60,9 +60,9 @@ navigation (selected campaign id) is enough.
 
 | View | Content | Reads | Writes |
 | --- | --- | --- | --- |
-| **Browse** | Grid of campaign cards, Factory-registered only | indexer list + Factory box search | — |
+| **Browse** | Grid of campaign cards, Factory-registered only | indexer list + Factory box search | - |
 | **Detail** | Full campaign state, progress bar, per-pledge actions | indexer detail + live leaves + vault box | pledge / claim / refund / cancelPledge / delete |
-| **Create** | Title + metadata URI + goal (ALGO) + deadline form | — | `create()` + `factory.register()` |
+| **Create** | Title + metadata URI + goal (ALGO) + deadline form | - | `create()` + `factory.register()` |
 | **Pledge** | Amount input on the detail page | tree replay (frontier) | payment + `pledge()` + `credit()` (one atomic group) |
 
 ## Data model
@@ -71,12 +71,12 @@ The indexer exposes each campaign as an `Application` (`id` + `params`). The
 contract's global state arrives as `params.global-state`: a list of
 `{ key, value }` pairs where each key is the base64 of the UTF-8 key name
 (`creator`, `title`, `metadataUri`, `goal`, `deadline`, `raised`, `status`,
-`root`, `n`). A backer's pledge is **their live leaves** — `fetchMyLeaves`
+`root`, `n`). A backer's pledge is **their live leaves** - `fetchMyLeaves`
 replays their pledge positions and drops the spent ones; the pledge total is
 the live sum.
 
 ```ts
-// lib/campaign.ts — the shape the UI renders
+// lib/campaign.ts - the shape the UI renders
 type CampaignStatus = 'open' | 'funded' | 'failed' | 'claimed'
 
 interface CampaignViewModel {
@@ -93,7 +93,7 @@ interface CampaignViewModel {
 ```
 
 The derived `funded`/`failed` states are computed client-side from
-`goal`/`raised`/`deadline` — exactly the rule the contract evaluates. Neither is
+`goal`/`raised`/`deadline` - exactly the rule the contract evaluates. Neither is
 stored on-chain; `failed` only materialises in `status` after the first
 `refund()`.
 
@@ -113,39 +113,39 @@ here once the catalog backend exists).
 points straight at an image file) in the card and detail views, hiding itself
 on any failure; the detail view also shows `description` and `category`. A blob
 with none of the four fields is treated as absent, so seed/legacy URIs render
-nothing instead of erroring. Upload/pinning is out of scope — creators paste a
+nothing instead of erroring. Upload/pinning is out of scope - creators paste a
 URI today; server-side pinning rides with the catalog backend. Descriptions
-evolve through the creator updates feed (roadmap), not by editing the blob —
+evolve through the creator updates feed (roadmap), not by editing the blob -
 the pledge-time content stays frozen and always viewable.
 
 ## Reads (indexer)
 
 All reads use `algosdk.Indexer` configured from the same env as algod:
 
-- **List campaigns** — with a Factory configured, read its registration boxes
+- **List campaigns** - with a Factory configured, read its registration boxes
   (`indexer.searchForApplicationBoxes(factoryId)`; one box search, decoded
   `'r' + appId` names) and look each id up directly. The unfiltered
   `searchForApplications` scan (key-presence discriminator) only runs when
   `VITE_FACTORY_APP_ID` is unset (dev mode): it never finishes on
   TestNet-scale chains, where every response carries thousands of unrelated
   apps with full approval programs.
-- **One campaign** — `indexer.lookupApplications(appId).do()` for the global
+- **One campaign** - `indexer.lookupApplications(appId).do()` for the global
   state.
-- **My pledges** — `fetchMyLeaves`: replay the campaign's pledge calls (with
+- **My pledges** - `fetchMyLeaves`: replay the campaign's pledge calls (with
   group payments paired by block position) and vault/campaign spends, keep the
   viewer's unspent positions with amounts and payment TxIDs for proofs.
-- **Vault box / window** — fresh reads (algod, not the indexer) drive refund
+- **Vault box / window** - fresh reads (algod, not the indexer) drive refund
   routing (campaign vs vault path) and the refund-window banner.
 
 ## Writes (generated clients)
 
 All writes go through the generated `CampaignClient` / `ClaimsVaultClient` /
-`FactoryClient` (built from the ARC-56 specs by `algokit project link` — never
+`FactoryClient` (built from the ARC-56 specs by `algokit project link` - never
 edited by hand). Pledges pay the **vault** (its app address, derived from
 `VITE_VAULT_APP_ID` via `algosdk.getApplicationAddress`), never the campaign
 escrow.
 
-### create — create + register
+### create - create + register
 
 ```ts
 const { result } = await new CampaignFactory({ algorand, defaultSender, defaultSigner }).send.create.create({
@@ -160,12 +160,12 @@ await factoryClient.send.register({ args: { app: appId, payment }, appReferences
 Two wallet prompts is structural, not a bug: registration references the new app id, which only exists
 after the creation round confirms, so the steps cannot share an atomic group. Inverting control
 (Factory creates campaigns) would buy a single prompt at the cost of the creator-identity model, the
-creator-pays-MBR economics, and the explicit approval-hash gate — parked unless creation UX data says
+creator-pays-MBR economics, and the explicit approval-hash gate - parked unless creation UX data says
 otherwise.
 
-No funding step exists — the v2 escrow never holds funds.
+No funding step exists - the v2 escrow never holds funds.
 
-### pledge — one atomic group with a fresh frontier
+### pledge - one atomic group with a fresh frontier
 
 ```ts
 // The wallet signer is registered for composer resolution, then:
@@ -188,9 +188,9 @@ await composer.send()
 The frontier is rebuilt from the indexer right before submitting; on a
 `stale or forged frontier` rejection the helper rebuilds once and retries.
 The payment TxID must be read from the confirmed group (it commits to the
-group assignment) — never precomputed.
+group assignment) - never precomputed.
 
-### claim — the vault pays the derived live total
+### claim - the vault pays the derived live total
 
 ```ts
 await client.send.claim({
@@ -201,7 +201,7 @@ await client.send.claim({
 })
 ```
 
-### refund / cancelPledge — one leaf per call, routed by the vault box
+### refund / cancelPledge - one leaf per call, routed by the vault box
 
 Each spend carries a freshly rebuilt path for one position. Routing reads the
 vault box fresh from algod: an `Open`/missing box goes through the campaign,
@@ -225,7 +225,7 @@ await client.send.refund({
 A `proof does not match root` rejection rebuilds once and retries (a
 concurrent spend moved the root).
 
-### deleteCampaign — settle + close + unregister, one O(1) call
+### deleteCampaign - settle + close + unregister, one O(1) call
 
 ```ts
 await client.send.delete.delete({
@@ -245,7 +245,7 @@ funded by fee pooling: the outer app call carries one extra minimum fee
 fees.
 
 > Do **not** use `coverAppCallInnerTransactionFees: true` on the generated client
-> send path — it requires a per-transaction `maxFee` + `additionalAtcContext` that
+> send path - it requires a per-transaction `maxFee` + `additionalAtcContext` that
 > the typed client doesn't populate. `extraFee` is the supported path (it is what
 > the contract integration tests use).
 
@@ -276,9 +276,9 @@ target) once settled:
 - **Pledge > wallet balance.** Validate against the connected account's ALGO balance
   before opening the wallet.
 - **Approval race.** The user signs a pledge/cancel, but the deadline passes before
-  submission — the transaction fails; handle the message gracefully.
+  submission - the transaction fails; handle the message gracefully.
 - **Proof race.** A concurrent pledge/refund can move the tree root between the
-  UI's read and its submit — the helpers rebuild proofs once and retry; only a
+  UI's read and its submit - the helpers rebuild proofs once and retry; only a
   second failure surfaces, with a retry hint.
 - **Close-out needs the exact `closeRemainderTo` parameter** (the escrow close
   is a payment with `closeRemainderTo`, set by the contract, not the UI).
@@ -292,13 +292,13 @@ target) once settled:
 - **Inner vault calls need box references.** `claim()`, `refund()`,
   `cancelPledge()`, and `delete()` inner-call the vault, whose box read/write
   requires the campaign box (`'c' + appId`) declared on the outer transaction
-  — the AVM rejects undeclared box access. First-touch `credit` additionally
+  - the AVM rejects undeclared box access. First-touch `credit` additionally
   declares the Factory app and its registration box.
 - **The vault address is the pledge receiver.** `pledge()` rejects payments
   sent anywhere else, so the helper derives the address from
   `algosdk.getApplicationAddress(VITE_VAULT_APP_ID)`.
 - **The composer does not dedupe.** Pass each transaction either explicitly
-  (`addTransaction`) or by method-arg reference, never both — otherwise the
+  (`addTransaction`) or by method-arg reference, never both - otherwise the
   group carries it twice.
 - **Suppress pledge readout on `claimed`.** Spent leaves drop out of the live
   set, so the detail view's "Your pledge" reflects the live total naturally.
@@ -323,7 +323,7 @@ Already present and unchanged: `App.tsx` builds a `WalletManager`
 
 All styling is Tailwind utilities. The palette lives as `@theme` tokens in
 `projects/frontend/src/styles/App.css` (`bg-teal`, `text-ink`, `border-line`,
-`bg-badge-open`, …) — no BEM classes, no separate stylesheet per component.
+`bg-badge-open`, …) - no BEM classes, no separate stylesheet per component.
 Status badges map via a `badgeBg` record so class names stay static for the
 Tailwind scanner (never `bg-badge-${status}`).
 
@@ -338,13 +338,13 @@ excluded), with thresholds of 100% across lines/branches/functions/statements.
 Genuinely unreachable defensive branches carry `/* v8 ignore next */` with a
 reason instead of theater tests:
 
-- `lib/format.ts` — ALGO/microAlgo conversion, deadline/countdown formatting.
-- `lib/campaign.ts` — global-state decoding, status derivation, tree-sum pledge
+- `lib/format.ts` - ALGO/microAlgo conversion, deadline/countdown formatting.
+- `lib/campaign.ts` - global-state decoding, status derivation, tree-sum pledge
   reads, Factory box decoding, and the indexer-backed read helpers.
-- `lib/claimtree.ts` — the proof builder (tree math + indexer replay), proven
+- `lib/claimtree.ts` - the proof builder (tree math + indexer replay), proven
   against committed oracle vectors (`claimtree.vectors.ts`, regenerated by
   `scripts/generate-claimtree-vectors.py`).
-- `lib/algorand.ts` / `lib/transaction.ts` — client singletons and the
+- `lib/algorand.ts` / `lib/transaction.ts` - client singletons and the
   create/register/pledge/claim/refund/cancel/delete helpers (mocked at the
   client/composer boundary, proof builder mocked for flow tests).
 - `features/campaigns/*` and the rest of `features/app/Nav`, `components/*`,
@@ -355,6 +355,6 @@ indexer/client services via `vi.mock`.
 
 ## Out of scope for now
 
-- Campaign metadata — implemented (hybrid, see [Campaign metadata](#campaign-metadata)); rich media/IPFS rendering is on the roadmap.
-- TestNet deployment — on the roadmap.
-- Backend / database — optional catalog only; the indexer + Factory are the read model.
+- Campaign metadata - implemented (hybrid, see [Campaign metadata](#campaign-metadata)); rich media/IPFS rendering is on the roadmap.
+- TestNet deployment - on the roadmap.
+- Backend / database - optional catalog only; the indexer + Factory are the read model.

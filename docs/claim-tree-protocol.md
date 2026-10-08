@@ -1,15 +1,15 @@
-# AlgorArt Claim Tree Protocol — Specification v1
+# AlgorArt Claim Tree Protocol - Specification v1
 
 > **Status: specification (not implemented).** This document is the formal protocol definition for the redesign that replaces the
 > Claim ASA with a trustless **incremental frontier-Merkle claim tree with in-place null-deletion**. It is written to be implemented by a
 > second engineer without further architectural decisions. The language-independent reference model with property tests lives in
-> [`claim-tree-protocol-reference.py`](claim-tree-protocol-reference.py) — it is the oracle for the contract test suite. No code in this
+> [`claim-tree-protocol-reference.py`](claim-tree-protocol-reference.py) - it is the oracle for the contract test suite. No code in this
 > document has been implemented; the repository is unchanged.
 >
 > Replaces: the Claim ASA lifecycle in [`claim-asa-redesign.md`](claim-asa-redesign.md) (superseded history), the campaign contract internals
 > in [`campaign.md`](campaign.md), and the affected rows of [`testing.md`](testing.md).
 >
-> Amendment A1 (September 27, 2026) fixes the budget mechanism (§14) and the `credit` payment verification (§9) — see
+> Amendment A1 (September 27, 2026) fixes the budget mechanism (§14) and the `credit` payment verification (§9) - see
 > [§20](#20-amendment-a1-changelog).
 
 ## 1. Repository and protocol verification
@@ -19,20 +19,20 @@ Verified against the repository at HEAD `1dbd708` and go-algorand `master` (`dat
 
 ### Current architecture (as implemented)
 
-- **Campaign** (`smart_contracts/campaign/contract.algo.ts`) — one stateful app per campaign. Global state: `creator`, `vault`, `title`,
+- **Campaign** (`smart_contracts/campaign/contract.algo.ts`) - one stateful app per campaign. Global state: `creator`, `vault`, `title`,
   `metadataUri`, `goal`, `deadline`, `raised`, `status`, `claimAsa`, `deposit`. Methods: `create`, `fund`, `attachClaimAsa`, `pledge`,
   `claim`, `refund`, `cancelPledge`, `closeOut`, `delete`. The escrow holds only the creator's 0.2 ALGO deposit plus the seeded Claim ASA
   supply; backers' ALGO goes to the vault; pledge mints claim units; `delete()` is O(1) on both paths.
-- **ClaimsVault** (`smart_contracts/claimsvault/contract.algo.ts`) — permanent pooled escrow. State: `factory`, `asaOf`, `addressOf`,
+- **ClaimsVault** (`smart_contracts/claimsvault/contract.algo.ts`) - permanent pooled escrow. State: `factory`, `asaOf`, `addressOf`,
   `creatorOf`, `settled` BoxMaps. Methods: `issueClaimAsa`, `seedSupply`, `payBack`, `payClaim`, `settle`, `refund`, `sweepClaimAsa`,
   `destroyClaimAsa`. Payout amounts are derived from ledger state (`total − vault holding − campaign holding`); payouts are gated on the
   campaign app caller; refunds work after campaign deletion.
-- **Factory** (`smart_contracts/factory/contract.algo.ts`) — registration registry only: `owner`, `approvalHash`, `registered` BoxMap;
+- **Factory** (`smart_contracts/factory/contract.algo.ts`) - registration registry only: `owner`, `approvalHash`, `registered` BoxMap;
   `register` verifies the campaign program hash and the creator identity; refundable 18,900 µA deposit.
 - **Transaction groups:** pledge `[Payment→vault, Campaign.pledge]`; refund `[axfer→vault, Campaign.refund]`; claim = single app call;
   delete = single app call with inner vault calls.
 - **MBR (current):** creator ≈ 0.67 ALGO (recoverable O(1)); vault ≈ 147,100 µA per campaign parked at issuance, recoverable **only**
-  after `sweepClaimAsa` per holder + `destroyClaimAsa` (O(N) on the success path — the failure this protocol removes); backer 100,000 µA
+  after `sweepClaimAsa` per holder + `destroyClaimAsa` (O(N) on the success path - the failure this protocol removes); backer 100,000 µA
   per claim-ASA opt-in (backer-owned, reclaimed by `closeOut`).
 
 ### AVM facts relied on (verified)
@@ -52,15 +52,15 @@ Verified against the repository at HEAD `1dbd708` and go-algorand `master` (`dat
 
 ### Hash function
 
-`H(x) = SHA-512/256(x)` — the AVM `sha512_256` opcode (not `sha256`, which is plain SHA-256). `Z = 0x00 × 32` (32 zero bytes).
+`H(x) = SHA-512/256(x)` - the AVM `sha512_256` opcode (not `sha256`, which is plain SHA-256). `Z = 0x00 × 32` (32 zero bytes).
 
 ### Leaf
 
 ```text
 leaf = H( 0x01 ‖ backer ‖ amount ‖ paymentTxId )
-      backer      : 32 bytes — the pledger's account address (contract-derived: Txn.sender)
-      amount      :  8 bytes — big-endian uint64 (contract-derived: payment.amount)
-      paymentTxId : 32 bytes — the pledge payment's transaction ID (contract-derived: payment.txnId)
+      backer      : 32 bytes - the pledger's account address (contract-derived: Txn.sender)
+      amount      :  8 bytes - big-endian uint64 (contract-derived: payment.amount)
+      paymentTxId : 32 bytes - the pledge payment's transaction ID (contract-derived: payment.txnId)
 ```
 
 **Domain separation justification:** every other `H` application in the protocol combines two 32-byte node values (64-byte preimages)
@@ -68,9 +68,9 @@ or a peak fold (also 64-byte preimages). The 73-byte `0x01`-prefixed leaf preima
 so no adversary can mix leaf hashes into internal-node positions or vice versa. The single byte suffices: no two legitimate preimage
 forms collide in length.
 
-**Contract derivation, not caller copies:** the leaf is computed by the contract from the transaction itself — `Txn.sender` is the app
+**Contract derivation, not caller copies:** the leaf is computed by the contract from the transaction itself - `Txn.sender` is the app
 call sender, `payment.amount` and `payment.txnId` are read from the pledged payment in the same atomic group (the ABI argument is a
-`gtxn.PaymentTxn` reference; `txn TxID` is readable in AVM — verified above). The caller never supplies the leaf or any of its
+`gtxn.PaymentTxn` reference; `txn TxID` is readable in AVM - verified above). The caller never supplies the leaf or any of its
 components at pledge time. `assert leaf ≠ Z` at append.
 
 ## 3. Canonical tree definition
@@ -79,11 +79,11 @@ The tree is a **left-filled binary Merkle tree over N positions**, where `N` = n
 decremented**.
 
 - **Positions:** `0 … N−1`; position `i` holds a *leaf value* `v_i`, which is either a leaf (§2) or the consumed marker `Z`.
-- **Nodes:** node `(l, i)` covers the aligned block `[i·2ˡ, (i+1)·2ˡ)` and exists iff `(i+1)·2ˡ ≤ N` (blocks are never partial — the
+- **Nodes:** node `(l, i)` covers the aligned block `[i·2ˡ, (i+1)·2ˡ)` and exists iff `(i+1)·2ˡ ≤ N` (blocks are never partial - the
   rightmost partial blocks are represented by peaks, below). Leaf level: `(0, i) = v_i`. Internal: `(l, i) = H( (l−1, 2i) ‖ (l−1, 2i+1) )`.
 - **Tree shape:** uniquely determined by `N` alone.
 - **Peaks (frontier):** `N = Σ 2ˡ` over set bits. For every set bit `l` of `N` there is exactly one peak `f_l` at level `l`: the subtree
-  root of the block `[((N>>l)−1)·2ˡ, ((N>>l)−1)·2ˡ + 2ˡ)` — i.e., the perfect subtree ending at position `N`. `f_0` is the newest
+  root of the block `[((N>>l)−1)·2ˡ, ((N>>l)−1)·2ˡ + 2ˡ)` - i.e., the perfect subtree ending at position `N`. `f_0` is the newest
   trailing element; higher peaks are older, larger subtrees. Peak count `p = popcount(N)`.
 - **Peak ordering:** ascending by level, `[f₀, f₁, …]`.
 - **Fold (the single stored root):**
@@ -92,7 +92,7 @@ decremented**.
 fold([f₀ … f_{p−1}])  =  acc := f_{p−1};  for j = p−2 … 0:  acc := H(acc ‖ f_j)
 ```
 
-The highest peak is always the left argument of every combine — this is what makes `fold` equal the natural root of the left-filled
+The highest peak is always the left argument of every combine - this is what makes `fold` equal the natural root of the left-filled
 tree. **Empty tree:** `Root(∅) = Z`, asserted while `N = 0`.
 
 **Symbolic roots** (`l_i` = leaf value at position `i`):
@@ -116,7 +116,7 @@ All formulas in this document were validated symbolically and exhaustively (ever
 `pledge()` receives the frontier **from the caller** as a single byte string: the peak values in ascending level order, exactly
 `p = popcount(N)` values, `32·p` bytes (length asserted against the contract's stored `N`).
 
-1. **Payment checks** (see §9) — the payment is verified atomically in-group.
+1. **Payment checks** (see §9) - the payment is verified atomically in-group.
 2. **Frontier authentication:** the contract computes `fold(frontier)` using the peak levels dictated by its **own stored `N`** and
    asserts equality with the **stored root**. Under SHA-512/256 collision resistance, the fold function has no computable alternative
    preimage: a different history would produce different peak values, and no two distinct peak tuples fold to the same root. The
@@ -129,21 +129,21 @@ All formulas in this document were validated symbolically and exhaustively (ever
 **Induction proof.** Invariant: `storedRoot = Root(v₀ … v_{N−1})` (the canonical root over the current leaf values).
 *Base:* `N = 0, root = Z` ✓. *Step (append):* by hypothesis the stored root commits `v₀ … v_{N−1}`; the authenticated frontier is that
 tree's peaks; the cascade is exactly the MMR append (`H(old-peak ‖ new)` preserves the left/right convention of §3), so
-`fold(new peaks)` is by construction the canonical root over `v₀ … v_{N−1}, v_N` — verified exhaustively and by random testing against
+`fold(new peaks)` is by construction the canonical root over `v₀ … v_{N−1}, v_N` - verified exhaustively and by random testing against
 naive tree construction. *Step (null):* §5. ∎
 
 ## 5. Nullification (refund)
 
 The refund proof carries `(k, amount, paymentTxId, path)`. The contract:
 
-1. Recomputes `leaf_k = H(0x01 ‖ Txn.sender ‖ amount ‖ paymentTxId)` — **derived from the caller and the proof**, never trusted.
+1. Recomputes `leaf_k = H(0x01 ‖ Txn.sender ‖ amount ‖ paymentTxId)` - **derived from the caller and the proof**, never trusted.
 2. Reconstructs the root from `leaf_k` along the path (§6) and asserts it equals the stored root.
 3. Recomputes the root with `Z` in place of `leaf_k` and stores it; pays `amount`; `refundedTotal += amount`.
 
-**Path structure** (derived by the contract from `(N, k)`): for `l = 0, 1, …` while the sibling node `(l, (k>>l)⊕1)` exists — i.e.
-while `(((k>>l)⊕1)+1)·2ˡ ≤ N` — the sibling value appears in the path (ascending `l`). Let `r` be the first level where the sibling
-does not exist; the node containing `k` at level `r` is the peak `f_r` (this is a property of the left-filled shape — validated
-exhaustively). The path continues with: `top` — the **fold of all peaks at levels > r** (one 32-byte value; omitted when none exist) —
+**Path structure** (derived by the contract from `(N, k)`): for `l = 0, 1, …` while the sibling node `(l, (k>>l)⊕1)` exists - i.e.
+while `(((k>>l)⊕1)+1)·2ˡ ≤ N` - the sibling value appears in the path (ascending `l`). Let `r` be the first level where the sibling
+does not exist; the node containing `k` at level `r` is the peak `f_r` (this is a property of the left-filled shape - validated
+exhaustively). The path continues with: `top` - the **fold of all peaks at levels > r** (one 32-byte value; omitted when none exist) -
 followed by the peaks at levels `< r` in ascending order (`c = popcount(N mod 2ʳ)` values). The expected path length
 `r + c + e (e ∈ {0,1})` is asserted by the contract.
 
@@ -167,36 +167,36 @@ then `acc := H(top ‖ acc)` if `top` exists; then for each lower peak in **desc
 - **F. Sender binding.** The contract rebuilds `leaf_k` with `Txn.sender`; a leaf belonging to another backer would need a different
   preimage and fails the root check. The caller can only ever authenticate the leaf whose preimage contains their own address.
 - **G. Transaction binding.** `paymentTxId` is part of the leaf preimage; it was read from the atomic group at pledge time, and any
-  substitution at refund time breaks the leaf hash. (The contract does not need to *authenticate* the txid at refund time — the tree
+  substitution at refund time breaks the leaf hash. (The contract does not need to *authenticate* the txid at refund time - the tree
   already did at pledge time.)
 
 ## 6. Frontier after deletions
 
-After nullifications the frontier is **the canonical frontier of the current mutable value tree** — the same definition as §3, applied
+After nullifications the frontier is **the canonical frontier of the current mutable value tree** - the same definition as §3, applied
 to the current leaf values `(v_i ∈ {Z} ∪ leaves)`. Nulling position `k` changes exactly one frontier node: the peak containing `k`
 (and, transitively, the root).
 
 **Client/indexer reconstruction algorithm** (deterministic from public chain data):
 
 1. Replay every pledge in (round, txn-index) order: each pledge app call's group contains the payment whose `(sender, amount, TxID)`
-   are readable from the block; append `leaf = H(0x01 ‖ sender ‖ amount ‖ txid)` with the cascade of §4 — the frontier is maintained
+   are readable from the block; append `leaf = H(0x01 ‖ sender ‖ amount ‖ txid)` with the cascade of §4 - the frontier is maintained
    incrementally (O(popcount) work per pledge; no full tree needed).
 2. Replay every nullifying call (cancel/refund/settle) in order: replace the leaf with `Z` at the given position, updating the nodes on
    its path.
 
 Any sequence of such public events reconstructs the exact current frontier and root. A caller submits this frontier to `pledge()`; the
-contract authenticates it against `(storedRoot, N)` with `fold` (§4) — the contract **never stores the frontier**. If the supplied
+contract authenticates it against `(storedRoot, N)` with `fold` (§4) - the contract **never stores the frontier**. If the supplied
 frontier is stale or fabricated, the fold check fails and the transaction is rejected (retry with fresh data).
 
 ## 7. Concurrency and stale proofs
 
-Relied-upon consensus property: **Algorand applies transactions serially** — each transaction's execution observes all prior confirmed
+Relied-upon consensus property: **Algorand applies transactions serially** - each transaction's execution observes all prior confirmed
 state; a group is atomic (all-or-nothing). Two refunds constructed against the same root `R₀`:
 
 - **A executes first** (`R₀ → R₁`), nulling leaf 10.
 - **B's proof is against `R₀`.** Every leaf's authentication path includes the root; after any null, `R₁ ≠ R₀` and B's reconstruction
   lands on `R₀ ≠ R₁` → the assertion fails → **B is rejected atomically, nothing is written.** This holds for both overlapping and
-  disjoint paths (the root is on every path). B's client must re-fetch the path (from the public tree state) and retry — an explicit,
+  disjoint paths (the root is on every path). B's client must re-fetch the path (from the public tree state) and retry - an explicit,
   expected retry semantic, identical to stale-nonce handling.
 - **Stale-root overwrite is impossible by construction:** the contract never writes a caller-supplied root; it writes only the root it
   recomputed from its own stored state plus a verified proof.
@@ -204,7 +204,7 @@ state; a group is atomic (all-or-nothing). Two refunds constructed against the s
   the fold check); the null verifies against the post-append root (a stale path fails). Whichever is second fails deterministically and
   retries.
 - **Campaign deletion vs refund:** the settlement box is written atomically by `delete()` (via the inner `settle`); a refund racing it
-  either executes before (against the campaign root, path `payBack`) or after (against the vault box) — both are valid; there is no
+  either executes before (against the campaign root, path `payBack`) or after (against the vault box) - both are valid; there is no
   interleaving in which a refund is lost.
 - **Campaign deletion vs pledge:** the pledge group's `credit` requires the vault box to be absent or `OPEN`; a settle/deletion that lands
   first flips the box to `FAILED` → the pledge group reverts entirely.
@@ -217,7 +217,7 @@ positions, amounts, txids, and the tree are deterministic). The receipt is a *ca
 - **Mandatory receipt data (recommended cache):** `campaignAppId (8) ‖ position k (8) ‖ amount (8) ‖ paymentTxId (32)` = 56 bytes.
 - **Reconstructable:** the authentication path, the current tree/root, and `N` (campaign global-state delta at pledge time; the vault
   also stores `N` in the settlement box).
-- **`N`-at-pledge-time is NOT part of the receipt** — the path structure is derived from `(k, N)` where `N` is the *current* stored
+- **`N`-at-pledge-time is NOT part of the receipt** - the path structure is derived from `(k, N)` where `N` is the *current* stored
   value, which the client reads from on-chain state. (It was retained in an earlier draft out of caution; it is redundant.)
 - **Cryptographically authenticated:** `(backer, amount, txid)` via the leaf hash; `k` via the path; the whole tree via the stored root.
   Nothing in the receipt is a secret; possession of the receipt data without control of the backer's address is worthless (§5-F).
@@ -225,7 +225,7 @@ positions, amounts, txids, and the tree are deterministic). The receipt is a *ca
 ## 9. Exact transaction protocol
 
 Two contracts: **Campaign** (v2) and **ClaimsVault** (v2). Factory is unchanged. The vault holds all funds; the campaign escrow holds
-**nothing** (no deposit, no asset — `fund()` is removed entirely).
+**nothing** (no deposit, no asset - `fund()` is removed entirely).
 
 ### Campaign global state (v2)
 
@@ -242,32 +242,32 @@ paidInOf   (8, BE) ‖ paidOutOf (8, BE) ‖ root (32) ‖ N (8, BE) ‖ settled
 ```
 
 `status`: `0 = OPEN`, `1 = FAILED`, `2 = CLAIMED`. Box MBR = 2,500 + 400×(9+65) = **32,100 µA** (verified formula). No other
-per-campaign state exists. There is **no ASA, no addressOf/asaOf/creatorOf mapping** — the vault authenticates the campaign caller as
+per-campaign state exists. There is **no ASA, no addressOf/asaOf/creatorOf mapping** - the vault authenticates the campaign caller as
 `Txn.sender == app.address` (only the app's own program can spend as its account) plus Factory registration on first touch (see
 `credit`).
 
 ### Pledge
 
 Group: `[Payment (backer → vault, amount a, note optional), Campaign.pledge(payment, frontier), Vault.credit(app, amount)]`
-(the pledge precedes the credit; atomicity makes the order safe — if any of the three fails, nothing is written).
+(the pledge precedes the credit; atomicity makes the order safe - if any of the three fails, nothing is written).
 
 `Campaign.pledge` checks: deadline not passed; `status == OPEN`; `payment.receiver == vault.address`; `payment.sender == Txn.sender`;
 `payment.amount > 0`; `Txn.sender != creator`; `frontier.length == 32·popcount(N)`. Computes
 `leaf = H(0x01 ‖ sender ‖ amount ‖ payment.txnId)`; asserts `leaf ≠ Z`; authenticates the frontier (§4); updates `root, N`;
-`raised += amount`. No inner calls (a self inner call for budget would be illegal reentrancy — see §14 for the `ensureBudget`
+`raised += amount`. No inner calls (a self inner call for budget would be illegal reentrancy - see §14 for the `ensureBudget`
 mechanism instead).
 
-`Vault.credit` (top-level, backer-signed) checks: the vault box for `app` is absent or `OPEN` (`FAILED`/`CLAIMED` reject — no pledges
+`Vault.credit` (top-level, backer-signed) checks: the vault box for `app` is absent or `OPEN` (`FAILED`/`CLAIMED` reject - no pledges
 after settlement); if the box is absent: inner-call `factory.isRegistered(app)` (result must be true) before creating it;
-**independently verify the payment**: scan the caller's own group (`gtxn` — fully visible because `credit` is top-level) for a payment
-with `sender == Txn.sender`, `receiver == vault.address`, `amount == amount` — assert found. Then `paidInOf += amount` (creating the
-box on first pledge). The vault's `paidInOf` therefore counts only real payments into the vault — the "derived, not trusted" property
+**independently verify the payment**: scan the caller's own group (`gtxn` - fully visible because `credit` is top-level) for a payment
+with `sender == Txn.sender`, `receiver == vault.address`, `amount == amount` - assert found. Then `paidInOf += amount` (creating the
+box on first pledge). The vault's `paidInOf` therefore counts only real payments into the vault - the "derived, not trusted" property
 of the current design is preserved, per campaign.
 
-No pledge-presence check is needed in `credit`: a `credit` without a matching `pledge` — or a `pledge` without a `credit` — strands
+No pledge-presence check is needed in `credit`: a `credit` without a matching `pledge` - or a `pledge` without a `credit` - strands
 only the deviator's own funds (every later outflow is capped by verified inflows via the balance guard; §17 #29). The previous draft's
-inner `credit` with a group scan from inside the callee was impossible — an inner-called app sees only its own inner group in `gtxn`,
-and a transaction argument to an inner call indexes the inner group, not the outer one — hence `credit` is top-level by construction.
+inner `credit` with a group scan from inside the callee was impossible - an inner-called app sees only its own inner group in `gtxn`,
+and a transaction argument to an inner call indexes the inner group, not the outer one - hence `credit` is top-level by construction.
 
 ### Cancel (pre-deadline withdrawal, while OPEN)
 
@@ -275,7 +275,7 @@ Group: `[Campaign.cancelPledge(k, amount, txid, path)]`. Checks: deadline not pa
 derived; verifies and nulls `k` (§5); `raised -= amount`; inner `vault.payBack(app, backer=Txn.sender, amount)`.
 
 `Vault.payBack` checks: `Txn.sender == app.address`; box `status == OPEN`; `amount ≤ paidInOf − paidOutOf`; then `paidOutOf += amount`
-and pays `backer`. (The vault-enforced balance guard is what keeps campaign bugs from draining other campaigns' funds — the pooled
+and pays `backer`. (The vault-enforced balance guard is what keeps campaign bugs from draining other campaigns' funds - the pooled
 vault's isolation invariant.)
 
 ### Refund, campaign alive (post-deadline, pre-delete; covers "creator vanished")
@@ -289,28 +289,28 @@ working forever as long as the campaign app exists, with no creator involvement.
 Group: `[Vault.refund(app, k, amount, txid, path)]`. Checks: box exists, `status == FAILED`, `k < N`, refund window not expired
 (§13), path length derived from `(N, k)`; rebuilds `leaf` from `(Txn.sender, amount, txid)`; verifies against the box's stored root;
 nulls; asserts `amount ≤ paidInOf − paidOutOf`; `paidOutOf += amount`; pays `Txn.sender` from the pool. Runs entirely from vault-local
-state — the campaign app is never read (it may be deleted; no `app_global_get_ex` on possibly-deleted apps is ever attempted).
+state - the campaign app is never read (it may be deleted; no `app_global_get_ex` on possibly-deleted apps is ever attempted).
 
 ### Successful settlement
 
 `[Campaign.claim()]` (creator): deadline passed; `raised ≥ goal`; `status == OPEN`; set `CLAIMED`; inner `vault.payClaim(app)`.
 
-`Vault.payClaim`: `Txn.sender == app.address`; box `status == OPEN`; `payout = paidInOf − paidOutOf` (**derived, not trusted** — equal
+`Vault.payClaim`: `Txn.sender == app.address`; box `status == OPEN`; `payout = paidInOf − paidOutOf` (**derived, not trusted** - equal
 to the live pledge total because cancels were balanced); pay creator (`Txn.sender` is the campaign app… the recipient is
 `app.creator`, read via foreign app global state); `paidOutOf += payout`; `status = CLAIMED`.
 
 `[Campaign.delete()]` (creator): requires `status == CLAIMED` (or `FAILED`, or `raised == 0`); inner `vault.notifyDelete(app)` which
-asserts `status == CLAIMED` and `paidInOf == paidOutOf`, then deletes the box (recovering the 32,100 µA) — **O(1), vault parks nothing
+asserts `status == CLAIMED` and `paidInOf == paidOutOf`, then deletes the box (recovering the 32,100 µA) - **O(1), vault parks nothing
 for successful campaigns**. Creator then `factory.unregister(app)`.
 
 ### Failed settlement
 
 Either path, converging on the same box state:
 
-- `[Campaign.delete()]` on a failed campaign (creator): inner `vault.settle(app, root, N)` — asserts `Txn.sender == app.address`; if
+- `[Campaign.delete()]` on a failed campaign (creator): inner `vault.settle(app, root, N)` - asserts `Txn.sender == app.address`; if
   box `status == OPEN`: write `root, N, settledAt = latestTimestamp, status = FAILED`; if already `FAILED`: no-op.
-- `[Vault.settleOpen(app)]` (**permissionless** — the "creator vanished" case): asserts box `status == OPEN`; reads the campaign app's
-  foreign global state (`status`, `root`, `N`, `raised`, `goal`, `deadline` — the app still exists); asserts deadline passed and
+- `[Vault.settleOpen(app)]` (**permissionless** - the "creator vanished" case): asserts box `status == OPEN`; reads the campaign app's
+  foreign global state (`status`, `root`, `N`, `raised`, `goal`, `deadline` - the app still exists); asserts deadline passed and
   `raised < goal`; writes `root, N, settledAt = now, status = FAILED`. After this, campaign-driven `payBack` is rejected (box not
   OPEN) and all refunds flow through the vault.
 
@@ -321,7 +321,7 @@ Then: refunds per §9 until the window closes (§13); then `[Vault.finalize(app)
 
 Every inner call names its own app id; the `Txn.sender == app.address` check makes cross-campaign calls impossible (an app account
 acts only through its own program; app addresses are distinct). The top-level `credit` names its app id explicitly as an argument; a
-misattributed `credit` (paying under the wrong campaign's box) locks the caller's own funds under that campaign's balance cap — self-harm,
+misattributed `credit` (paying under the wrong campaign's box) locks the caller's own funds under that campaign's balance cap - self-harm,
 no theft (§17 #31).
 
 ### Resource declaration (outer transactions)
@@ -351,7 +351,7 @@ Invariants (all enforced by the contract, none rely on the indexer):
 4. `finalize` pays exactly `paidInOf − paidOutOf` → **total outflows = total inflows per campaign**:
    `paidInOf = cancels + liveRefunds + vaultRefunds + (claim payout) + (finalize residual)`.
 5. **Pooled isolation:** all outflows are per-campaign capped by the per-campaign balance guard (2), so campaign A's funds can never
-   pay campaign B — enforced at the vault, not by code review, exactly as the current design's unit-conservation derivation does.
+   pay campaign B - enforced at the vault, not by code review, exactly as the current design's unit-conservation derivation does.
 
 ## 12. State machines
 
@@ -388,7 +388,7 @@ or before the window; double settle (idempotent no-op); double finalize (box abs
 ### Edge cases
 
 - **Zero pledges:** box may be absent; `delete()` on `raised == 0` succeeds; `settleOpen` creates a box with `N = 0, root = Z` so
-  `finalize` can clean the (zero) residual — no stranded state.
+  `finalize` can clean the (zero) residual - no stranded state.
 - **One pledge:** tree of one leaf; refund path length 0; works.
 - **Last pledge immediately before deadline:** pledge group lands while `latestTimestamp < deadline` (consensus serialization); it is
   either included or not; no partial state.
@@ -402,28 +402,28 @@ or before the window; double settle (idempotent no-op); double finalize (box abs
 
 ## 13. Refund window decision
 
-**Option A — refunds forever.** The 32,100 µA anchor box per failed campaign is retained indefinitely, and the residual
+**Option A - refunds forever.** The 32,100 µA anchor box per failed campaign is retained indefinitely, and the residual
 `paidInOf − paidOutOf` stays in the pool forever. This fails requirement B in its strict letter (the box is protocol capital whose
-recovery is blocked by any single never-refunding backer) — by a constant, but still a violation, and it leaves an ever-growing
+recovery is blocked by any single never-refunding backer) - by a constant, but still a violation, and it leaves an ever-growing
 liability on the pool.
 
-**Option B — bounded refund window (recommended).** `refundWindow` is a vault-global constant (recommended: 730 days) set at vault
+**Option B - bounded refund window (recommended).** `refundWindow` is a vault-global constant (recommended: 730 days) set at vault
 creation, immutable. Refunds are accepted while `latestTimestamp < settledAt + refundWindow`. Afterwards `finalize()` is
 permissionless and O(1): the residual `paidInOf − paidOutOf` is paid to `sweepTarget` (the platform treasury, set at vault creation).
 
-Requirement impact: **A** — fully satisfied within a generous, publicly-known window; the window is visible in the vault state from
-day one and disclosed in the UI at pledge time, so it is part of the pledge contract, not a hidden rule. **B** — strictly satisfied:
+Requirement impact: **A** - fully satisfied within a generous, publicly-known window; the window is visible in the vault state from
+day one and disclosed in the UI at pledge time, so it is part of the pledge contract, not a hidden rule. **B** - strictly satisfied:
 every protocol resource (the box) and every liability (the residual) has a time-bounded, backer-independent recovery path; recovery
-is one transaction. **C/D/E/F** — unaffected. Economic acceptability of the sweep: the residual represents backers who, over the full
+is one transaction. **C/D/E/F** - unaffected. Economic acceptability of the sweep: the residual represents backers who, over the full
 window, never exercised a right they were offered at pledge time; the alternative (Option A) keeps their funds inert forever, which
 benefits no one; Kickstarter's own failed-campaign model returns nothing at all without a creator-initiated process. If the platform
-wants zero self-enrichment optics, `sweepTarget` can be a documented community fund — a governance decision, not a protocol change.
+wants zero self-enrichment optics, `sweepTarget` can be a documented community fund - a governance decision, not a protocol change.
 
 **Recommendation: Option B.**
 
 **Governance decision (recorded September 2026, revisit before any real deploy):** `sweepTarget` is the platform treasury.
 The 730-day window and the sweep destination are disclosed in the UI at pledge time (refund-window banner). Rationale:
-residuals will be dust; a future vault can point at a community fund instead — the address is a vault-creation parameter,
+residuals will be dust; a future vault can point at a community fund instead - the address is a vault-creation parameter,
 so no contract change is needed either way. The creator as sweep target was rejected (rewards failure, looks like a backdoor).
 
 ## 14. Opcode and resource analysis
@@ -450,22 +450,22 @@ Worst case for pledge is `N = 2ᵏ−1` (maximal popcount); worst case for refun
 Budget model: `ops = H_calls × 35 + ~150` (ABI decode, box access, asserts, inner-call emission, payment scan). Available pool =
 `700 × (top-level app calls)` plus `700` per inner app call submitted, under v30+ pooling
 ([specs](https://specs.algorand.co/avm/avm-mode-applications)). Inner calls to *oneself* are forbidden (reentrancy is explicitly
-excluded — [Inner Transactions](https://dev.algorand.co/concepts/smart-contracts/inner-txn/)), so heavy methods size
-`ensureBudget(requiredOps)` — the Puya OpUp utility, which adds budget with inner app *creates* of ephemeral programs
+excluded - [Inner Transactions](https://dev.algorand.co/concepts/smart-contracts/inner-txn/)), so heavy methods size
+`ensureBudget(requiredOps)` - the Puya OpUp utility, which adds budget with inner app *creates* of ephemeral programs
 (created and deleted in one inner group; the pattern production Puya code uses, e.g. `ensure_budget(20000)` in the
 [voting example](https://github.com/algorandfoundation/puya/blob/main/examples/voting/voting.py)), paid by the caller via
 `GroupCredit` fee pooling. OpUp inners needed: `ceil(ops/700) − pool/700`:
 
 - **Pledge** (group: 2 app calls → pool 1,400; no campaign inners): N=10,000 → 10·35+150 = 500 (+`credit` ≈ 150) ✓ headroom large;
   worst realistic N=131,071 → 34·35+150 = 1,340 (+150) → 1 OpUp inner (2,100) ✓. Only `N ≥ 2²⁰−1`-class trees need a second one.
-- **Refund, campaign path** (1 app call + 1 inner `payBack` → pool 1,400): N=1,000 → 1,165 ✓; N=10,000 → 1,375 ✓ (tight — size one
+- **Refund, campaign path** (1 app call + 1 inner `payBack` → pool 1,400): N=1,000 → 1,165 ✓; N=10,000 → 1,375 ✓ (tight - size one
   OpUp headroom anyway); N=131,071 → 2,425 → 2 OpUp inners (2,800) ✓; N=1,000,000 → 1,935 → 1 ✓.
 - **Refund, vault path** (1 app call + 0 inner app calls → pool 700): same `ops` as above, so N=1,000 → 1 OpUp inner (1,400) ✓;
   N=131,071 → 3 OpUp inners (2,800) ✓.
 
 The client derives `(N, k)` from on-chain state, computes the `ops` estimate with the formula above, and funds the group fee
 accordingly; the contract calls `ensureBudget` itself with the same estimate. An underfunded transaction fails atomically and the
-client retries with a higher fee — no partial state either way.
+client retries with a higher fee - no partial state either way.
 
 Resource ceilings (hard limits, not Big-O):
 
@@ -480,7 +480,7 @@ Resource ceilings (hard limits, not Big-O):
 
 ## 15. Reference implementation
 
-[`claim-tree-protocol-reference.py`](claim-tree-protocol-reference.py) — language-independent (Python 3, stdlib only), implements
+[`claim-tree-protocol-reference.py`](claim-tree-protocol-reference.py) - language-independent (Python 3, stdlib only), implements
 `leaf`, `build_nodes`, `peaks`, `fold`, `root_of`, `append`, `path_of`, `verify`, `null`, and runs these property tests:
 
 - fold == naive tree root, N = 1..299;
@@ -540,7 +540,7 @@ real consensus, including the races of §7.
 | 26 | Finalize race | window + status assertions; absent-box reject | app checks |
 | 27 | Repeated finalize | box absent after first | app checks |
 | 28 | Malicious indexer data | the indexer is never trusted: every supplied structure (frontier, path) is authenticated by the contract against on-chain state; wrong indexer data only causes a rejected transaction and a retry | SHA + app checks |
-| 29 | `credit` without a matching `pledge` (or vice versa) | `paidInOf` counts only real in-group payments; a tree/paidIn skew strands only the deviator's own funds (an uncredited leaf fails the balance guard at refund; unpledged credit inflates only the deviator's own inflow, claimable back by nobody but the pool) — self-harm, no cross-campaign effect | app checks |
+| 29 | `credit` without a matching `pledge` (or vice versa) | `paidInOf` counts only real in-group payments; a tree/paidIn skew strands only the deviator's own funds (an uncredited leaf fails the balance guard at refund; unpledged credit inflates only the deviator's own inflow, claimable back by nobody but the pool) - self-harm, no cross-campaign effect | app checks |
 | 30 | Inner self-call for budget (`self.reserve()`) | forbidden by consensus (reentrancy); heavy methods use `ensureBudget` OpUp creates instead (§14) | AVM |
 | 31 | `credit` under another campaign's box | the box is keyed by the caller-supplied app id and creation is registration-gated; misattribution locks the caller's own funds under that campaign's cap | app checks |
 
@@ -548,12 +548,12 @@ real consensus, including the races of §7.
 
 | Requirement | Status | Proof |
 | --- | --- | --- |
-| A — Backer-controlled refund | ✓ | Self-service `refund`/`cancelPledge` from wallet alone; works after campaign deletion and after creator disappearance (`settleOpen`); no creator/platform processing exists on any refund path. Satisfied **within the refund window** under Option B. |
-| B — Complete bounded finalization | ✓ with Option B | Protocol resources per campaign = one 32,100 µA box; recovered by `notifyDelete` (claimed) or `finalize` (failed, time-gated) — one transaction, independent of N and of any backer. Without the window (Option A), fails by a constant. |
-| C — No O(N) platform operations | ✓ | No platform operation is per-backer anywhere; frontiers/proofs are computed by backers' own clients and *verified* by the contract. |
-| D — Very high scalability | ✓ | Zero per-backer on-chain structures (no ASA, no boxes-per-backer, no local state, no bitmap). Per-campaign state is constant (10 global slots + one box). Single-call refunds to N ≈ 1,000; `ensureBudget`-pooled refunds to N ≈ 131k with ≤ 3 OpUp inners (§14); argument ceiling N ≤ 2³²−1. |
-| E — Minimal creator capital | ✓ | ≈ 0.24 ALGO (app + schema MBR on the creator's own account), fully recovered at `delete()`; **no escrow deposit at all** (`fund()` removed). |
-| F — Zero backer action after success | ✓ | Backers hold nothing on-chain after success: no ASA, no opt-in, no local state, nothing to close, sweep, or destroy. 100% disappearance of backers leaves zero residue. |
+| A - Backer-controlled refund | ✓ | Self-service `refund`/`cancelPledge` from wallet alone; works after campaign deletion and after creator disappearance (`settleOpen`); no creator/platform processing exists on any refund path. Satisfied **within the refund window** under Option B. |
+| B - Complete bounded finalization | ✓ with Option B | Protocol resources per campaign = one 32,100 µA box; recovered by `notifyDelete` (claimed) or `finalize` (failed, time-gated) - one transaction, independent of N and of any backer. Without the window (Option A), fails by a constant. |
+| C - No O(N) platform operations | ✓ | No platform operation is per-backer anywhere; frontiers/proofs are computed by backers' own clients and *verified* by the contract. |
+| D - Very high scalability | ✓ | Zero per-backer on-chain structures (no ASA, no boxes-per-backer, no local state, no bitmap). Per-campaign state is constant (10 global slots + one box). Single-call refunds to N ≈ 1,000; `ensureBudget`-pooled refunds to N ≈ 131k with ≤ 3 OpUp inners (§14); argument ceiling N ≤ 2³²−1. |
+| E - Minimal creator capital | ✓ | ≈ 0.24 ALGO (app + schema MBR on the creator's own account), fully recovered at `delete()`; **no escrow deposit at all** (`fund()` removed). |
+| F - Zero backer action after success | ✓ | Backers hold nothing on-chain after success: no ASA, no opt-in, no local state, nothing to close, sweep, or destroy. 100% disappearance of backers leaves zero residue. |
 
 ## 19. Verdict
 
@@ -573,23 +573,23 @@ test plan of §16 before any deployment.
 September 27, 2026. Two implementation-blocking defects in v1, found on review against the AVM toolchain and consensus rules:
 
 1. **Budget mechanism (§14).** v1 sized "inner no-op self-calls" (`self.reserve()`) to grow the pooled opcode budget. An application may
-   not call itself, even indirectly — reentrancy is explicitly forbidden
+   not call itself, even indirectly - reentrancy is explicitly forbidden
    ([Inner Transactions](https://dev.algorand.co/concepts/smart-contracts/inner-txn/)). Replaced with `ensureBudget(requiredOps)`
    (Puya OpUp: inner app *creates* of ephemeral programs, caller-paid via `GroupCredit`), the pattern production Puya contracts use.
    Hash counts and ceilings are unchanged; only the mechanism, the OpUp sizing rule, and the fee table are new.
 2. **`credit` payment verification (§9).** v1 had the campaign inner-call `vault.credit`, which then scanned "the caller's group" via
-   `gtxn` — impossible, because an inner-called app sees only its own inner group in `Txn`/`Gtxn`. A transaction argument to an inner
+   `gtxn` - impossible, because an inner-called app sees only its own inner group in `Txn`/`Gtxn`. A transaction argument to an inner
    call indexes the inner group too, so forwarding was no fix either. `credit` is therefore a top-level, backer-signed call
    (`[Payment, Campaign.pledge, Vault.credit]`) whose `gtxn` scan sees the real outer group. Added: the absent-or-`OPEN` box gate, the
    registration-gated box creation, the no-pledge-presence rationale (§17 #29), the cross-campaign misattribution note, and the outer
    resource-declaration subsection.
 3. **Governance (§13).** Added the open `sweepTarget` decision (treasury vs community fund/creator vs longer window) as the one item
    required before TestNet.
-4. **Reference model.** The `append` helper now asserts `fold(P) == root_of(leaves)` instead of discarding the fold — it models the
+4. **Reference model.** The `append` helper now asserts `fold(P) == root_of(leaves)` instead of discarding the fold - it models the
    on-chain frontier authentication rather than just counting its hashes.
-5. **Hash opcode (§§1–2).** v1 named the AVM `sha256` opcode for `H`, but `sha256` is plain SHA-256 — the LocalNet spike proved
+5. **Hash opcode (§§1–2).** v1 named the AVM `sha256` opcode for `H`, but `sha256` is plain SHA-256 - the LocalNet spike proved
    this differentially (on-chain leaf = `SHA256(preimage)`, full 32-byte match). `H` is SHA-512/256 via the `sha512_256` opcode
-   (PuyaTs `op.sha512_256`, same cost 35); the contract was fixed to it and the table above corrected. Nothing else changes —
+   (PuyaTs `op.sha512_256`, same cost 35); the contract was fixed to it and the table above corrected. Nothing else changes -
    the analysis was always about SHA-512/256 collision resistance.
 
 No change to the tree math (§§2–6), the null proofs (§5 A–G), the accounting invariants (§11), the state machines (§12), or the verdict:
@@ -601,12 +601,12 @@ against the reference oracle) before the full rewrite.
 September 28, 2026. Findings from implementing §§9/14 on LocalNet (contracts + 16 integration tests green):
 
 1. **Stray-box closure.** A `credit` without a `pledge` can create a box the campaign never sees (`N == 0`), and a pristine `delete`
-   would skip the vault — orphaning the box `Open` forever (no settle path: `settleOpen` needs the live app, `refund`/`finalize`
+   would skip the vault - orphaning the box `Open` forever (no settle path: `settleOpen` needs the live app, `refund`/`finalize`
    need `Failed`). Closed by two small changes: `settle` no-ops when no box exists, and `delete` settles unconditionally for
    non-`Claimed` campaigns. Stray inflows now settle on pristine delete and sweep via `finalize`; the LocalNet suite proves the
-   full arc. No protocol change — this fills a gap the spec left around pristine delete.
+   full arc. No protocol change - this fills a gap the spec left around pristine delete.
 2. **Single-blob paths confirmed.** Refund/cancel paths carry `siblings ‖ top ‖ lower` as one `byte[]`, split at the on-chain-derived
-   `(r, c, e)` cut points — exactly as §14 framed it.
+   `(r, c, e)` cut points - exactly as §14 framed it.
 3. **Raw inner `appArgs` must ABI-encode dynamic types.** Passing the settle `root` raw fails the callee's `byte[]` decode (which
    expects the uint16 length prefix); the campaign prefixes it explicitly. Static types (`uint64`, `address`) go raw.
 4. **Fee model measured.** Each OpUp iteration submits two inners (create + delete), and inner *app calls* need pooling like payments:

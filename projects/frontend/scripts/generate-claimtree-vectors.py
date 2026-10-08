@@ -3,7 +3,7 @@
 
 Drives docs/claim-tree-protocol-reference.py through a fixed pledge/null scenario and emits
 `src/lib/claimtree.vectors.ts` (overwritten in place). Backers/amounts/txids are derived from
-fixed seeds — no randomness — so regeneration is byte-identical.
+fixed seeds - no randomness - so regeneration is byte-identical.
 
 Usage (from projects/frontend):  python3 scripts/generate-claimtree-vectors.py
 """
@@ -119,7 +119,7 @@ def main() -> None:
     }
     header = (
         "/**\n"
-        " * Committed claim-tree test vectors — DO NOT EDIT. Regenerate with:\n"
+        " * Committed claim-tree test vectors - DO NOT EDIT. Regenerate with:\n"
         " * `python3 scripts/generate-claimtree-vectors.py` (from projects/frontend).\n"
         " *\n"
         " * Each step drives docs/claim-tree-protocol-reference.py through a fixed pledge/null scenario. `backerAddress`\n"

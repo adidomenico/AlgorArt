@@ -8,7 +8,7 @@ import { getAlgodConfigFromViteEnvironment, getIndexerConfigFromViteEnvironment 
  * The indexer is the read model (campaign lists, global state, boxes); the `AlgorandClient` drives writes (create/pledge/claim/refund)
  * through the generated `CampaignClient`.
  *
- * Construction performs no network I/O — it only builds the client objects — so this is safe at module load. Tests provide the `VITE_*`
+ * Construction performs no network I/O - it only builds the client objects - so this is safe at module load. Tests provide the `VITE_*`
  * values via the Vitest `env` config (see `vitest.config.ts`).
  */
 
@@ -40,7 +40,7 @@ export const algorand = AlgorandClient.fromConfig({
  * The chain's current timestamp (latest block header), in seconds.
  *
  * Wall-clock time (`Date.now()`) is wrong on time-traveled LocalNet chains and can drift from consensus time
- * anywhere — every deadline/status/countdown decision in the UI must use this instead.
+ * anywhere - every deadline/status/countdown decision in the UI must use this instead.
  *
  * @returns UNIX timestamp in seconds.
  */
@@ -68,7 +68,7 @@ export async function waitForIndexerRound(round: bigint, timeoutMs = 10_000, pol
       const health = await indexer.makeHealthCheck().do()
       if (health.round >= round) return
     } catch {
-      // Indexer temporarily unreachable — retry until the timeout elapses.
+      // Indexer temporarily unreachable - retry until the timeout elapses.
     }
     await new Promise((resolve) => setTimeout(resolve, pollMs))
   }

@@ -5,17 +5,17 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 /**
- * Deploys the platform's `ClaimsVault` application — the permanent, pooled refund escrow.
+ * Deploys the platform's `ClaimsVault` application - the permanent, pooled refund escrow.
  *
  * The vault must be deployed **after** the Factory (its `create` records the Factory id for the first-touch
  * registration check). The vault's application account is funded with 1 ALGO: the account base plus headroom for the
- * parked per-campaign boxes (32,100 µA each, recovered by `notifyDelete`/`finalize`) — about 28 campaigns per ALGO.
+ * parked per-campaign boxes (32,100 µA each, recovered by `notifyDelete`/`finalize`) - about 28 campaigns per ALGO.
  *
- * Environment: `FACTORY_APP_ID` (required), `SWEEP_TARGET` (optional, defaults to the deployer — the governance
+ * Environment: `FACTORY_APP_ID` (required), `SWEEP_TARGET` (optional, defaults to the deployer - the governance
  * decision in docs/claim-tree-protocol.md → Refund window decision), `REFUND_WINDOW_SECONDS` (optional, defaults to
  * 730 days per the spec recommendation).
  *
- * @returns The deployed vault's app id — configure it as `VITE_VAULT_APP_ID` in the frontend.
+ * @returns The deployed vault's app id - configure it as `VITE_VAULT_APP_ID` in the frontend.
  */
 export async function deploy() {
   const algorand = AlgorandClient.fromEnvironment()
@@ -27,7 +27,7 @@ export async function deploy() {
 
   const factoryId = process.env.FACTORY_APP_ID
   if (factoryId === undefined || factoryId === '') {
-    throw new Error('FACTORY_APP_ID is not set — deploy the Factory first and pass its app id.')
+    throw new Error('FACTORY_APP_ID is not set - deploy the Factory first and pass its app id.')
   }
   const sweepTarget =
     process.env.SWEEP_TARGET !== undefined && process.env.SWEEP_TARGET !== '' ? process.env.SWEEP_TARGET : deployer.addr.toString()

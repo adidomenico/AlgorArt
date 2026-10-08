@@ -28,7 +28,7 @@ documents the rules and the reasoning behind them.
   into `generate:app-clients` and the CI link step).
 - **`verbatimModuleSyntax` is on (contracts).** The contracts `tsconfig.json` enables
   it, so type-only imports must be written `import type` and the compiler no longer
-  elides them silently. The frontend omits it — Vite (rolldown) does not elide
+  elides them silently. The frontend omits it - Vite (rolldown) does not elide
   type-only imports in the generated client, which imports them as value imports and
   would fail the bundle step. The frontend instead relies on
   `@typescript-eslint/consistent-type-imports`.
@@ -40,7 +40,7 @@ documents the rules and the reasoning behind them.
   Fields that can genuinely be `undefined` are declared `T | undefined` explicitly.
 - **Imports are checked.** `eslint-plugin-import` enforces `no-duplicates`,
   `no-named-as-default`, and `no-named-as-default-member` at `error` severity.
-  Resolution-based rules (`no-unresolved` etc.) are intentionally off — `tsc --noEmit`
+  Resolution-based rules (`no-unresolved` etc.) are intentionally off - `tsc --noEmit`
   already validates module resolution, and the default `eslint-import-resolver-node`
   cannot read `exports`-only packages. Import **ordering** is owned by
   `prettier-plugin-organize-imports` (enabled in the shared `.prettierrc.json`), not by

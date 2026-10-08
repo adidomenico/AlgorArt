@@ -1,5 +1,5 @@
 {
-  // Single source of truth for markdownlint — read by BOTH the VS Code
+  // Single source of truth for markdownlint - read by BOTH the VS Code
   // extension (davidanson.vscode-markdownlint, which is powered by the
   // markdownlint-cli2 engine) and the markdownlint-cli2 CLI.
   "globs": ["**/*.md"],
