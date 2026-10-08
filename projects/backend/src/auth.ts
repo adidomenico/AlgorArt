@@ -53,6 +53,14 @@ export function base64ToBytes(base64: string): Uint8Array {
   return bytes
 }
 
+function appDomain(): string {
+  return process.env.APP_DOMAIN ?? 'localhost'
+}
+
+function appUri(): string {
+  return process.env.APP_URI ?? 'http://localhost:5173'
+}
+
 function sessionSecret(): Uint8Array {
   const secret = process.env.SESSION_SECRET
   if (!secret) {
@@ -63,6 +71,8 @@ function sessionSecret(): Uint8Array {
 
 /**
  * Issue a single-use sign-in challenge for an address. The wallet signs `message`; `verifyChallenge` checks it.
+ * The message carries the SIWE-style `Domain` and `URI` lines so the wallet shows the user which site they sign
+ * into; verification rejects anything not bound to this deployment.
  *
  * @param address Algorand address to challenge.
  * @returns The challenge message, nonce, and expiry.
@@ -74,10 +84,12 @@ export async function createChallenge(address: string): Promise<Challenge> {
   const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS)
   const message = [
     'AlgorArt sign-in',
+    `Domain: ${appDomain()}`,
     `Address: ${address}`,
     `Nonce: ${nonce}`,
     `Issued: ${new Date().toISOString()}`,
     `Expires: ${expiresAt.toISOString()}`,
+    `URI: ${appUri()}`,
   ].join('\n')
   await pool().query('INSERT INTO auth_nonces (nonce, address, expires_at) VALUES ($1, $2, $3)', [nonce, address, expiresAt.toISOString()])
   return { message, nonce, expiresAt: expiresAt.toISOString() }
@@ -92,13 +104,17 @@ export async function createChallenge(address: string): Promise<Challenge> {
  * @returns Session JWT (Bearer token, seven days).
  */
 export async function verifyChallenge(address: string, message: string, signature: string): Promise<string> {
-  const nonce = message
-    .split('\n')
-    .find((line) => line.startsWith('Nonce: '))
-    ?.slice('Nonce: '.length)
-    .trim()
-  if (!nonce) {
+  const lines = message.split('\n')
+  const field = (prefix: string): string | undefined => {
+    const line = lines.find((candidate) => candidate.startsWith(prefix))
+    return line?.slice(prefix.length).trim() || undefined
+  }
+  const nonce = field('Nonce: ')
+  if (nonce === undefined) {
     throw new Error('malformed challenge message')
+  }
+  if (field('Domain: ') !== appDomain() || field('URI: ') !== appUri() || field('Address: ') !== address) {
+    throw new Error('challenge is not bound to this deployment')
   }
   const found = await pool().query<{ address: string }>(
     'SELECT address FROM auth_nonces WHERE nonce = $1 AND address = $2 AND used_at IS NULL AND expires_at > now()',
