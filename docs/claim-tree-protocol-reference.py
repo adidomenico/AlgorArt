@@ -1,6 +1,6 @@
 """
-Reference model for the AlgorArt Claim Tree Protocol (Protocol Specification v1,
-see docs/claim-tree-protocol.md). Language-independent oracle: the smart
+Reference model for the AlgorArt Claim Tree Protocol (see
+docs/claim-tree-protocol.md). Language-independent oracle: the smart
 contract implementation must reproduce its outputs (root, N, raised,
 paidInOf/paidOutOf) for every operation sequence.
 
@@ -28,7 +28,7 @@ Run:  python3 claim-tree-protocol-reference.py
 import hashlib
 import random
 
-H = lambda b: hashlib.new("sha512_256", b).digest()  # SHA-512/256 = AVM `sha256` opcode
+H = lambda b: hashlib.new("sha512_256", b).digest()  # SHA-512/256 = AVM `sha512_256` opcode (not `sha256`)
 Z = bytes(32)
 
 
