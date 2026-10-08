@@ -46,7 +46,7 @@ Key = `'c' + appId` (9 bytes). Value = `paidIn (8) ‖ paidOut (8) ‖ root (32)
 
 `status` starts `Open` and moves one way:
 
-```text
+```mermaid
 stateDiagram-v2
     Open --> Claimed: claim() - vault pays the creator, settlement recorded
     Open --> Failed: refund() - first refund flips the status, vault pays back
