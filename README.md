@@ -48,9 +48,9 @@ follows the roadmap checklist.
 ```bash
 algokit project bootstrap all    # install deps for contracts/ + frontend/
 algokit localnet start           # start algod + indexer in Docker (the "chain")
-algokit project run build        # compile contracts + generate typed clients
 
 cd projects/contracts
+npm run build                    # compile contracts + generate typed clients
 npm run deploy:ci -- factory     # deploy the Factory (prints the app id)
 FACTORY_APP_ID=<factory id> npm run deploy:ci -- claimsvault  # deploy the ClaimsVault
 FACTORY_APP_ID=<factory id> VAULT_APP_ID=<vault id> npm run seed  # demo data
@@ -61,12 +61,12 @@ cd ../frontend
 npm run dev                      # frontend on http://localhost:5173
 npm run reclaim                  # reclaim demo funds + unregister (needs *_MNEMONIC env vars)
 
-algokit project run lint         # ESLint across all projects
-algokit project run format       # Prettier check across all projects
-algokit project run check-types  # type-check across all projects
-algokit project run test         # contract unit tests (offline AVM, via Vitest)
-
-npx --yes markdownlint-cli2@0.23.2        # markdownlint across all docs (add --fix to autofix)
+cd ../backend
+cp .env.template .env            # then fill SESSION_SECRET (openssl rand -hex 32)
+docker compose up -d             # Postgres on localhost:5432
+npm run db:migrate               # apply migrations
+npm run dev                      # API on http://127.0.0.1:3001 (watch mode)
+npm run build && npm start       # production: compile to dist/, run node
 ```
 
 ## License
