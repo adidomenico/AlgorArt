@@ -107,12 +107,12 @@ The JSON follows an ARC-3-style shape (`{name, description, image, category}`,
 all optional; `lib/metadata.ts`). `ipfs://` URIs resolve through the public
 `https://green-cooperative-koi-991.mypinata.cloud/ipfs/` gateway (demo Pinata gateway:
 the public gateway does not serve all pins since the Shipyard-maintained
-`ipfs.io` gateway wound down in September 2026; a dedicated gateway belongs
+`ipfs.io` gateway wound down; a dedicated gateway belongs
 here once the catalog backend exists).
 `https://` URLs pass through. `CampaignImage` (`features/campaigns/`) renders the blob's `image` (or the URI itself when it
 points straight at an image file) in the card and detail views, hiding itself
 on any failure; the detail view also shows `description` and `category`. A blob
-with none of the four fields is treated as absent, so seed/legacy URIs render
+with none of the four fields is treated as absent, so seed URIs render
 nothing instead of erroring. Upload/pinning is out of scope - creators paste a
 URI today; server-side pinning rides with the catalog backend. Descriptions
 evolve through the creator updates feed (roadmap), not by editing the blob -
@@ -163,7 +163,7 @@ after the creation round confirms, so the steps cannot share an atomic group. In
 creator-pays-MBR economics, and the explicit approval-hash gate - parked unless creation UX data says
 otherwise.
 
-No funding step exists - the v2 escrow never holds funds.
+No funding step exists - the escrow never holds funds.
 
 ### pledge - one atomic group with a fresh frontier
 

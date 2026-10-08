@@ -1,39 +1,32 @@
-# AlgorArt Claim Tree Protocol - Specification v1
+# AlgorArt Claim Tree Protocol - Specification
 
-> **Status: specification (not implemented).** This document is the formal protocol definition for the redesign that replaces the
-> Claim ASA with a trustless **incremental frontier-Merkle claim tree with in-place null-deletion**. It is written to be implemented by a
-> second engineer without further architectural decisions. The language-independent reference model with property tests lives in
-> [`claim-tree-protocol-reference.py`](claim-tree-protocol-reference.py) - it is the oracle for the contract test suite. No code in this
-> document has been implemented; the repository is unchanged.
->
-> Replaces: the Claim ASA lifecycle in [`claim-asa-redesign.md`](claim-asa-redesign.md) (superseded history), the campaign contract internals
-> in [`campaign.md`](campaign.md), and the affected rows of [`testing.md`](testing.md).
->
-> Amendment A1 (September 27, 2026) fixes the budget mechanism (§14) and the `credit` payment verification (§9) - see
-> [§20](#20-amendment-a1-changelog).
+> This document defines the claim tree: a trustless **incremental
+> frontier-Merkle claim tree with in-place null-deletion**. The contracts, the offline and LocalNet test suites, and the frontend proof
+> builder follow it. The language-independent reference model with property tests lives in
+> [`claim-tree-protocol-reference.py`](claim-tree-protocol-reference.py) and serves as the oracle for the contract test suite
+> (driven via `smart_contracts/oracle.py`).
 
 ## 1. Repository and protocol verification
 
-Verified against the repository at HEAD `1dbd708` and go-algorand `master` (`data/transactions/logic/opcodes.go`,
+AVM facts below were verified against go-algorand `master` (`data/transactions/logic/opcodes.go`,
 `TEAL_opcodes_v12.md`, `config/consensus.go`, `ledger/apply/application.go`, `ledger/apply/asset.go`, `basics/userBalance.go`).
 
-### Current architecture (as implemented)
+### Architecture (as implemented)
 
 - **Campaign** (`smart_contracts/campaign/contract.algo.ts`) - one stateful app per campaign. Global state: `creator`, `vault`, `title`,
-  `metadataUri`, `goal`, `deadline`, `raised`, `status`, `claimAsa`, `deposit`. Methods: `create`, `fund`, `attachClaimAsa`, `pledge`,
-  `claim`, `refund`, `cancelPledge`, `closeOut`, `delete`. The escrow holds only the creator's 0.2 ALGO deposit plus the seeded Claim ASA
-  supply; backers' ALGO goes to the vault; pledge mints claim units; `delete()` is O(1) on both paths.
-- **ClaimsVault** (`smart_contracts/claimsvault/contract.algo.ts`) - permanent pooled escrow. State: `factory`, `asaOf`, `addressOf`,
-  `creatorOf`, `settled` BoxMaps. Methods: `issueClaimAsa`, `seedSupply`, `payBack`, `payClaim`, `settle`, `refund`, `sweepClaimAsa`,
-  `destroyClaimAsa`. Payout amounts are derived from ledger state (`total − vault holding − campaign holding`); payouts are gated on the
-  campaign app caller; refunds work after campaign deletion.
+  `metadataUri`, `goal`, `deadline`, `raised`, `status`, `root`, `n`. Methods: `create`, `pledge`, `cancelPledge`, `refund`,
+  `claim`, `delete`. The escrow is never funded and holds nothing; backers' ALGO goes to the vault; each pledge appends one leaf;
+  `delete()` is O(1) on every path.
+- **ClaimsVault** (`smart_contracts/claimsvault/contract.algo.ts`) - permanent pooled escrow. State: one 65-byte box per campaign
+  (`paidIn`, `paidOut`, `root`, `N`, `settledAt`, `status`). Methods: `credit`, `payBack`, `payClaim`, `settle`, `settleOpen`,
+  `refund`, `notifyDelete`, `finalize`. Payout amounts are per-campaign capped by verified inflows
+  (`amount <= paidIn - paidOut`); inner payouts are gated on the campaign app caller; vault refunds work after campaign deletion.
 - **Factory** (`smart_contracts/factory/contract.algo.ts`) - registration registry only: `owner`, `approvalHash`, `registered` BoxMap;
   `register` verifies the campaign program hash and the creator identity; refundable 18,900 µA deposit.
-- **Transaction groups:** pledge `[Payment→vault, Campaign.pledge]`; refund `[axfer→vault, Campaign.refund]`; claim = single app call;
-  delete = single app call with inner vault calls.
-- **MBR (current):** creator ≈ 0.67 ALGO (recoverable O(1)); vault ≈ 147,100 µA per campaign parked at issuance, recoverable **only**
-  after `sweepClaimAsa` per holder + `destroyClaimAsa` (O(N) on the success path - the failure this protocol removes); backer 100,000 µA
-  per claim-ASA opt-in (backer-owned, reclaimed by `closeOut`).
+- **Transaction groups:** pledge `[Payment→vault, Campaign.pledge, Vault.credit]`; cancel/refund carry one leaf proof each;
+  claim and delete are single app calls with inner vault calls.
+- **MBR (current):** creator ≈ 0.26 ALGO (app + schema + registration, recoverable O(1) via `delete()` + `unregister()`);
+  vault 32,100 µA per live or failed campaign box, recovered via `notifyDelete` or `finalize`; backer 0 (no opt-ins exist).
 
 ### AVM facts relied on (verified)
 
@@ -224,10 +217,10 @@ positions, amounts, txids, and the tree are deterministic). The receipt is a *ca
 
 ## 9. Exact transaction protocol
 
-Two contracts: **Campaign** (v2) and **ClaimsVault** (v2). Factory is unchanged. The vault holds all funds; the campaign escrow holds
-**nothing** (no deposit, no asset - `fund()` is removed entirely).
+Two contracts: **Campaign** and **ClaimsVault**, plus the **Factory** registry. The vault holds all funds; the campaign escrow holds
+**nothing** (no deposit, no asset).
 
-### Campaign global state (v2)
+### Campaign global state
 
 `creator (Account)`, `vault (Application)`, `title (bytes)`, `metadataUri (bytes)`, `goal (uint64)`, `deadline (uint64)`,
 `raised (uint64)`, `status (uint64)`, `root (bytes32)`, `N (uint64)`. Schema: 5 byte-slices + 5 uints.
@@ -265,9 +258,9 @@ box on first pledge). The vault's `paidInOf` therefore counts only real payments
 of the current design is preserved, per campaign.
 
 No pledge-presence check is needed in `credit`: a `credit` without a matching `pledge` - or a `pledge` without a `credit` - strands
-only the deviator's own funds (every later outflow is capped by verified inflows via the balance guard; §17 #29). The previous draft's
-inner `credit` with a group scan from inside the callee was impossible - an inner-called app sees only its own inner group in `gtxn`,
-and a transaction argument to an inner call indexes the inner group, not the outer one - hence `credit` is top-level by construction.
+only the deviator's own funds (every later outflow is capped by verified inflows via the balance guard; §17 #29). `credit` is top-level by construction: an inner-called app sees only its own inner group in `gtxn`, so an inner `credit`
+could never scan the outer payment, and a transaction argument to an inner call indexes the inner group too, so forwarding
+is no fix either.
 
 ### Cancel (pre-deadline withdrawal, while OPEN)
 
@@ -421,7 +414,7 @@ wants zero self-enrichment optics, `sweepTarget` can be a documented community f
 
 **Recommendation: Option B.**
 
-**Governance decision (recorded September 2026, revisit before any real deploy):** `sweepTarget` is the platform treasury.
+**Deployed choice:** `sweepTarget` is the platform treasury.
 The 730-day window and the sweep destination are disclosed in the UI at pledge time (refund-window banner). Rationale:
 residuals will be dust; a future vault can point at a community fund instead - the address is a vault-creation parameter,
 so no contract change is needed either way. The creator as sweep target was rejected (rewards failure, looks like a backdoor).
@@ -565,50 +558,4 @@ sole committer (no auditor, no oracle, no trusted list), all security reduces to
 §17, and the resource model (§14) holds within current AVM limits for every realistic campaign size. Requirements A–F hold as scored
 in §18, with the refund window (Option B) being the one explicit, documented condition attached to A and B.
 
-The implementation must follow §§2–12 verbatim, treat `claim-tree-protocol-reference.py` as the oracle, and carry the differential
-test plan of §16 before any deployment.
-
-## 20. Amendment A1 changelog
-
-September 27, 2026. Two implementation-blocking defects in v1, found on review against the AVM toolchain and consensus rules:
-
-1. **Budget mechanism (§14).** v1 sized "inner no-op self-calls" (`self.reserve()`) to grow the pooled opcode budget. An application may
-   not call itself, even indirectly - reentrancy is explicitly forbidden
-   ([Inner Transactions](https://dev.algorand.co/concepts/smart-contracts/inner-txn/)). Replaced with `ensureBudget(requiredOps)`
-   (Puya OpUp: inner app *creates* of ephemeral programs, caller-paid via `GroupCredit`), the pattern production Puya contracts use.
-   Hash counts and ceilings are unchanged; only the mechanism, the OpUp sizing rule, and the fee table are new.
-2. **`credit` payment verification (§9).** v1 had the campaign inner-call `vault.credit`, which then scanned "the caller's group" via
-   `gtxn` - impossible, because an inner-called app sees only its own inner group in `Txn`/`Gtxn`. A transaction argument to an inner
-   call indexes the inner group too, so forwarding was no fix either. `credit` is therefore a top-level, backer-signed call
-   (`[Payment, Campaign.pledge, Vault.credit]`) whose `gtxn` scan sees the real outer group. Added: the absent-or-`OPEN` box gate, the
-   registration-gated box creation, the no-pledge-presence rationale (§17 #29), the cross-campaign misattribution note, and the outer
-   resource-declaration subsection.
-3. **Governance (§13).** Added the open `sweepTarget` decision (treasury vs community fund/creator vs longer window) as the one item
-   required before TestNet.
-4. **Reference model.** The `append` helper now asserts `fold(P) == root_of(leaves)` instead of discarding the fold - it models the
-   on-chain frontier authentication rather than just counting its hashes.
-5. **Hash opcode (§§1–2).** v1 named the AVM `sha256` opcode for `H`, but `sha256` is plain SHA-256 - the LocalNet spike proved
-   this differentially (on-chain leaf = `SHA256(preimage)`, full 32-byte match). `H` is SHA-512/256 via the `sha512_256` opcode
-   (PuyaTs `op.sha512_256`, same cost 35); the contract was fixed to it and the table above corrected. Nothing else changes -
-   the analysis was always about SHA-512/256 collision resistance.
-
-No change to the tree math (§§2–6), the null proofs (§5 A–G), the accounting invariants (§11), the state machines (§12), or the verdict:
-still GO, now without known implementation blockers. Next gate: the LocalNet spike (`pledge → refund` with differential assertions
-against the reference oracle) before the full rewrite.
-
-## 21. C1 implementation notes
-
-September 28, 2026. Findings from implementing §§9/14 on LocalNet (contracts + 16 integration tests green):
-
-1. **Stray-box closure.** A `credit` without a `pledge` can create a box the campaign never sees (`N == 0`), and a pristine `delete`
-   would skip the vault - orphaning the box `Open` forever (no settle path: `settleOpen` needs the live app, `refund`/`finalize`
-   need `Failed`). Closed by two small changes: `settle` no-ops when no box exists, and `delete` settles unconditionally for
-   non-`Claimed` campaigns. Stray inflows now settle on pristine delete and sweep via `finalize`; the LocalNet suite proves the
-   full arc. No protocol change - this fills a gap the spec left around pristine delete.
-2. **Single-blob paths confirmed.** Refund/cancel paths carry `siblings ‖ top ‖ lower` as one `byte[]`, split at the on-chain-derived
-   `(r, c, e)` cut points - exactly as §14 framed it.
-3. **Raw inner `appArgs` must ABI-encode dynamic types.** Passing the settle `root` raw fails the callee's `byte[]` decode (which
-   expects the uint16 length prefix); the campaign prefixes it explicitly. Static types (`uint64`, `address`) go raw.
-4. **Fee model measured.** Each OpUp iteration submits two inners (create + delete), and inner *app calls* need pooling like payments:
-   spends and vault refunds cost 4,000 µA at test-tree sizes (app call + OpUp pair + payout call); `claim` costs 3,000 µA. The §14 table
-   in [`campaign.md`](campaign.md) carries the measured numbers.
+Contracts, tests, and frontend follow §§2–12; `claim-tree-protocol-reference.py` backs the differential test plan in §16.

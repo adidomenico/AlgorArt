@@ -3,11 +3,10 @@
 How AlgorArt is put together: the **escrow** (Campaign + Merkle tree), the **ClaimsVault** (the pooled refund escrow),
 the **Factory** (canonical registration), and the optional **catalog** for discovery and archival.
 
-> Contract internals: [`campaign.md`](campaign.md) and
-> [`claim-tree-protocol.md`](claim-tree-protocol.md) (the Claim ASA design in
-> [`claim-asa-redesign.md`](claim-asa-redesign.md) is superseded history).
-> Frontend design: [`frontend.md`](frontend.md). Product design & open questions:
-> [`design.md`](design.md). Roadmap: [`roadmap.md`](roadmap.md).
+> Contract reference: [`campaign.md`](campaign.md). Tree math and
+> security: [`claim-tree-protocol.md`](claim-tree-protocol.md).
+> Frontend: [`frontend.md`](frontend.md). Product plan:
+> [`design.md`](design.md). Task list: [`roadmap.md`](roadmap.md).
 
 ## Built with
 

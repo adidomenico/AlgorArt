@@ -100,20 +100,12 @@ semantics, not speed.)
 
 ## Testing taxonomy
 
-The two projects have *different* test shapes:
+Contracts and frontend test differently. Contract suites are offline AVM tests
+with a 100% lines/branches/functions gate; frontend suites are Vitest unit +
+component tests with a 100% gate on components and utils. Both are described in
+[`testing.md`](testing.md) (contracts) and [`frontend.md`](frontend.md) (frontend).
 
-| Part | Test layers | Why |
-| --- | --- | --- |
-| **Contracts** | Offline AVM tests (`contract.algo.spec.ts`) only | Contract code compiles to AVM bytecode and only executes inside the AVM. There is no way to unit-test a method in isolation - the offline AVM runtime *is* the contract's test layer. |
-| **Frontend** | Unit (utils) + component (React + Testing Library) + optional E2E | Ordinary TypeScript/React, so the full pyramid applies. |
-
-1. **Contract offline AVM tests** - full behavioral coverage (every method ×
-   every branch), run under Node; no Docker. Coverage gate: 100%
-   lines/branches/functions (see `docs/testing.md`).
-2. **Frontend unit/component tests** - Vitest over components and utils,
-   coverage at 100% across components and utils (see `vitest.config.ts`).
-
-The offline tests don't need the AlgoKit CLI or Docker because the
+The offline contract tests don't need the AlgoKit CLI or Docker because the
 `algorand-typescript-testing` transformer runs the contract source directly
 under Node. That's why the unit-test job is pure Node - it only consumes the
 frontend clients artifact for import resolution, never the compiled TEAL.

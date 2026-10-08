@@ -10,24 +10,26 @@ workspace: an Algorand TypeScript smart contract plus a React + Vite frontend.
 ## Layout
 
 - `projects/contracts/` - AlgoKit contract project (Algorand TypeScript → AVM)
-  - `smart_contracts/campaign/contract.algo.ts` - the `Campaign` escrow app
-    (`create`, `fund`, `attachClaimAsa`, `pledge`, `claim`, `refund`,
-    `cancelPledge`, `closeOut`, `delete`); its escrow holds only the creator's
-    deposit
+  - `smart_contracts/campaign/contract.algo.ts` - the `Campaign` app
+    (`create`, `pledge`, `cancelPledge`, `refund`, `claim`, `delete`); its
+    escrow is never funded and holds nothing
   - `smart_contracts/claimsvault/contract.algo.ts` - the `ClaimsVault`: pooled
-    refund escrow + per-campaign Claim ASA issuer (`issueClaimAsa`, `seedSupply`,
-    `payBack`, `payClaim`, `settle`, `refund`, `sweepClaimAsa`, `destroyClaimAsa`)
+    refund escrow (`create`, `credit`, `payBack`, `payClaim`, `settle`,
+    `settleOpen`, `refund`, `notifyDelete`, `finalize`)
   - `smart_contracts/factory/contract.algo.ts` - the on-chain `Factory`
-    registry (owner-configured approval hash, `register`/`unregister`)
+    registry (owner-configured approval hash, `setApprovalHash`,
+    `register`/`unregister`, readonly `isRegistered`)
   - `smart_contracts/artifacts/` - **generated** (compiled TEAL, ARC-32/56 specs, clients)
 - `projects/frontend/` - React + Vite + TypeScript dApp
-- [`docs/`](docs/) - technical docs: [`campaign.md`](docs/campaign.md)
-  (internals), [`claim-asa-redesign.md`](docs/claim-asa-redesign.md)
-  (design rationale), [`testing.md`](docs/testing.md),
-  [`frontend.md`](docs/frontend.md), [`ci.md`](docs/ci.md),
-  [`conventions.md`](docs/conventions.md) (lint/format/tsconfig rules),
-  [`roadmap.md`](docs/roadmap.md) (checklist), [`design.md`](docs/design.md) (product plan)
-- [`README.md`](README.md) - the project specification (contract design, roadmap, testing strategy)
+- `projects/backend/` - optional Fastify + Postgres API (profiles, settings, pinning, catalog)
+- [`docs/`](docs/) - technical docs: [`architecture.md`](docs/architecture.md)
+  (overview), [`campaign.md`](docs/campaign.md) (contract reference),
+  [`claim-tree-protocol.md`](docs/claim-tree-protocol.md) (tree math and
+  security), [`frontend.md`](docs/frontend.md), [`testing.md`](docs/testing.md),
+  [`ci.md`](docs/ci.md), [`conventions.md`](docs/conventions.md)
+  (lint/format/tsconfig rules), [`roadmap.md`](docs/roadmap.md) (checklist),
+  [`design.md`](docs/design.md) (product plan)
+- [`README.md`](README.md) - project overview, quick start, and docs map
 
 ## Commands
 
@@ -49,6 +51,13 @@ cd ../frontend
 npm run dev                      # regenerates app clients then runs Vite
 npm run check-types              # tsc --noEmit
 npm run lint                     # ESLint (+ react/react-hooks plugins)
+npm run format                   # Prettier check
+
+cd ../backend                    # optional API; Postgres via docker compose
+npm run db:migrate               # apply migrations
+npm run dev                      # Fastify in watch mode
+npm run check-types              # tsc --noEmit
+npm run lint                     # ESLint
 npm run format                   # Prettier check
 ```
 

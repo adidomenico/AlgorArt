@@ -57,9 +57,10 @@ indexer queries filtered by the connected address - no new storage.
 
 Content is hybrid and already implemented (see [`frontend.md`](frontend.md)): a
 short on-chain `title`, with the long description/image/category off-chain behind
-`metadataUri`. `title` is immutable; re-pointing `metadataUri` needs an
-`updateMetadata()` method - a contract change that must land **before** any
-"final" deploy (see [Contract versioning](#contract-versioning-and-migration)).
+`metadataUri`. Both are immutable by decision (see [`roadmap.md`](roadmap.md)):
+a backer's pledge can never be re-described under them. Fixes and updates ship
+through the creator updates feed below, and mutability can return later via the
+off-chain JSON.
 
 ## UI / design work
 

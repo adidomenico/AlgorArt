@@ -223,8 +223,8 @@ OpUp iterations grow only with `log N`-class path lengths (spec §14); typical c
 
 ## Implementation notes (PuyaTs gotchas, proven in this repo)
 
-1. **Hash opcode.** `op.sha256` is plain SHA-256; the protocol hash is `op.sha512_256` (same cost). The LocalNet spike caught the mix-up
-   differentially.
+1. **Hash opcode.** `op.sha256` is plain SHA-256; the protocol hash is `op.sha512_256` (same cost). The offline and
+   integration suites pin this differentially against the Python oracle.
 2. **Operators.** `+ - *` and comparisons are overloaded for `uint64`; `/ % >> << ^ & |` fall back to JS `number` semantics and poison any
    inferred variable - use `op.shr`/`op.shl`, annotate every derived numeric local explicitly, and test bit-twiddling offline.
 3. **Loops must exit early.** A full 64-iteration scan blows the 700 budget on its own: `popcount` exits past the highest set bit,

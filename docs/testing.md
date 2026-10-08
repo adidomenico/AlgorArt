@@ -110,7 +110,7 @@ class as it does not extend Contract or BaseContract".
   self-calls. The vault's own methods get their boxes auto-populated from the
   ARC-56 spec.
 - The setup chain is: `create(vault, …)` → `register`. There is no funding
-  step - the v2 escrow never holds funds.
+   step - the escrow never holds funds.
 - Post-settlement refunds call the vault directly:
   `refund(uint64,uint64,uint64,byte[],byte[])void` with the campaign app id -
   the vault verifies the path against its own stored root.
@@ -234,53 +234,6 @@ Factory + ClaimsVault + Campaign.
   `/ % >> << ^ & |` fall back to JS `number` semantics - use `op.shr`/`op.shl`
   and annotate every derived numeric local, or compilation fails with
   "`number` is not valid".
-
-## Milestones (done)
-
-- [x] **M0 - Harness.** Install tooling; `vitest.config.mts` + `vitest.setup.ts`;
-      `npm run test` runs.
-- [x] **M1 - Create + pledge.** `create` success + guard failures; `pledge` success,
-      re-pledge accumulation, and every guard failure. (Also covered `claim` and
-      `refund` happy paths + core guards while proving the harness.)
-- [x] **M2 - Settlement.** Remaining `claim` branch (double-claim) and `refund`
-      branches (double-refund, multi-backer).
-- [x] **M3 - Full matrix.** Added the `create`-once branch; every method × every
-      branch is now covered (see the matrix below).
-- [x] **M4 - LocalNet integration.** Deploy to the sandbox, exercise
-      create → pledge → claim and → refund end-to-end.
-- [x] **M5 - `cancelPledge`.** Contract method + offline behavioral tests +
-      frontend wiring (helper, detail-page action, unit tests).
-- [x] **M6 - guarded `delete()`.** Contract method + offline guard tests +
-      LocalNet integration covering the full money flow with three backers,
-      asserting balances, minimum balances (MBR), fees, and the sponsorship-floor
-      free on every step.
-- [x] **M7 - Claim ASA redesign.** Replaced the Merkle/spent-bitmap machinery with
-      the per-campaign Claim ASA (`fund` issues it, `pledge` mints, refunds
-      surrender), added `closeOut`, the Factory registry contract, and full
-      offline + LocalNet coverage of the new lifecycle, MBR accounting, and the
-      double-refund invariants. (Superseded by M9 below; kept as history -
-      see [`claim-asa-redesign.md`](claim-asa-redesign.md).)
-- [x] **M8 - Split vault.** Moved the backers' funds into a permanent
-      ClaimsVault (pooled refund escrow + Claim ASA issuer); the campaign escrow
-      now holds only the creator's deposit, so both settlement paths finalize in
-      O(1) - including the flagship straggler scenario (creator deletes; the
-      straggler refunds from the vault afterwards). Added the attack matrix:
-      cross-campaign isolation, pooled solvency, settlement-after-deletion,
-      counterfeit assets, double claims, pledge→cancel→refund, payout-authority
-      hijacking, stray-ALGO, and the GC round trip (sweep + destroy frees the
-      vault's parked MBR). (Superseded by M9 below; kept as history.)
-- [x] **M9 - Claim-tree rewrite.** Replaced the Claim ASA with the incremental
-      frontier-Merkle tree (`docs/claim-tree-protocol.md`): no assets, no
-      opt-ins, no per-backer storage anywhere. Rewrote both contracts
-      (`credit`/`payBack`/`payClaim`/`settle`/`settleOpen`/`refund`/
-      `notifyDelete`/`finalize`; `pledge`/`cancelPledge`/`refund`/`claim`/
-      `delete` + the tree core), the offline specs (35 campaign + 50 vault + 16
-      factory, 100% lines/branches/functions), and the integration suites (8 +
-      4 + 4 tests with oracle-differential roots and µA-exact accounting,
-      including pooled isolation, window enforcement, and self-harm
-      containment). Frontend proof builder (`lib/claimtree.ts`) proven against
-      committed oracle vectors; flows rewritten (atomic pledge groups, per-leaf
-      spends, stale-proof retry, refund-window banner).
 
 ## Coverage matrix (every method × every branch)
 
