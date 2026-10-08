@@ -1,9 +1,9 @@
 # CI
 
-Design notes for the GitHub Actions setup. Implemented so far: a single
-consolidated [`build-and-test`](.github/workflows/build-and-test.yml) workflow
-plus a separate [`markdown-lint`](.github/workflows/markdown-lint.yml). This
-documents the reasoning behind the split.
+This page describes the GitHub Actions setup: a consolidated
+[`build-and-test`](.github/workflows/build-and-test.yml) workflow
+plus a separate [`markdown-lint`](.github/workflows/markdown-lint.yml), and
+the reasoning behind the split.
 
 ## Principles
 
@@ -81,8 +81,8 @@ Implemented at `.github/workflows/build-and-test.yml`. Four jobs, with
 - **`integration-test`** - downloads `contracts-artifacts`, starts LocalNet,
   and runs the compiled TEAL against a live algod.
 
-`npm run format` runs Prettier in `--check` mode, so it fails on style drift
-without modifying files - the right behavior for CI.
+`npm run format` runs Prettier in `--check` mode, so style drift fails the build
+without modifying files.
 
 ## Workflow: markdown-lint (separate file)
 
@@ -93,10 +93,8 @@ cannot have a different trigger than its workflow. Splitting it allows a
 config) change.
 
 This also gives markdown its own status check, so a docs failure isn't buried
-under the per-project matrix. The lint command itself still checks *all*
-`*.md` files - cheap, and the rules are repo-wide. (The job is ~30s, so it
-could just as well run on every push; the `paths:` filter is about clean
-semantics, not speed.)
+under the per-project matrix. The lint command checks all
+`*.md` files; the `paths:` filter limits runs to docs changes.
 
 ## Testing taxonomy
 
@@ -110,10 +108,10 @@ The offline contract tests don't need the AlgoKit CLI or Docker because the
 under Node. That's why the unit-test job is pure Node - it only consumes the
 frontend clients artifact for import resolution, never the compiled TEAL.
 
-## Caching - avoid redoing work every run
+## Caching
 
-No custom Docker image is built or pulled for any job. Tooling is installed on
-the runner and **cached**, which is simpler than maintaining a CI image:
+No custom Docker image is built or pulled for any job. Tooling installs on
+the runner and caches:
 
 - **Node** - `actions/setup-node@v7` with `cache: npm` and
   `cache-dependency-path` pointing at the project's `package-lock.json`. This
@@ -121,14 +119,11 @@ the runner and **cached**, which is simpler than maintaining a CI image:
   steps in `build`, one per project's lockfile.)
 - **AlgoKit (Python)** - installed fresh via `pipx` in the `build` and
   `integration-test` jobs (not cached). The install is fast relative to the
-  Docker container startup that dominates the integration job, and caching pipx
-  correctly (venv *and* the `bin` symlinks) isn't worth the complexity.
+  Docker container startup that dominates the integration job.
 
 The only Docker in CI is the **prebuilt** algod/indexer sandbox images, pulled
-only by the `integration-test` job (not the hot path). If a custom CI image
-ever becomes worth it (runner install time is the trigger), publish it once to
-GHCR and rebuild only when its `Dockerfile` changes - but at this scale,
-install-on-runner + cache is the right default.
+only by the `integration-test` job. If runner install time ever justifies a custom
+CI image, publish it once to GHCR and rebuild only when its `Dockerfile` changes.
 
 ## Artifacts - sharing build output between jobs
 
@@ -141,7 +136,5 @@ is compiled twice:
   clients). Consumed by `lint-format-type-check` (frontend lane) and
   `unit-test` (frontend lane).
 
-Artifacts are the right tool here because the expensive step is Docker startup
-in `integration-test`, not the compile itself; sharing the already-cheap
-compile would be premature. The value is that the frontend's *two* consumer
-jobs both get correct, freshly-generated clients without an AlgoKit install.
+Downstream jobs download these artifacts instead of recompiling, so both frontend
+consumer jobs get freshly generated clients without an AlgoKit install.

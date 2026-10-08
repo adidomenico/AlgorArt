@@ -272,11 +272,10 @@ complements the two layers above rather than replacing them.
 The existing layers share one blind spot: they do not exercise the **frontend
 send path** (`lib/transaction.ts`) against a live chain. The contract
 integration tests call the low-level client directly (with `extraFee`), so a bug
-in the frontend helpers - e.g. using `coverAppCallInnerTransactionFees: true`,
+in the frontend helpers (for example, `coverAppCallInnerTransactionFees: true`,
 which throws at send time because the typed client doesn't populate the required
-`maxFee` context - passes unit tests and integration tests but fails the moment a
-real user clicks a button. That exact bug shipped and was only caught manually.
-Browser E2E tests close this gap.
+`maxFee` context) passes unit tests and integration tests, and fails only when a
+real user clicks a button. Browser E2E tests close this gap.
 
 ### Scope
 
@@ -290,7 +289,7 @@ Browser E2E tests close this gap.
 - **Claim / refund** - after fast-forwarding the deadline, assert the creator /
   backer flows complete.
 
-### Wallet strategy (the main design decision)
+### Wallet strategy
 
 Automating real Pera/Defly wallet popups is brittle and out of scope for a
 first cut. The plan is to inject a **test signer** (a LocalNet-funded mnemonic)
