@@ -111,7 +111,7 @@ The two projects have *different* test shapes:
    every branch), run under Node; no Docker. Coverage gate: 100%
    lines/branches/functions (see `docs/testing.md`).
 2. **Frontend unit/component tests** — Vitest over components and utils,
-   coverage ≥ 90% across components and utils (see `vitest.config.ts`).
+   coverage at 100% across components and utils (see `vitest.config.ts`).
 
 The offline tests don't need the AlgoKit CLI or Docker because the
 `algorand-typescript-testing` transformer runs the contract source directly

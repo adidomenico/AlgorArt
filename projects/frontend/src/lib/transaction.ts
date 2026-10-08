@@ -149,6 +149,8 @@ export async function fetchVaultBox(appId: bigint): Promise<VaultBoxView | undef
   return {
     paidIn: view.getBigUint64(0),
     paidOut: view.getBigUint64(8),
+    // The length check above guarantees byte 56 exists; the fallback satisfies noUncheckedIndexedAccess.
+    /* v8 ignore next */
     status: raw[56] ?? 0,
     settledAt: view.getBigUint64(57),
   }

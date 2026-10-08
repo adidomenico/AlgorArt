@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import CampaignDetail from './CampaignDetail'
@@ -44,7 +44,7 @@ vi.mock('@txnlab/use-wallet-react', () => ({
 }))
 
 vi.mock('./PledgeForm', () => ({
-  default: () => <div>PLEDGE_FORM</div>,
+  default: ({ onPledged }: { onPledged: () => void }) => <button onClick={onPledged}>PLEDGE_FORM</button>,
 }))
 
 const nowSeconds = BigInt(Math.floor(Date.now() / 1000))
@@ -96,6 +96,25 @@ describe('CampaignDetail', () => {
     expect(await screen.findByText('Campaign #42')).toBeInTheDocument()
   })
 
+  it('renders without pledges when the leaves lookup fails', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('open'))
+    fetchMyLeavesMock.mockRejectedValue(new Error('offline'))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    expect(await screen.findByText('Campaign #42')).toBeInTheDocument()
+    expect(screen.queryByText('PLEDGE_FORM')).toBeInTheDocument()
+  })
+
+  it('shows the refund window banner for settled failed campaigns', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('failed'))
+    fetchVaultBoxMock.mockResolvedValue({ status: 2, settledAt: 100n })
+    fetchVaultConfigMock.mockResolvedValue({ window: 200n, sweepTarget: 'TARGET' })
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    expect(await screen.findByText(/Refunds are open until/)).toBeInTheDocument()
+    expect(screen.getByText(/TARGET/)).toBeInTheDocument()
+  })
+
   it('renders the title when present and the metadata uri when set', async () => {
     getCampaignMock.mockResolvedValue(viewModel('open', { title: 'My first novel', metadataUri: 'ipfs://QmExample' }))
     render(<CampaignDetail appId={42n} onBack={() => {}} />)
@@ -104,11 +123,75 @@ describe('CampaignDetail', () => {
     expect(screen.getByText(/ipfs:\/\/QmExample/)).toBeInTheDocument()
   })
 
+  it('renders the metadata description and category', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            description: 'A story',
+            category: 'books',
+            image: 'https://example.com/cover-which-is-far-too-short-for-gateway-use-anyway.jpg',
+          }),
+      }),
+    )
+    try {
+      getCampaignMock.mockResolvedValue(
+        viewModel('open', { title: 'Novel', metadataUri: 'ipfs://QmYwAPJzv9CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG' }),
+      )
+      render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+      expect(await screen.findByText('A story')).toBeInTheDocument()
+      expect(screen.getByText(/Category: books/)).toBeInTheDocument()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('shows the pledge form when open and connected', async () => {
     getCampaignMock.mockResolvedValue(viewModel('open'))
     render(<CampaignDetail appId={42n} onBack={() => {}} />)
 
     expect(await screen.findByText('PLEDGE_FORM')).toBeInTheDocument()
+  })
+
+  it('reloads the campaign after a pledge', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('open'))
+    const user = userEvent.setup()
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await user.click(await screen.findByText('PLEDGE_FORM'))
+    await waitFor(() => {
+      expect(getCampaignMock).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('renders without leaves when disconnected', async () => {
+    useWalletMock.mockReturnValue({ activeAddress: null })
+    getCampaignMock.mockResolvedValue(viewModel('open'))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    expect(await screen.findByText('Campaign #42')).toBeInTheDocument()
+  })
+
+  it('hides the refund window banner when the box lookup fails', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('failed'))
+    fetchVaultBoxMock.mockRejectedValue(new Error('offline'))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await screen.findByText('Campaign #42')
+    expect(screen.queryByText(/Refunds are open until/)).not.toBeInTheDocument()
+  })
+
+  it('hides the refund window banner when the config lookup fails', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('failed'))
+    fetchVaultBoxMock.mockResolvedValue({ status: 2, settledAt: 100n })
+    fetchVaultConfigMock.mockRejectedValue(new Error('offline'))
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await screen.findByText('Campaign #42')
+    expect(screen.queryByText(/Refunds are open until/)).not.toBeInTheDocument()
   })
 
   it('hides the pledge form when the viewer is the creator', async () => {

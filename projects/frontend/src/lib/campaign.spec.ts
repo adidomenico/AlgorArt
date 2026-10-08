@@ -1,5 +1,5 @@
 import algosdk from 'algosdk'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { decodeGlobalState, deriveStatus, factoryAppId, isCampaignApp, toCampaignViewModel } from './campaign'
 
 const ZERO_ADDRESS = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ'
@@ -42,6 +42,24 @@ function campaignApp(overrides: { status?: bigint; raised?: bigint } = {}): algo
 describe('factoryAppId', () => {
   it('reads the Factory app id from the environment', () => {
     expect(factoryAppId()).toBe(1001n)
+  })
+
+  it('reads zero when the variable is absent', () => {
+    vi.stubEnv('VITE_FACTORY_APP_ID', undefined)
+    try {
+      expect(factoryAppId()).toBe(0n)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('reads zero for non-positive values', () => {
+    vi.stubEnv('VITE_FACTORY_APP_ID', '0')
+    try {
+      expect(factoryAppId()).toBe(0n)
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 })
 

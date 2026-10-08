@@ -38,6 +38,7 @@ const {
   frontierMock,
   pathBlobMock,
   fetchMyLeavesMock,
+  factoryAppIdMock,
 } = vi.hoisted(() => ({
   sendCreateMock: vi.fn(),
   sendRegisterMock: vi.fn(),
@@ -62,6 +63,7 @@ const {
   frontierMock: vi.fn(),
   pathBlobMock: vi.fn(),
   fetchMyLeavesMock: vi.fn(),
+  factoryAppIdMock: vi.fn(),
 }))
 
 vi.mock('../contracts/Campaign', () => ({
@@ -116,7 +118,7 @@ vi.mock('../contracts/Factory', () => ({
 }))
 
 vi.mock('./campaign', () => ({
-  factoryAppId: () => 1001n,
+  factoryAppId: (...args: unknown[]) => factoryAppIdMock(...args),
   vaultAppId: () => 2002n,
 }))
 
@@ -156,6 +158,7 @@ describe('transaction helpers', () => {
     frontierMock.mockReturnValue(new Uint8Array())
     pathBlobMock.mockReturnValue(new Uint8Array())
     fetchMyLeavesMock.mockResolvedValue([])
+    factoryAppIdMock.mockReturnValue(1001n)
     paramsPledgeMock.mockResolvedValue({ pledge: 'params' })
     paramsCreditMock.mockResolvedValue({ credit: 'params' })
     paymentMock.mockResolvedValue({ payment: 'pay-txn' })
@@ -184,6 +187,37 @@ describe('transaction helpers', () => {
     expect(sendCreateMock).toHaveBeenCalledOnce()
     expect(sendRegisterMock).toHaveBeenCalledOnce()
     expect(waitForIndexerCatchUpMock).toHaveBeenCalledOnce()
+  })
+
+  it('creates without registering when no factory is configured', async () => {
+    factoryAppIdMock.mockReturnValue(0n)
+    await createCampaign(session, 'Title', 'ipfs://meta', 1_000_000n, 2_000n)
+
+    expect(sendCreateMock).toHaveBeenCalledOnce()
+    expect(sendRegisterMock).not.toHaveBeenCalled()
+  })
+
+  it('deletes without unregistering when no factory is configured', async () => {
+    factoryAppIdMock.mockReturnValue(0n)
+    await deleteCampaign(9n, session)
+
+    expect(sendDeleteMock).toHaveBeenCalledOnce()
+    expect(sendUnregisterMock).not.toHaveBeenCalled()
+  })
+
+  it('skips the indexer wait when confirmations carry no round', async () => {
+    composerSendMock.mockResolvedValue({ confirmation: {} })
+    for (const mock of [sendCancelPledgeMock, sendRefundMock, sendClaimMock, sendDeleteMock, sendVaultRefundMock]) {
+      mock.mockResolvedValue({ confirmation: {} })
+    }
+    campaignBoxValueMock.mockResolvedValue(new Uint8Array(65).fill(1))
+
+    await pledge(9n, session, 1_000_000n)
+    await cancelPledge(9n, session, { position: 2, amount: 1_000_000n, txidHex: 'ab'.repeat(32) })
+    await refund(9n, session, { position: 0, amount: 1_000_000n, txidHex: 'ab'.repeat(32) })
+    await claim(9n, session)
+    await deleteCampaign(9n, session)
+    expect(waitForIndexerRoundMock).not.toHaveBeenCalled()
   })
 
   it('pledge submits one atomic [pay, pledge, credit] group with a fresh frontier', async () => {

@@ -35,17 +35,17 @@ export default defineConfig({
     },
     coverage: {
       provider: 'v8',
-      // Coverage gates components and utils (README: "line coverage ≥ 90% on
-      // components and utils"). App shell/entry files (App, Home, main) and the
-      // generated contract clients are excluded.
+      // Coverage gates components and utils at 100%. App shell/entry files (App, Home, main) and the
+      // generated contract clients are excluded. Genuinely unreachable defensive branches carry
+      // `/* v8 ignore next */` with a reason instead of theater tests.
       include: ['src/components/**/*.{ts,tsx}', 'src/features/**/*.{ts,tsx}', 'src/lib/**/*.{ts,tsx}', 'src/utils/**/*.{ts,tsx}'],
       exclude: ['src/**/*.spec.ts', 'src/**/*.spec.tsx', 'src/**/*.test.ts', 'src/**/*.test.tsx'],
       reporter: ['text', 'json-summary'],
       thresholds: {
-        lines: 90,
-        branches: 90,
-        functions: 90,
-        statements: 90,
+        lines: 100,
+        branches: 100,
+        functions: 100,
+        statements: 100,
       },
     },
   },

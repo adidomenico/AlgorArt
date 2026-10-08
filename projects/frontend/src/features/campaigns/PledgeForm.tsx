@@ -18,6 +18,8 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
   const canSubmit = amount.trim() !== '' && !busy && Boolean(activeAddress && transactionSigner)
 
   const handleSubmit = async () => {
+    // Defensive: the submit button is disabled while disconnected, so this is unreachable in the UI.
+    /* v8 ignore next */
     if (!activeAddress) return
 
     setBusy(true)

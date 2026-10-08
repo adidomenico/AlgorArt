@@ -59,4 +59,27 @@ describe('Account', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(screen.queryByText(/Balance:/)).not.toBeInTheDocument()
   })
+
+  it('renders without a balance when no wallet is connected', () => {
+    useWalletMock.mockReturnValue({ activeAddress: null })
+    render(<Account />)
+    expect(screen.queryByText(/Balance:/)).not.toBeInTheDocument()
+    expect(getInformationMock).not.toHaveBeenCalled()
+  })
+
+  it('does not update the balance when unmounted before the lookup finishes', async () => {
+    let resolveLookup: ((value: { balance: { microAlgo: bigint } }) => void) | undefined
+    getInformationMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveLookup = resolve
+      }),
+    )
+    const { unmount } = render(<Account />)
+    unmount()
+
+    if (resolveLookup === undefined) throw new Error('lookup was not called')
+    resolveLookup({ balance: { microAlgo: 5_000_000n } })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.queryByText(/Balance:/)).not.toBeInTheDocument()
+  })
 })

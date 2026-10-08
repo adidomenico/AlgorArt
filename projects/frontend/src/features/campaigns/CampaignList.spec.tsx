@@ -11,8 +11,13 @@ let resolveList: ((value: CampaignViewModel[]) => void) | undefined
 let rejectList: ((reason: unknown) => void) | undefined
 
 vi.mock('@txnlab/use-wallet-react', () => ({
-  useWallet: () => ({ activeAddress: null }),
+  useWallet: () => useWalletMock(),
 }))
+
+const useWalletMock = vi.fn()
+beforeEach(() => {
+  useWalletMock.mockReturnValue({ activeAddress: null })
+})
 
 const nowSeconds = BigInt(Math.floor(Date.now() / 1000))
 const campaigns: CampaignViewModel[] = [
@@ -80,6 +85,15 @@ describe('CampaignList', () => {
     expect(await screen.findByText(/Failed to load campaigns/)).toBeInTheDocument()
   })
 
+  it('passes the connected address when loading', async () => {
+    useWalletMock.mockReturnValue({ activeAddress: 'CONNECTED' })
+    listCampaignsMock.mockResolvedValue(campaigns)
+    render(<CampaignList onSelectCampaign={() => {}} />)
+
+    expect(await screen.findByText('#1')).toBeInTheDocument()
+    expect(listCampaignsMock).toHaveBeenCalledWith(1_000_000_000n, 'CONNECTED')
+  })
+
   it('calls onSelectCampaign when a card is clicked', async () => {
     listCampaignsMock.mockResolvedValue(campaigns)
     const onSelectCampaign = vi.fn()
@@ -104,6 +118,23 @@ describe('CampaignList', () => {
     await new Promise((r) => setTimeout(r, 0))
     resolveList?.(campaigns)
     expect(screen.queryByText('#1')).not.toBeInTheDocument()
+  })
+
+  it('does not list campaigns when unmounted before the timestamp resolves', async () => {
+    let resolveTimestamp: ((value: bigint) => void) | undefined
+    fetchChainTimestampMock.mockReturnValue(
+      new Promise<bigint>((resolve) => {
+        resolveTimestamp = resolve
+      }),
+    )
+    listCampaignsMock.mockClear()
+    const { unmount } = render(<CampaignList onSelectCampaign={() => {}} />)
+    unmount()
+
+    if (resolveTimestamp === undefined) throw new Error('timestamp was not requested')
+    resolveTimestamp(1_000_000_000n)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(listCampaignsMock).not.toHaveBeenCalled()
   })
 
   it('does not update state when unmounted before the load rejects', async () => {

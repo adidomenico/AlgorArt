@@ -129,7 +129,7 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
 ## Testing
 
 - Contracts: simulator tests for full behavioral coverage (every method × every branch).
-- Frontend: Vitest, with line coverage ≥ 90% on components and utils.
+- Frontend: Vitest, with line coverage at 100% on components and utils.
 - Add or update tests in the same change set as the code they cover.
 
 ## Definition of done

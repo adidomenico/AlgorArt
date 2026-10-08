@@ -92,6 +92,8 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
 
   if (loading || nowSeconds === null) return <p className="text-muted">Loading campaign…</p>
   if (error) return <p className="text-badge-failed">{error}</p>
+  // load() sets either campaign or error, so a null campaign here is unreachable.
+  /* v8 ignore next */
   if (!campaign) return null
 
   const percent = campaign.goalMicroAlgos > 0n ? Number((campaign.raisedMicroAlgos * 100n) / campaign.goalMicroAlgos) : 0
@@ -121,6 +123,8 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   }
 
   const sessionOf = () => {
+    // Defensive: every caller is gated on `connected`, so this is unreachable in the UI.
+    /* v8 ignore next */
     if (!activeAddress) throw new Error('no wallet')
     return { address: activeAddress, signer: transactionSigner }
   }

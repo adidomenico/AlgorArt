@@ -127,6 +127,19 @@ describe('fetchRegisteredCampaignIds', () => {
     const ids = await fetchRegisteredCampaignIds(1001n)
     expect([...ids]).toEqual([7n, 1_234_567_890n])
   })
+
+  it('follows box search pages', async () => {
+    const pages = [{ boxes: [{ name: registrationBoxName(7n) }], nextToken: 't' }, { boxes: [{ name: registrationBoxName(8n) }] }]
+    indexerMock.searchForApplicationBoxes.mockImplementation(() => ({
+      limit: () => ({
+        nextToken: () => ({
+          do: () => Promise.resolve(pages.shift() ?? { boxes: [] }),
+        }),
+        do: () => Promise.resolve(pages.shift() ?? { boxes: [] }),
+      }),
+    }))
+    expect([...(await fetchRegisteredCampaignIds(1001n))]).toEqual([7n, 8n])
+  })
 })
 
 describe('listCampaigns', () => {
@@ -171,6 +184,44 @@ describe('listCampaigns', () => {
       const campaigns = await listCampaigns(1_000n)
       expect(campaigns.map((c) => c.id)).toEqual([42n])
       expect(indexerMock.searchForApplicationBoxes).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('follows application scan pages without a factory', async () => {
+    vi.stubEnv('VITE_FACTORY_APP_ID', '')
+    try {
+      const pages = [{ applications: [campaignApp({ id: 42n })], nextToken: 't' }, { applications: [campaignApp({ id: 43n })] }]
+      indexerMock.searchForApplications.mockImplementation(() => ({
+        limit: () => ({
+          nextToken: () => ({
+            do: () => Promise.resolve(pages.shift() ?? { applications: [] }),
+          }),
+          do: () => Promise.resolve(pages.shift() ?? { applications: [] }),
+        }),
+      }))
+
+      const campaigns = await listCampaigns(1_000n)
+      expect(campaigns.map((c) => c.id)).toEqual([42n, 43n])
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('returns undefined for a missing application', async () => {
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({}))
+    expect(await getCampaign(44n, 3_000n)).toBeUndefined()
+  })
+
+  it('includes viewer pledges in the full scan without a factory', async () => {
+    vi.stubEnv('VITE_FACTORY_APP_ID', '')
+    try {
+      indexerMock.searchForApplications.mockImplementation(() => searchBuilder(() => [campaignApp({ id: 42n })]))
+      fetchMyLeavesMock.mockResolvedValue([{ position: 0, amount: 250_000n, txidHex: 'aa' }])
+
+      const campaigns = await listCampaigns(1_000n, 'ADDRESS')
+      expect(campaigns[0]?.myPledgeMicroAlgos).toBe(250_000n)
     } finally {
       vi.unstubAllEnvs()
     }

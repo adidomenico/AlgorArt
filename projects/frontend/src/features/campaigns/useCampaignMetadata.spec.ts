@@ -36,4 +36,42 @@ describe('useCampaignMetadata', () => {
     })
     expect(result.current).toBeNull()
   })
+
+  it('does not update state when unmounted before the load finishes', async () => {
+    let resolveFetch: ((value: { ok: boolean; json: () => Promise<unknown> }) => void) | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockReturnValue(
+        new Promise((resolve) => {
+          resolveFetch = resolve
+        }),
+      ),
+    )
+    const { result, unmount } = renderHook(() => useCampaignMetadata('ipfs://QmYwAPJzv9CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG'))
+    unmount()
+
+    if (resolveFetch === undefined) throw new Error('fetch was not called')
+    resolveFetch({ ok: true, json: () => Promise.resolve({ description: 'A story' }) })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(result.current).toBeNull()
+  })
+
+  it('does not update state when unmounted before a failed load finishes', async () => {
+    let rejectFetch: ((reason: unknown) => void) | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockReturnValue(
+        new Promise((_, reject) => {
+          rejectFetch = reject
+        }),
+      ),
+    )
+    const { result, unmount } = renderHook(() => useCampaignMetadata('ipfs://QmYwAPJzv9CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG'))
+    unmount()
+
+    if (rejectFetch === undefined) throw new Error('fetch was not called')
+    rejectFetch(new Error('offline'))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(result.current).toBeNull()
+  })
 })

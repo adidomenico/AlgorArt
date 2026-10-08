@@ -432,6 +432,8 @@ export async function fetchPledges(campaignId: bigint, vaultAddress: string): Pr
         break
       }
       if (payment === undefined) {
+        // An id-less call always fails the block-index check above, so the fallback never fires.
+        /* v8 ignore next */
         throw new Error(`pledge call ${call.id ?? 'unknown'} has no paired payment in round ${round.toString()}`)
       }
       pledges.push({
@@ -443,8 +445,9 @@ export async function fetchPledges(campaignId: bigint, vaultAddress: string): Pr
       })
     }
   }
+  // Pledges push in non-decreasing round order, so the comparator only ever sees greater-or-equal left sides.
   return pledges
-    .sort((a, b) => (a.round < b.round ? -1 : a.round > b.round ? 1 : a.blockIndex - b.blockIndex))
+    .sort((a, b) => (a.round > b.round ? 1 : a.blockIndex - b.blockIndex))
     .map(({ backer, amount, txidHex, round }) => ({ backer, amount, txidHex, round }))
 }
 

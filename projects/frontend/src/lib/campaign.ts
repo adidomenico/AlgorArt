@@ -63,6 +63,8 @@ export function vaultAppId(): bigint {
 
 function envAppId(key: string): bigint {
   const env: Record<string, string | undefined> = {
+    // Browser-only builds have no process object; vitest always runs under node.
+    /* v8 ignore next */
     ...(typeof process === 'undefined' ? {} : process.env),
     ...import.meta.env,
   }
@@ -249,6 +251,8 @@ export async function fetchRegisteredCampaignIds(factoryId: bigint): Promise<Set
       if (name.length !== 9 || name[0] !== 0x72) continue
       let id = 0n
       for (let i = 1; i <= 8; i++) {
+        // The length check above guarantees all eight bytes exist; the fallback satisfies noUncheckedIndexedAccess.
+        /* v8 ignore next */
         id = (id << 8n) | BigInt(name[i] ?? 0)
       }
       registered.add(id)

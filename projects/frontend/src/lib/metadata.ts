@@ -112,6 +112,8 @@ const MIN_CID_LENGTH = 32
 export function looksResolvable(uri: string): boolean {
   const trimmed = uri.trim()
   if (!trimmed.startsWith('ipfs://')) return trimmed !== ''
+  // split() always yields at least one segment; the fallback satisfies noUncheckedIndexedAccess.
+  /* v8 ignore next */
   const firstSegment = trimmed.slice('ipfs://'.length).split('/')[0] ?? ''
   return firstSegment.length >= MIN_CID_LENGTH
 }

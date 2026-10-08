@@ -334,7 +334,9 @@ The frontend has its own Vitest config (jsdom environment) plus
 coverage via `npm run test:coverage`.
 
 Coverage gates **components and utils** (the app shell and generated clients are
-excluded), with thresholds of 90% across lines/branches/functions/statements:
+excluded), with thresholds of 100% across lines/branches/functions/statements.
+Genuinely unreachable defensive branches carry `/* v8 ignore next */` with a
+reason instead of theater tests:
 
 - `lib/format.ts` — ALGO/microAlgo conversion, deadline/countdown formatting.
 - `lib/campaign.ts` — global-state decoding, status derivation, tree-sum pledge

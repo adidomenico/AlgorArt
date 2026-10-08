@@ -17,13 +17,10 @@ export function useCampaignMetadata(metadataUri: string): CampaignMetadata | nul
       return
     }
     let cancelled = false
-    fetchCampaignMetadata(metadataUri)
-      .then((result) => {
-        if (!cancelled) setMetadata(result)
-      })
-      .catch(() => {
-        if (!cancelled) setMetadata(null)
-      })
+    // fetchCampaignMetadata resolves null on every failure path, so no catch is needed.
+    void fetchCampaignMetadata(metadataUri).then((result) => {
+      if (!cancelled) setMetadata(result)
+    })
     return () => {
       cancelled = true
     }

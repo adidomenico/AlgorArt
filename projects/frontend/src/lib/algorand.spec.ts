@@ -1,6 +1,6 @@
 import algosdk from 'algosdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { algorand, indexer, waitForIndexerRound } from './algorand'
+import { algorand, fetchChainTimestamp, indexer, waitForIndexerCatchUp, waitForIndexerRound } from './algorand'
 
 vi.mock('../utils/network/getAlgoClientConfigs', () => {
   const token = 'a'.repeat(64)
@@ -17,6 +17,22 @@ describe('algorand service', () => {
 
   it('builds an AlgorandClient from the environment', () => {
     expect(algorand).toBeDefined()
+  })
+
+  it('reads the latest block header timestamp', async () => {
+    vi.spyOn(algorand.client.algod, 'status').mockReturnValue({ do: () => Promise.resolve({ lastRound: 42 }) } as never)
+    vi.spyOn(algorand.client.algod, 'block').mockReturnValue({
+      do: () => Promise.resolve({ block: { header: { timestamp: 123n } } }),
+    } as never)
+    expect(await fetchChainTimestamp()).toBe(123n)
+    vi.restoreAllMocks()
+  })
+
+  it('waits for the indexer to reach the chain tip', async () => {
+    vi.spyOn(algorand.client.algod, 'status').mockReturnValue({ do: () => Promise.resolve({ lastRound: 5n }) } as never)
+    vi.spyOn(indexer, 'makeHealthCheck').mockReturnValue({ do: () => Promise.resolve({ round: 10n }) } as never)
+    await expect(waitForIndexerCatchUp(10_000, 250)).resolves.toBeUndefined()
+    vi.restoreAllMocks()
   })
 })
 

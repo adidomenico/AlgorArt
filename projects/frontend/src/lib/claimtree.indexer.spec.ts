@@ -214,6 +214,40 @@ describe('fetchPledges', () => {
     await expect(fetchPledges(CAMPAIGN, VAULT)).rejects.toThrow(/no paired payment/)
   })
 
+  it('throws for id-less calls missing from their round block', async () => {
+    const noId = (sender: string) => ({
+      sender,
+      confirmedRound: 100n,
+      applicationTransaction: { applicationArgs: [selectorBytes(SELECTOR.pledge)] },
+    })
+    indexerMock.searchForTransactions.mockImplementation(searchMock(new Map([[CAMPAIGN, [[noId(BACKER_A), noId(BACKER_B)]]]])))
+    indexerMock.lookupBlock.mockImplementation(blockMock(new Map([[100n, []]])))
+
+    await expect(fetchPledges(CAMPAIGN, VAULT)).rejects.toThrow(/not found in its round block/)
+  })
+
+  it('sorts later rounds arriving first back into chain order', async () => {
+    const payB = payment('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB', BACKER_B, VAULT, 1_000_000n)
+    const callB = pledgeCall('NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN', BACKER_B, 102n)
+    const payA = payment('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', BACKER_A, VAULT, 3_000_000n)
+    const callA = pledgeCall('MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM', BACKER_A, 100n)
+    indexerMock.searchForTransactions.mockImplementation(searchMock(new Map([[CAMPAIGN, [[callB], [callA]]]])))
+    indexerMock.lookupBlock.mockImplementation(
+      blockMock(
+        new Map([
+          [102n, [payB, callB]],
+          [100n, [payA, callA]],
+        ]),
+      ),
+    )
+
+    const pledges = await fetchPledges(CAMPAIGN, VAULT)
+    expect(pledges.map((p) => [p.backer, p.round])).toEqual([
+      [BACKER_A, 100n],
+      [BACKER_B, 102n],
+    ])
+  })
+
   it('throws when a call has no id to locate with', async () => {
     const callA = pledgeCall('MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM', BACKER_A, 100n)
     const payA = payment('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', BACKER_A, VAULT, 3_000_000n)
