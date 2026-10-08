@@ -144,7 +144,7 @@ one commit each — CI wiring comes last:
 
 - [x] **Scaffold** — project skeleton with a `/health` endpoint; lint/format/type-check gates green.
 - [x] **Postgres + migrations** — docker compose service, migration runner, `profiles` and `settings` tables.
-- [ ] **Wallet-signature auth** — sign-in challenge + signed attestation middleware (no passwords, per
+- [x] **Wallet-signature auth** — sign-in challenge + signed attestation middleware (no passwords, per
       [`design.md`](design.md)); tests included.
 - [ ] **`POST /uploads`** — server-side Pinata pinning, returns the CID; create form uses it instead of manual paste.
 - [ ] **Profiles + settings CRUD** — display name/avatar/bio keyed by address, notification prefs; frontend profile section reads them.

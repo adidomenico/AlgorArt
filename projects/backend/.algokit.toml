@@ -7,6 +7,7 @@ name = 'backend'
 
 [project.run]
 build = { commands = ['npm run build'], description = 'Build backend' }
+test = { commands = ['npm run test'], description = 'Run backend tests' }
 lint = { commands = ['npm run lint'], description = 'Lint TypeScript sources with ESLint' }
 format = { commands = ['npm run format'], description = 'Check formatting with Prettier' }
 check-types = { commands = ['npm run check-types'], description = 'Type-check TypeScript sources with tsc' }

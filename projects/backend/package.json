@@ -15,6 +15,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "test": "vitest run",
     "db:migrate": "node -r dotenv/config ./node_modules/node-pg-migrate/bin/node-pg-migrate up",
     "check-types": "tsc --noEmit",
     "lint": "eslint .",
@@ -36,12 +37,16 @@
     "prettier-plugin-organize-imports": "^4.3.0",
     "tsx": "^4.23.15",
     "typescript": "^5.1.6",
-    "typescript-eslint": "^8.68.0"
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^5.0.3"
   },
   "dependencies": {
+    "algosdk": "^3.8.0",
     "dotenv": "^18.0.6",
     "fastify": "^5.0.0",
+    "jose": "^6.2.12",
     "node-pg-migrate": "^9.0.0",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "tweetnacl": "^1.0.3"
   }
 }
