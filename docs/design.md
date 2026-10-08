@@ -1,14 +1,9 @@
 # Product design & open questions
 
-Where AlgorArt is headed beyond the current contract + frontend: identity,
-profiles, notifications, the backend question, content, UI work, and contract
-versioning. This is a **plan**, not code - nothing here is implemented unless
-noted.
-
-> Contract internals: [`campaign.md`](campaign.md). Frontend
-> design: [`frontend.md`](frontend.md). CI: [`ci.md`](ci.md). Roadmap:
-> [`roadmap.md`](roadmap.md). Backend/catalog & archival:
-> [`architecture.md`](architecture.md).
+This page records where AlgorArt is headed beyond the current contract and frontend:
+identity, profiles, notifications, the backend question, content, UI work, and contract
+versioning. Nothing here is implemented unless noted. Contract behavior is defined in
+[`campaign.md`](campaign.md); remaining work is tracked in [`roadmap.md`](roadmap.md).
 
 ## Guiding principle
 
@@ -25,7 +20,7 @@ This keeps the contract auditable and the dApp's privacy surface small.
 
 ## Accounts and identity
 
-There is no account system today - a "user" is just an Algorand address. The wallet
+There is no account system: a "user" is an Algorand address. The wallet
 **is** the account; do **not** build a username/password system. Add an optional
 **profile layer** on top (display name, avatar, email, bio) keyed by wallet address,
 living off-chain. The address→profile binding is proven by a **signed attestation**
@@ -44,7 +39,7 @@ living off-chain. The address→profile binding is proven by a **signed attestat
 | Pledge history | On-chain (Merkle leaves + vault boxes) | Source of truth for refunds |
 | "Your campaigns / your pledges" | Derived from indexer | No extra storage |
 
-**Rule of thumb:** if the contract doesn't need it to enforce a rule, don't put it
+**Principle:** if the contract doesn't need it to enforce a rule, don't put it
 on-chain.
 
 ## Creator section, account page, navigation
@@ -91,7 +86,7 @@ requires a server-side secret and a chain watcher; a static frontend cannot do t
 
 ## Do we need a real backend?
 
-Short answer: **not for the core product, yes for a few features.**
+The core product needs no backend. Notifications, profiles, pinning, analytics, and moderation do.
 
 | Feature | Needs backend? | Notes |
 | --- | --- | --- |
@@ -115,7 +110,7 @@ Deployed AVM apps are immutable, so every contract change is a **new app version
   which version.
 - **Old campaigns keep running on old code; new campaigns use the new code.** No
   migration of live campaigns needed.
-- The painful case is changing a live, funded campaign's logic - we cannot patch it.
+- Changing a live, funded campaign's logic is impossible to patch.
   Mitigation: freeze contract logic before real value is at risk, and TestNet-test
   aggressively.
 

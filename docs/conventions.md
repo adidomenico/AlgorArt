@@ -19,7 +19,7 @@ documents the rules and the reasoning behind them.
   severity.
 - **`noImplicitOverride` is on.** `tsconfig.json` in both projects enables
   `noImplicitOverride`, so any member that overrides a base-class member must be marked
-  with the `override` keyword (e.g. `override render()` in `ErrorBoundary`).
+   with the `override` keyword (for example, `override render()` in `ErrorBoundary`).
 - **`noUnusedLocals`/`noUnusedParameters` are on.** `tsconfig.json` in both projects
   enables them, so unused variables/parameters are caught by `tsc --noEmit`, not just
   ESLint. Generated client files are exempt: contracts exclude

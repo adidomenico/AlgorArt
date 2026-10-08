@@ -90,7 +90,7 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
 - **Algorand TypeScript gotchas** (contracts use `@algorandfoundation/algorand-typescript`):
   - `assert` must be imported explicitly - it is not a global.
   - `GlobalState`/`BoxMap` class properties require the options object
-    (e.g. `BoxMap<Account, uint64>({ keyPrefix: 'p' })`).
+    (for example, `BoxMap<Account, uint64>({ keyPrefix: 'p' })`).
   - Create-time methods use `@abimethod({ onCreate: 'require' })`.
   - Reading a `BoxMap` entry `.value` fails if the box is missing - use
     `.get({ default: 0 })` for first-write patterns.
@@ -109,7 +109,7 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
     calls that read/write another app's BoxMaps fail with "invalid Box
     reference" unless `boxReferences` lists the box names. Keep BoxMap keys
     derivable from ABI args so `populateAppCallResources` can fill them; names
-    derived from inner-created ids (e.g. a created asset id) can never be
+    derived from inner-created ids (for example, a created asset id) can never be
     declared - avoid that keying.
   - Inner app calls use raw ARC-4 selectors (the emitted signatures flatten
     `Application`→`uint64`, `Account`→`address`) - compute them from the emitted
@@ -117,7 +117,7 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
     the inner call's `lastLog`: the ARC-4 prefix `0x151f7c75` + `0x80`/`0x00`.
   - `app_global_get_ex` **fails on deleted apps** (not exists=false) - never
     make vault logic depend on reading a possibly-deleted campaign's state; use
-    vault-local markers written by the campaign (e.g. the `attached` box set by
+    vault-local markers written by the campaign (for example, the `attached` box set by
     `notifyAttach`) instead.
   - Box MBR: a box written by an app is charged to that app's account - the
     Factory app account must be platform-funded before `register()` can write

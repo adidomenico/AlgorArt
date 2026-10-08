@@ -1,15 +1,8 @@
 # Roadmap
 
-A living checklist of what's left to do. Work already done is collapsed into a
-short summary at the top; the rest is organized by **area**, not by phase. Each
-item links to the doc that has the details.
-
-> Contract reference: [`campaign.md`](campaign.md). Tree math and
-> security: [`claim-tree-protocol.md`](claim-tree-protocol.md). Frontend:
-> [`frontend.md`](frontend.md). Product plan:
-> [`design.md`](design.md). CI: [`ci.md`](ci.md). Testing:
-> [`testing.md`](testing.md). System overview:
-> [`architecture.md`](architecture.md).
+This page tracks remaining work by area. Completed work is summarized under Done;
+each open item links to the doc with the details. Design context is in
+[`design.md`](design.md); contract behavior is in [`campaign.md`](campaign.md).
 
 ## Done
 
@@ -115,7 +108,7 @@ one commit each - CI wiring comes last:
 
 ## Product & design (later)
 
-These are plans, not code - see [`design.md`](design.md):
+These are plans, not code. Details are in [`design.md`](design.md):
 
 - [ ] Profiles & notifications (minimal backend, chain watcher, email).
 - [ ] Content & UI polish, IPFS pinning, PWA + web push.
