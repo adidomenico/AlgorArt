@@ -56,7 +56,7 @@ leaf = H( 0x01 ‖ backer ‖ amount ‖ paymentTxId )
       paymentTxId : 32 bytes - the pledge payment's transaction ID (contract-derived: payment.txnId)
 ```
 
-**Domain separation justification:** every other `H` application in the protocol combines two 32-byte node values (64-byte preimages)
+**Domain separation:** every other `H` application in the protocol combines two 32-byte node values (64-byte preimages)
 or a peak fold (also 64-byte preimages). The 73-byte `0x01`-prefixed leaf preimage shares no length-prefix ambiguity with any of them,
 so no adversary can mix leaf hashes into internal-node positions or vice versa. The single byte suffices: no two legitimate preimage
 forms collide in length.
@@ -302,7 +302,7 @@ Either path, converging on the same box state:
 
 - `[Campaign.delete()]` on a failed campaign (creator): inner `vault.settle(app, root, N)` - asserts `Txn.sender == app.address`; if
   box `status == OPEN`: write `root, N, settledAt = latestTimestamp, status = FAILED`; if already `FAILED`: no-op.
-- `[Vault.settleOpen(app)]` (**permissionless** - the "creator vanished" case): asserts box `status == OPEN`; reads the campaign app's
+- `[Vault.settleOpen(app)]` (**permissionless**, for a missing creator): asserts box `status == OPEN`; reads the campaign app's
   foreign global state (`status`, `root`, `N`, `raised`, `goal`, `deadline` - the app still exists); asserts deadline passed and
   `raised < goal`; writes `root, N, settledAt = now, status = FAILED`. After this, campaign-driven `payBack` is rejected (box not
   OPEN) and all refunds flow through the vault.
@@ -322,7 +322,7 @@ no theft (§17 #31).
 Every outer transaction that triggers inner vault calls declares the vault's campaign box in `boxReferences` and the vault app in
 `appReferences`; on first-touch paths (`credit` creating the box) it additionally declares the factory app plus its registration box
 (`'r' ‖ appId`), so the inner `isRegistered` call resolves under v9+ group resource sharing. The frontend builds these from the
-vault/factory app ids plus the campaign app id, exactly as the current Claim ASA frontend does for `claim`/`refund`/`delete`.
+vault/factory app ids plus the campaign app id.
 
 ## 10. State layout
 
@@ -400,19 +400,16 @@ or before the window; double settle (idempotent no-op); double finalize (box abs
 recovery is blocked by any single never-refunding backer) - by a constant, but still a violation, and it leaves an ever-growing
 liability on the pool.
 
-**Option B - bounded refund window (recommended).** `refundWindow` is a vault-global constant (recommended: 730 days) set at vault
+**Option B - bounded refund window.** `refundWindow` is a vault-global constant (730 days) set at vault
 creation, immutable. Refunds are accepted while `latestTimestamp < settledAt + refundWindow`. Afterwards `finalize()` is
 permissionless and O(1): the residual `paidInOf − paidOutOf` is paid to `sweepTarget` (the platform treasury, set at vault creation).
 
-Requirement impact: **A** - fully satisfied within a generous, publicly-known window; the window is visible in the vault state from
+Requirement impact: **A** - fully satisfied within the publicly-known window; the window is visible in the vault state from
 day one and disclosed in the UI at pledge time, so it is part of the pledge contract, not a hidden rule. **B** - strictly satisfied:
 every protocol resource (the box) and every liability (the residual) has a time-bounded, backer-independent recovery path; recovery
 is one transaction. **C/D/E/F** - unaffected. Economic acceptability of the sweep: the residual represents backers who, over the full
-window, never exercised a right they were offered at pledge time; the alternative (Option A) keeps their funds inert forever, which
-benefits no one; Kickstarter's own failed-campaign model returns nothing at all without a creator-initiated process. If the platform
-wants zero self-enrichment optics, `sweepTarget` can be a documented community fund - a governance decision, not a protocol change.
-
-**Recommendation: Option B.**
+window, never exercised a right they were offered at pledge time; the alternative (Option A) keeps their funds inert forever.
+If the platform wants zero self-enrichment optics, `sweepTarget` can be a documented community fund - a governance decision, not a protocol change.
 
 **Deployed choice:** `sweepTarget` is the platform treasury.
 The 730-day window and the sweep destination are disclosed in the UI at pledge time (refund-window banner). Rationale:
@@ -457,8 +454,8 @@ excluded - [Inner Transactions](https://dev.algorand.co/concepts/smart-contracts
   N=131,071 → 3 OpUp inners (2,800) ✓.
 
 The client derives `(N, k)` from on-chain state, computes the `ops` estimate with the formula above, and funds the group fee
-accordingly; the contract calls `ensureBudget` itself with the same estimate. An underfunded transaction fails atomically and the
-client retries with a higher fee - no partial state either way.
+accordingly; the contract calls `ensureBudget` itself with the same estimate. An underfunded transaction fails atomically with
+no partial state; the client retries with a higher fee.
 
 Resource ceilings (hard limits, not Big-O):
 
@@ -486,7 +483,7 @@ Resource ceilings (hard limits, not Big-O):
 
 ## 16. Differential testing plan
 
-The contract test suite must, for every operation sequence (thousands of randomized `append/null` interleavings, all boundary N, the
+The contract test suite covers, for every operation sequence (thousands of randomized `append/null` interleavings, all boundary N, the
 traces from §5-B and §10 of the adversarial matrix): assert
 
 ```text
@@ -545,14 +542,12 @@ real consensus, including the races of §7.
 | B - Complete bounded finalization | ✓ with Option B | Protocol resources per campaign = one 32,100 µA box; recovered by `notifyDelete` (claimed) or `finalize` (failed, time-gated) - one transaction, independent of N and of any backer. Without the window (Option A), fails by a constant. |
 | C - No O(N) platform operations | ✓ | No platform operation is per-backer anywhere; frontiers/proofs are computed by backers' own clients and *verified* by the contract. |
 | D - Very high scalability | ✓ | Zero per-backer on-chain structures (no ASA, no boxes-per-backer, no local state, no bitmap). Per-campaign state is constant (10 global slots + one box). Single-call refunds to N ≈ 1,000; `ensureBudget`-pooled refunds to N ≈ 131k with ≤ 3 OpUp inners (§14); argument ceiling N ≤ 2³²−1. |
-| E - Minimal creator capital | ✓ | ≈ 0.24 ALGO (app + schema MBR on the creator's own account), fully recovered at `delete()`; **no escrow deposit at all** (`fund()` removed). |
-| F - Zero backer action after success | ✓ | Backers hold nothing on-chain after success: no ASA, no opt-in, no local state, nothing to close, sweep, or destroy. 100% disappearance of backers leaves zero residue. |
+| E - Minimal creator capital | ✓ | ≈ 0.24 ALGO (app + schema MBR on the creator's own account), fully recovered at `delete()`; no escrow deposit exists. |
+| F - Zero backer action after success | ✓ | Backers hold nothing on-chain after success: no ASA, no opt-in, no local state, nothing to close, sweep, or destroy. |
 
 ## 19. Verdict
 
-## GO
-
-The Incremental Frontier-Merkle with In-Place Null-Deletion is formally coherent: append and arbitrary nullification compose by a
+**Verdict: GO.** The Incremental Frontier-Merkle with In-Place Null-Deletion is formally coherent: append and arbitrary nullification compose by a
 single induction invariant (validated exhaustively for N ≤ 12 and randomized to N = 1,000 in the reference model), the contract is the
 sole committer (no auditor, no oracle, no trusted list), all security reduces to SHA-512/256 collision resistance plus the checks of
 §17, and the resource model (§14) holds within current AVM limits for every realistic campaign size. Requirements A–F hold as scored
