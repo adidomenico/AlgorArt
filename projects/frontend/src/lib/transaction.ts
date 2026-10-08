@@ -402,32 +402,36 @@ export async function claim(appId: bigint, session: WalletSession): Promise<void
 
 /**
  * Delete a settled campaign (creator only): settles the vault on the failed path, closes the escrow to the creator,
- * and unregisters from the Factory (returning the registration deposit). One O(1) call on every path.
+ * and unregisters from the Factory (returning the registration deposit). One atomic group (one wallet approval):
+ * unregister runs first so every app reference resolves while the campaign app still exists; atomicity makes the
+ * order irrelevant to the outcome.
  *
  * @param appId Campaign application id.
  * @param session Wallet session holding the signer and address.
  */
 export async function deleteCampaign(appId: bigint, session: WalletSession): Promise<void> {
   const client = campaignClientFor(appId, session)
-
-  const result = await client.send.delete.delete({
-    args: [],
-    appReferences: [vaultAppId()],
-    boxReferences: vaultBoxRef(appId),
-    extraFee: microAlgos(FEE_DELETE_EXTRA),
-  })
-
-  const confirmedRound = result.confirmation.confirmedRound
-  if (confirmedRound !== undefined) {
-    await waitForIndexerRound(confirmedRound)
-  }
-
+  const composer = algorand.send.newGroup()
   if (factoryAppId() > 0n) {
     const factoryClient = factoryClientFor(session)
-    await factoryClient.send.unregister({
-      args: { app: appId },
-      appReferences: [appId],
-      extraFee: microAlgos(FEE_UNREGISTER_EXTRA),
-    })
+    composer.addAppCallMethodCall(
+      await factoryClient.params.unregister({
+        args: { app: appId },
+        sender: session.address,
+        appReferences: [appId],
+        extraFee: microAlgos(FEE_UNREGISTER_EXTRA),
+      }),
+    )
   }
+  composer.addAppCallMethodCall(
+    await client.params.delete.delete({
+      args: [],
+      sender: session.address,
+      appReferences: [vaultAppId()],
+      boxReferences: vaultBoxRef(appId),
+      extraFee: microAlgos(FEE_DELETE_EXTRA),
+    }),
+  )
+  await composer.send()
+  await waitForIndexerCatchUp()
 }

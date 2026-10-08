@@ -24,6 +24,7 @@ interface WindowInfo {
 
 const NETWORK_FEE_ALGO = '≈0.004 ALGO'
 const CLAIM_FEE_ALGO = '≈0.003 ALGO'
+const DELETE_FEE_ALGO = '≈0.005 ALGO'
 
 const badgeBg: Record<CampaignViewModel['status'], string> = {
   open: 'bg-badge-open',
@@ -332,7 +333,7 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
             >
               {busy && busyAction === 'delete' ? 'Deleting…' : 'Delete campaign'}
             </button>
-            <p className="text-sm text-muted">Network fee {CLAIM_FEE_ALGO}.</p>
+            <p className="text-sm text-muted">Network fee {DELETE_FEE_ALGO}.</p>
           </div>
         )}
 

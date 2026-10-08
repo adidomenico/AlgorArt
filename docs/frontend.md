@@ -228,16 +228,33 @@ await client.send.refund({
 A `proof does not match root` rejection rebuilds once and retries (a
 concurrent spend moved the root).
 
-### deleteCampaign - settle + close + unregister, one O(1) call
+### deleteCampaign - settle + close + unregister, one atomic group
+
+Delete sends unregister and delete in a single atomic group, so you approve
+once. Unregister runs first: every app reference resolves while the campaign
+app still exists.
 
 ```ts
-await client.send.delete.delete({
-  args: [],
-  appReferences: [vaultAppId()],
-  boxReferences: [vaultCampaignBox],     // always declared; settle no-ops without one
-  extraFee: microAlgos(2000),            // inner settle/notify + escrow close
-})
-await factoryClient.send.unregister({ args: { app: appId }, appReferences: [appId], extraFee: microAlgos(1000) })
+const composer = algorand.send.newGroup()
+composer.addAppCallMethodCall(
+  await factoryClient.params.unregister({
+    args: { app: appId },
+    sender: session.address,
+    appReferences: [appId],
+    extraFee: microAlgos(FEE_UNREGISTER_EXTRA),
+  }),
+)
+composer.addAppCallMethodCall(
+  await client.params.delete.delete({
+    args: [],
+    sender: session.address,
+    appReferences: [vaultAppId()],
+    boxReferences: vaultBoxRef(appId),
+    extraFee: microAlgos(FEE_DELETE_EXTRA),
+  }),
+)
+await composer.send()
+await waitForIndexerCatchUp()
 ```
 
 ### Fees
@@ -265,7 +282,7 @@ target) once settled:
 | `refund()` / `cancelPledge()` | 1 app call + 1 OpUp iteration + 1 inner app call + 1 inner payment | ≈ 0.004 ALGO |
 | `refund()` via the vault (post-settle) | 1 app call + 1 OpUp iteration + 1 inner payment | ≈ 0.004 ALGO |
 | `claim()` | 1 app call + 1 inner app call + 1 inner payment | ≈ 0.003 ALGO |
-| `delete()` (+ `unregister()`) | 1 app call + 2 inner txns (+ 1 unregister call) | ≈ 0.003 ALGO shown; the unregister call adds ≈ 0.002 |
+| `delete()` + `unregister()` | 1 atomic group (2 app calls) + inner txns | ≈ 0.005 ALGO |
 
 ## Edge cases & gotchas
 
