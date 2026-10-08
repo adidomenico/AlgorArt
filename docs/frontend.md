@@ -1,13 +1,11 @@
 # Frontend design
 
-How the AlgorArt dApp is planned and structured. The contract is the source of
-truth; the frontend is a **read model + signer**: it reads campaign state from
-the indexer, and it assembles + signs transaction groups for the user's wallet.
+This page describes the structure of the AlgorArt dApp. The contract is the source of
+truth; the frontend is a read model plus signer: it reads campaign state from
+the indexer, and it assembles transaction groups for the user's wallet to sign.
 It never holds keys, never holds funds, and never decides a campaign outcome.
-
-> Contract internals: [`campaign.md`](campaign.md) and
-> [`claim-tree-protocol.md`](claim-tree-protocol.md). Factory & catalog:
-> [`architecture.md`](architecture.md).
+Contract behavior is defined in [`campaign.md`](campaign.md) and
+[`claim-tree-protocol.md`](claim-tree-protocol.md).
 
 ## Principles
 
@@ -24,7 +22,7 @@ It never holds keys, never holds funds, and never decides a campaign outcome.
    events from the indexer into frontiers and paths (`lib/claimtree.ts`) and
    the contract authenticates every proof.
 
-## Structure (implemented)
+## Structure
 
 ```text
 projects/frontend/src/
@@ -157,11 +155,8 @@ const { result } = await new CampaignFactory({ algorand, defaultSender, defaultS
 await factoryClient.send.register({ args: { app: appId, payment }, appReferences: [appId] })
 ```
 
-Two wallet prompts is structural, not a bug: registration references the new app id, which only exists
-after the creation round confirms, so the steps cannot share an atomic group. Inverting control
-(Factory creates campaigns) would buy a single prompt at the cost of the creator-identity model, the
-creator-pays-MBR economics, and the explicit approval-hash gate - parked unless creation UX data says
-otherwise.
+Creation takes two wallet prompts: registration references the new app id, which exists
+only after the creation round confirms, so the steps cannot share an atomic group.
 
 No funding step exists - the escrow never holds funds.
 
@@ -246,8 +241,7 @@ fees.
 
 > Do **not** use `coverAppCallInnerTransactionFees: true` on the generated client
 > send path - it requires a per-transaction `maxFee` + `additionalAtcContext` that
-> the typed client doesn't populate. `extraFee` is the supported path (it is what
-> the contract integration tests use).
+> the typed client doesn't populate. `extraFee` is the supported path.
 
 ## Refund UX & fee disclaimers
 
@@ -305,7 +299,7 @@ target) once settled:
 
 ## Wallet integration
 
-Already present and unchanged: `App.tsx` builds a `WalletManager`
+`App.tsx` builds a `WalletManager`
 (`@txnlab/use-wallet-react`) with Pera + Defly + Exodus (mainnet/testnet) or KMD
 (localnet, driven by `VITE_ALGOD_NETWORK === 'localnet'`). Components consume
 `useWallet()` for `activeAddress`, `transactionSigner`, and `wallets`.
@@ -353,7 +347,7 @@ reason instead of theater tests:
 Component tests mock `@txnlab/use-wallet-react` (wallet context) and the
 indexer/client services via `vi.mock`.
 
-## Out of scope for now
+## Out of scope
 
 - Campaign metadata - implemented (hybrid, see [Campaign metadata](#campaign-metadata)); rich media/IPFS rendering is on the roadmap.
 - TestNet deployment - on the roadmap.
