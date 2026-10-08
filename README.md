@@ -45,11 +45,11 @@ cd ../frontend
 npm run dev                    # frontend on http://localhost:5173
 ```
 
-The backend is optional (profiles, pinning, catalog) and runs as a separate service:
+The backend is an optional user service (wallet-signature auth plus profiles/settings storage; pinning and catalog are planned) and runs as a separate service:
 
 ```bash
 cd ../backend
-cp .env.template .env  # then set SESSION_SECRET (openssl rand -hex 32)
+cp .env.template .env  # then set SESSION_SECRET (openssl rand -hex 32) and APP_DOMAIN/APP_URI
 docker compose up -d   # Postgres on localhost:5432
 npm run db:migrate      # apply migrations
 npm run dev             # API on http://127.0.0.1:3001

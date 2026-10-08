@@ -50,8 +50,8 @@ flowchart TD
 | `markdown-lint` (own workflow) | ✅ | - | - | - |
 
 Key point: **lint/format/type-check, unit-test, and markdown are pure Node**.
-`eslint`, `prettier`, `tsc`, `vitest`, and `markdownlint-cli2` need nothing
-else - no Docker, no AlgoKit, no build.
+`eslint`, `prettier`, `tsc`, `vitest`, and `markdownlint-cli2` need no Docker
+or AlgoKit install; they only download the `build` job's artifacts.
 
 ## Why the frontend needs the build's output
 
@@ -70,7 +70,8 @@ Implemented at `.github/workflows/build-and-test.yml`. Four jobs, with
 
 - **`build`** - installs Node + AlgoKit, compiles the contracts
   (`npm run build` → TEAL + clients), links the clients into the frontend
-  (`algokit project link --all`), bundles the frontend (`npx vite build`), and
+  (`algokit project link --all`), tags them so `tsc` skips them
+  (`scripts/ts-nocheck-generated.mjs`), bundles the frontend (`npx vite build`), and
   uploads two artifacts: `contracts-artifacts` and `frontend-clients`.
 - **`lint-format-type-check`** - matrix over `[contracts, frontend]`. The
   frontend lane downloads `frontend-clients` first, then each lane runs lint,

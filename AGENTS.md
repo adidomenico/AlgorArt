@@ -21,7 +21,7 @@ workspace: an Algorand TypeScript smart contract plus a React + Vite frontend.
     `register`/`unregister`, readonly `isRegistered`)
   - `smart_contracts/artifacts/` - **generated** (compiled TEAL, ARC-32/56 specs, clients)
 - `projects/frontend/` - React + Vite + TypeScript dApp
-- `projects/backend/` - optional Fastify + Postgres API (profiles, settings, pinning, catalog)
+- `projects/backend/` - optional Fastify + Postgres user service (wallet-signature auth, profiles/settings storage; pinning and catalog planned)
 - [`docs/`](docs/) - technical docs: [`architecture.md`](docs/architecture.md)
   (overview), [`campaign.md`](docs/campaign.md) (contract reference),
   [`claim-tree-protocol.md`](docs/claim-tree-protocol.md) (tree math and
@@ -36,7 +36,7 @@ workspace: an Algorand TypeScript smart contract plus a React + Vite frontend.
 Run from the repo root unless noted.
 
 ```bash
-algokit project bootstrap all    # install deps for contracts + frontend
+algokit project bootstrap all    # install deps for contracts + frontend + backend
 algokit localnet start           # start algod + indexer (Docker)
 
 npx --yes markdownlint-cli2@0.23.2        # markdownlint across all docs (add --fix to autofix)
@@ -117,8 +117,8 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
     the inner call's `lastLog`: the ARC-4 prefix `0x151f7c75` + `0x80`/`0x00`.
   - `app_global_get_ex` **fails on deleted apps** (not exists=false) - never
     make vault logic depend on reading a possibly-deleted campaign's state; use
-    vault-local markers written by the campaign (for example, the `attached` box set by
-    `notifyAttach`) instead.
+    vault-local markers written by the campaign (for example, the `root`/`N`/`settledAt`
+    fields `settle` writes into the campaign box) instead.
   - Box MBR: a box written by an app is charged to that app's account - the
     Factory app account must be platform-funded before `register()` can write
     its registration box.

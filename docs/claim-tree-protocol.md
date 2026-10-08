@@ -18,14 +18,14 @@ AVM facts below were verified against go-algorand `master` (`data/transactions/l
   `claim`, `delete`. The escrow is never funded and holds nothing; backers' ALGO goes to the vault; each pledge appends one leaf;
   `delete()` is O(1) on every path.
 - **ClaimsVault** (`smart_contracts/claimsvault/contract.algo.ts`) - permanent pooled escrow. State: one 65-byte box per campaign
-  (`paidIn`, `paidOut`, `root`, `N`, `settledAt`, `status`). Methods: `credit`, `payBack`, `payClaim`, `settle`, `settleOpen`,
+  (`paidIn`, `paidOut`, `root`, `N`, `status`, `settledAt`). Methods: `credit`, `payBack`, `payClaim`, `settle`, `settleOpen`,
   `refund`, `notifyDelete`, `finalize`. Payout amounts are per-campaign capped by verified inflows
   (`amount <= paidIn - paidOut`); inner payouts are gated on the campaign app caller; vault refunds work after campaign deletion.
 - **Factory** (`smart_contracts/factory/contract.algo.ts`) - registration registry only: `owner`, `approvalHash`, `registered` BoxMap;
   `register` verifies the campaign program hash and the creator identity; refundable 18,900 µA deposit.
 - **Transaction groups:** pledge `[Payment→vault, Campaign.pledge, Vault.credit]`; cancel/refund carry one leaf proof each;
   claim and delete are single app calls with inner vault calls.
-- **MBR (current):** creator ≈ 0.26 ALGO (app + schema + registration, recoverable O(1) via `delete()` + `unregister()`);
+- **MBR (current):** creator ≈ 0.24 ALGO (app + schema + registration, recoverable O(1) via `delete()` + `unregister()`);
   vault 32,100 µA per live or failed campaign box, recovered via `notifyDelete` or `finalize`; backer 0 (no opt-ins exist).
 
 ### AVM facts relied on (verified)
@@ -223,19 +223,19 @@ Two contracts: **Campaign** and **ClaimsVault**, plus the **Factory** registry. 
 ### Campaign global state
 
 `creator (Account)`, `vault (Application)`, `title (bytes)`, `metadataUri (bytes)`, `goal (uint64)`, `deadline (uint64)`,
-`raised (uint64)`, `status (uint64)`, `root (bytes32)`, `N (uint64)`. Schema: 5 byte-slices + 5 uints.
+`raised (uint64)`, `status (uint64)`, `root (bytes32)`, `N (uint64)`. Schema: 4 byte-slices + 6 uints (`vault` holds an app id).
 
 ### Vault global state and boxes
 
-Global: `factory (uint64)`, `refundWindow (uint64)`, `sweepTarget (Account)`, `owner (Account)`.
+Global: `factory (Application)`, `refundWindow (uint64)`, `sweepTarget (Account)`.
 Per campaign, one box, key = `c` ‖ appId (9 bytes), value (65 bytes):
 
 ```text
-paidInOf   (8, BE) ‖ paidOutOf (8, BE) ‖ root (32) ‖ N (8, BE) ‖ settledAt (8, BE) ‖ status (1)
+paidInOf   (8, BE) ‖ paidOutOf (8, BE) ‖ root (32) ‖ N (8, BE) ‖ status (1) ‖ settledAt (8, BE)
 ```
 
-`status`: `0 = OPEN`, `1 = FAILED`, `2 = CLAIMED`. Box MBR = 2,500 + 400×(9+65) = **32,100 µA** (verified formula). No other
-per-campaign state exists. There is **no ASA, no addressOf/asaOf/creatorOf mapping** - the vault authenticates the campaign caller as
+`status`: `1 = OPEN`, `2 = FAILED`, `3 = CLAIMED`. Box MBR = 2,500 + 400×(9+65) = **32,100 µA** (verified formula). No other
+per-campaign state exists. The vault authenticates the campaign caller as
 `Txn.sender == app.address` (only the app's own program can spend as its account) plus Factory registration on first touch (see
 `credit`).
 
@@ -326,10 +326,11 @@ vault/factory app ids plus the campaign app id.
 
 ## 10. State layout
 
-Exactly as §9: campaign = 10 global slots (2 new: `root`, `N`; `claimAsa` and `deposit` removed); vault = one 65-byte box per campaign
+Exactly as §9: campaign = 10 global slots; vault = one 65-byte box per campaign
 (live and failed; deleted on claim-finalization or finalize). **No local state, no ASA, no per-backer storage anywhere.** Campaign
-account balance: 0 (never funded). MBR: creator = app creation (100,000) + schema (5×25,000 + 5×3,500 = 142,500) ≈ 0.24 ALGO, fully
-recovered at `delete()`; vault = 32,100 µA per live/failed campaign, recovered via `notifyDelete`/`finalize`; backer = **0**.
+account balance: 0 (never funded). MBR: creator = app creation (100,000) + schema (4×25,000 + 6×3,500 = 121,000) + registration
+(18,900) ≈ 0.24 ALGO, fully recovered at `delete()` + `unregister()`; vault = 32,100 µA per live/failed campaign, recovered via
+`notifyDelete`/`finalize`; backer = **0**.
 
 ## 11. Accounting and solvency
 
@@ -344,7 +345,7 @@ Invariants (all enforced by the contract, none rely on the indexer):
 4. `finalize` pays exactly `paidInOf − paidOutOf` → **total outflows = total inflows per campaign**:
    `paidInOf = cancels + liveRefunds + vaultRefunds + (claim payout) + (finalize residual)`.
 5. **Pooled isolation:** all outflows are per-campaign capped by the per-campaign balance guard (2), so campaign A's funds can never
-   pay campaign B - enforced at the vault, not by code review, exactly as the current design's unit-conservation derivation does.
+   pay campaign B - enforced at the vault, not by code review.
 
 ## 12. State machines
 
@@ -358,10 +359,11 @@ OPEN ──claim (deadline passed, raised ≥ goal)──▶ CLAIMED
 CLAIMED ──delete──▶ (deleted)    (requires CLAIMED)
 FAILED ──delete──▶ (deleted)     (inner vault.settle)
 OPEN with raised == 0 ──delete──▶ (deleted)   (abandoned)
+OPEN, failed-in-fact (deadline passed, raised < goal) ──delete──▶ (deleted)   (settle, then close)
 ```
 
 Illegal: pledge/cancel after deadline or when status ≠ OPEN; claim before deadline or below goal; delete with live pledges
-(`raised > 0` and status == OPEN); refund when `raised ≥ goal`; double claim/delete (app is gone).
+on a live campaign (`raised > 0`, OPEN, deadline not passed or goal met); refund when `raised ≥ goal`; double claim/delete (app is gone).
 
 ### Vault box
 
@@ -380,8 +382,8 @@ or before the window; double settle (idempotent no-op); double finalize (box abs
 
 ### Edge cases
 
-- **Zero pledges:** box may be absent; `delete()` on `raised == 0` succeeds; `settleOpen` creates a box with `N = 0, root = Z` so
-  `finalize` can clean the (zero) residual - no stranded state.
+- **Zero pledges:** box may be absent; `delete()` on `raised == 0` succeeds (`settle` no-ops without a box).
+  `settleOpen` requires an existing box and rejects an absent one - no stranded state.
 - **One pledge:** tree of one leaf; refund path length 0; works.
 - **Last pledge immediately before deadline:** pledge group lands while `latestTimestamp < deadline` (consensus serialization); it is
   either included or not; no partial state.
@@ -401,7 +403,7 @@ recovery is blocked by any single never-refunding backer) - by a constant, but s
 liability on the pool.
 
 **Option B - bounded refund window.** `refundWindow` is a vault-global constant (730 days) set at vault
-creation, immutable. Refunds are accepted while `latestTimestamp < settledAt + refundWindow`. Afterwards `finalize()` is
+creation, immutable. Refunds are accepted while `latestTimestamp <= settledAt + refundWindow`. Afterwards `finalize()` is
 permissionless and O(1): the residual `paidInOf − paidOutOf` is paid to `sweepTarget` (the platform treasury, set at vault creation).
 
 Requirement impact: **A** - fully satisfied within the publicly-known window; the window is visible in the vault state from

@@ -70,9 +70,9 @@ Backend service (`projects/backend`, Fastify + Postgres) lands in thin slices,
 one commit each - CI wiring comes last:
 
 - [x] **Scaffold** - project skeleton with a `/health` endpoint; lint/format/type-check gates green.
-- [x] **Postgres + migrations** - docker compose service, migration runner, `profiles` and `settings` tables.
-- [x] **Wallet-signature auth** - sign-in challenge + signed attestation middleware (no passwords, per
-      [`design.md`](design.md)); tests included.
+- [x] **Postgres + migrations** - docker compose service, migration runner, `profiles`, `settings`, and `auth_nonces` tables.
+- [x] **Wallet-signature auth** - sign-in challenge (`POST /auth/challenge`, 5-minute TTL) + JWT verify (`POST /auth/verify`, HS256, 7-day tokens) + authenticated `GET /me`; no passwords, per
+      [`design.md`](design.md); tests included.
 - [ ] **`POST /uploads`** - server-side Pinata pinning, returns the CID; create form uses it instead of manual paste.
 - [ ] **Profiles + settings CRUD** - display name/avatar/bio keyed by address, notification prefs; frontend profile section reads them.
 - [ ] **CI matrix** - add the backend lane to `build-and-test` (after all slices land).

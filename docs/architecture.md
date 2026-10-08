@@ -12,7 +12,7 @@ AlgorArt is a non-custodial crowdfunding dApp on Algorand. Creators open campaig
 | ClaimsVault | One permanent app, platform-owned | Holds all pledged ALGO pooled; pays cancels, refunds, and claims |
 | Factory | One registry app, platform-owned | Registers official campaigns against the owner-configured approval hash |
 | Frontend | React + Vite + TypeScript | Browse, create, pledge, claim, refund; wallet via Pera / Defly / Exodus (KMD on LocalNet) |
-| Catalog (optional) | Fastify + Postgres | Profiles, IPFS pinning, search and history UX |
+| Catalog (optional, in progress) | Fastify + Postgres | Auth today; profiles, pinning, search and history UX planned |
 
 Users and wallets never appear as a piece: any Algorand address with a wallet is a creator or backer. No account system exists.
 
@@ -21,7 +21,7 @@ Users and wallets never appear as a piece: any Algorand address with a wallet is
 To open a campaign, complete these steps in order:
 
 1. Deploy a Campaign app with the vault, title, metadata URI, goal, and deadline.
-2. Fund the app's minimum balance (about 0.2 ALGO plus the registration deposit).
+2. Pay the 18,900 µA registration deposit to the Factory.
 3. Register the app in the Factory to mark it official.
 4. Share the app ID so backers find it through the Factory listing.
 
@@ -46,7 +46,7 @@ Both settlement paths finalize in O(1) time and cost. Refunds stay available for
 
 ## Optional catalog
 
-The Factory plus the indexer already cover discovery (which campaigns exist) and the outcome record (what happened). The catalog exists for search, filter, and history UX: profiles, settings, server-side IPFS pinning, and a per-campaign row finalized by a chain watcher. It never holds keys, funds, or outcome decisions. Without it the dApp still runs.
+The Factory plus the indexer already cover discovery (which campaigns exist) and the outcome record (what happened). The backend (`projects/backend`, Fastify + Postgres) implements wallet-signature auth and the profiles/settings tables so far; profiles and settings CRUD, server-side IPFS pinning, and the per-campaign catalog row with its chain watcher are planned (see [`roadmap.md`](roadmap.md)). It never holds keys, funds, or outcome decisions. Without it the dApp still runs.
 
 ## Tech stack
 

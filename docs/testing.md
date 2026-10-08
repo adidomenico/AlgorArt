@@ -58,8 +58,8 @@ marks as executed, so statement coverage tops out at ~93% even when every real
 line is covered.
 
 Run it with `npm run test:coverage`. The thresholds live in
-`vitest.config.mts` and are ready to be enforced as a CI gate when the test
-workflow is added.
+`vitest.config.mts` and are enforced as a CI gate by the `unit-test` job (see
+[`ci.md`](ci.md)).
 
 ## Test file naming (important)
 
@@ -71,8 +71,9 @@ class as it does not extend Contract or BaseContract".
 
 ## LocalNet integration notes
 
-- Integration tests live in `contract.integration.test.ts` and
-  `factory.integration.test.ts` - **plain `.test.ts`** files, so the puya
+- Integration tests live in `campaign/contract.integration.test.ts`,
+  `claimsvault/contract.integration.test.ts`, and `factory/contract.integration.test.ts` -
+  **plain `.test.ts`** files, so the puya
   transformer skips them (no AVM emulation; they talk to real algod).
 - Uses `algorandFixture()` to fund throwaway accounts from the LocalNet dispenser.
 - Loads the ARC-56 specs at runtime via `fs.readFileSync` with the generic

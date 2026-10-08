@@ -31,25 +31,32 @@ projects/frontend/src/
 │   │   ├── CampaignList.tsx        # browse all campaigns
 │   │   ├── CampaignCard.tsx        # one card in the list
 │   │   ├── CampaignDetail.tsx      # single campaign + per-leaf pledge/cancel/refund, claim/delete, window banner
+│   │   ├── CampaignImage.tsx       # metadata image with failure fallback
 │   │   ├── CreateCampaignForm.tsx  # create → register action
-│   │   └── PledgeForm.tsx          # pledge() amount input (+ fee note)
+│   │   ├── PledgeForm.tsx          # pledge() amount input (+ fee note)
+│   │   └── useCampaignMetadata.ts  # metadata blob fetch hook
 │   └── app/                  # shared app chrome
-│       └── Nav.tsx                 # brand, wallet button, address badge
+│       ├── Nav.tsx                 # brand, wallet button, address badge
+│       └── Footer.tsx              # brand, disclaimer
 ├── lib/                      # shared services
 │   ├── algorand.ts           # lazy AlgorandClient + IndexerClient singletons
 │   ├── campaign.ts           # indexer -> CampaignViewModel mapping + Factory box search
 │   ├── claimtree.ts          # proof builder: indexer event replay → frontiers/paths (see below)
 │   ├── claimtree.vectors.ts  # committed oracle vectors (generated, do not edit)
+│   ├── metadata.ts           # campaign metadata blob type
 │   ├── transaction.ts        # create/register/pledge/claim/refund/cancel/delete send helpers
 │   └── format.ts             # microAlgo / deadline formatting
 ├── contracts/                # generated typed clients (gitignored)
 │   ├── Campaign.ts
 │   ├── ClaimsVault.ts
+│   ├── ClaimTree.ts
 │   └── Factory.ts
 ├── components/               # generic UI (ConnectWallet, Account, ErrorBoundary)
 ├── Home.tsx                  # state-based navigation between list/detail/create
 └── utils/                    # ellipseAddress, network config
 ```
+
+`projects/frontend/scripts/` holds `generate-claimtree-vectors.py` (regenerates the committed vectors) and `reclaim.ts` (refunds/cancels known leaves, deletes, unregisters; reports unknown leaves).
 
 ## Pages & routing
 
@@ -87,6 +94,7 @@ interface CampaignViewModel {
   deadlineSeconds: bigint
   status: CampaignStatus
   myPledgeMicroAlgos?: bigint          // live-leaf sum for the viewer
+  deleted?: boolean                     // true for the gone-app stub
 }
 ```
 
@@ -257,7 +265,7 @@ target) once settled:
 | `refund()` / `cancelPledge()` | 1 app call + 1 OpUp iteration + 1 inner app call + 1 inner payment | ≈ 0.004 ALGO |
 | `refund()` via the vault (post-settle) | 1 app call + 1 OpUp iteration + 1 inner payment | ≈ 0.004 ALGO |
 | `claim()` | 1 app call + 1 inner app call + 1 inner payment | ≈ 0.003 ALGO |
-| `delete()` (+ `unregister()`) | 1 app call + 2 inner txns (+ 1 unregister call) | ≈ 0.003 + 0.002 ALGO |
+| `delete()` (+ `unregister()`) | 1 app call + 2 inner txns (+ 1 unregister call) | ≈ 0.003 ALGO shown; the unregister call adds ≈ 0.002 |
 
 ## Edge cases & gotchas
 
@@ -302,7 +310,7 @@ target) once settled:
 `App.tsx` builds a `WalletManager`
 (`@txnlab/use-wallet-react`) with Pera + Defly + Exodus (mainnet/testnet) or KMD
 (localnet, driven by `VITE_ALGOD_NETWORK === 'localnet'`). Components consume
-`useWallet()` for `activeAddress`, `transactionSigner`, and `wallets`.
+`useWallet()` for `activeAddress`, `activeWallet`, `transactionSigner`, and `wallets`.
 
 ## Formatting & units
 
@@ -318,8 +326,8 @@ target) once settled:
 All styling is Tailwind utilities. The palette lives as `@theme` tokens in
 `projects/frontend/src/styles/App.css` (`bg-teal`, `text-ink`, `border-line`,
 `bg-badge-open`, …) - no BEM classes, no separate stylesheet per component.
-Status badges map via a `badgeBg` record so class names stay static for the
-Tailwind scanner (never `bg-badge-${status}`).
+Status badges map via a `badgeBg` record in each of `CampaignCard` and `CampaignDetail`,
+so class names stay static for the Tailwind scanner (never `bg-badge-${status}`).
 
 ## Testing (Vitest)
 
@@ -327,8 +335,8 @@ The frontend has its own Vitest config (jsdom environment) plus
 `@testing-library/react` and `@vitest/coverage-v8`. Run with `npm run test`;
 coverage via `npm run test:coverage`.
 
-Coverage gates **components and utils** (the app shell and generated clients are
-excluded), with thresholds of 100% across lines/branches/functions/statements.
+Coverage gates `components`, `features`, `lib`, and `utils` (the app shell and generated
+clients fall outside the gate), with thresholds of 100% across lines/branches/functions/statements.
 Genuinely unreachable defensive branches carry `/* v8 ignore next */` with a
 reason instead of theater tests:
 
@@ -341,7 +349,7 @@ reason instead of theater tests:
 - `lib/algorand.ts` / `lib/transaction.ts` - client singletons and the
   create/register/pledge/claim/refund/cancel/delete helpers (mocked at the
   client/composer boundary, proof builder mocked for flow tests).
-- `features/campaigns/*` and the rest of `features/app/Nav`, `components/*`,
+- `features/campaigns/*` and `features/app/*`, `components/*`,
   `utils/*`.
 
 Component tests mock `@txnlab/use-wallet-react` (wallet context) and the
