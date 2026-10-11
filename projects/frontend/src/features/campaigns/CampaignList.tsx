@@ -2,7 +2,7 @@ import { useWallet } from '@txnlab/use-wallet-react'
 import { useEffect, useState } from 'react'
 import { fetchChainTimestamp } from '../../lib/algorand'
 import type { CampaignViewModel } from '../../lib/campaign'
-import { listCampaigns } from '../../lib/campaign'
+import { fetchMyPledge, listCampaigns } from '../../lib/campaign'
 import CampaignCard from './CampaignCard'
 
 interface CampaignListProps {
@@ -26,10 +26,27 @@ const CampaignList = ({ onSelectCampaign }: CampaignListProps) => {
       .then((now) => {
         if (cancelled) return null
         setNowSeconds(now)
-        return listCampaigns(now, activeAddress ?? undefined)
+        // Fast pass without the viewer: cards render from global state alone (~0.2s for the whole list).
+        // Pledge totals need a full history replay each, so they stream in afterwards without blocking.
+        return listCampaigns(now)
       })
       .then((result) => {
-        if (!cancelled && result) setCampaigns(result)
+        if (!cancelled && result) {
+          setCampaigns(result)
+          if (activeAddress) {
+            const viewer = activeAddress
+            void Promise.all(
+              result.map(async (campaign) => {
+                const total = await fetchMyPledge(campaign.id, viewer).catch(() => undefined)
+                if (!cancelled && total !== undefined) {
+                  setCampaigns((previous) =>
+                    previous.map((existing) => (existing.id === campaign.id ? { ...existing, myPledgeMicroAlgos: total } : existing)),
+                  )
+                }
+              }),
+            )
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) setError('Failed to load campaigns. Is the indexer reachable?')

@@ -44,6 +44,7 @@ const campaigns: CampaignViewModel[] = [
 ]
 
 const listCampaignsMock = vi.fn()
+const fetchMyPledgeMock = vi.fn()
 const fetchChainTimestampMock = vi.fn()
 
 vi.mock('../../lib/campaign', async () => {
@@ -51,6 +52,7 @@ vi.mock('../../lib/campaign', async () => {
   return {
     ...actual,
     listCampaigns: (...args: unknown[]) => listCampaignsMock(...args),
+    fetchMyPledge: (...args: unknown[]) => fetchMyPledgeMock(...args),
   }
 })
 
@@ -85,13 +87,54 @@ describe('CampaignList', () => {
     expect(await screen.findByText(/Failed to load campaigns/)).toBeInTheDocument()
   })
 
-  it('passes the connected address when loading', async () => {
+  it('renders cards fast, then streams pledge totals in', async () => {
     useWalletMock.mockReturnValue({ activeAddress: 'CONNECTED' })
     listCampaignsMock.mockResolvedValue(campaigns)
+    let resolvePledge: ((value: bigint | undefined) => void) | undefined
+    fetchMyPledgeMock.mockReturnValue(
+      new Promise<bigint | undefined>((resolve) => {
+        resolvePledge = resolve
+      }),
+    )
+    render(<CampaignList onSelectCampaign={() => {}} />)
+
+    // Cards render while pledge totals are still loading.
+    expect(await screen.findByText('#1')).toBeInTheDocument()
+    expect(listCampaignsMock).toHaveBeenCalledWith(1_000_000_000n)
+    expect(fetchMyPledgeMock).toHaveBeenCalledTimes(2)
+
+    if (resolvePledge === undefined) throw new Error('pledges were not requested')
+    resolvePledge(250_000n)
+    expect(await screen.findAllByText(/Your pledge/)).toHaveLength(2)
+  })
+
+  it('skips pledge totals that fail to load', async () => {
+    useWalletMock.mockReturnValue({ activeAddress: 'CONNECTED' })
+    listCampaignsMock.mockResolvedValue(campaigns)
+    fetchMyPledgeMock.mockRejectedValue(new Error('offline'))
     render(<CampaignList onSelectCampaign={() => {}} />)
 
     expect(await screen.findByText('#1')).toBeInTheDocument()
-    expect(listCampaignsMock).toHaveBeenCalledWith(1_000_000_000n, 'CONNECTED')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.queryByText(/Your pledge/)).not.toBeInTheDocument()
+  })
+
+  it('does not merge pledges when unmounted mid-fill', async () => {
+    useWalletMock.mockReturnValue({ activeAddress: 'CONNECTED' })
+    listCampaignsMock.mockResolvedValue(campaigns)
+    let resolvePledge: ((value: bigint | undefined) => void) | undefined
+    fetchMyPledgeMock.mockReturnValue(
+      new Promise<bigint | undefined>((resolve) => {
+        resolvePledge = resolve
+      }),
+    )
+    const { unmount } = render(<CampaignList onSelectCampaign={() => {}} />)
+    expect(await screen.findByText('#1')).toBeInTheDocument()
+    unmount()
+
+    if (resolvePledge === undefined) throw new Error('pledges were not requested')
+    resolvePledge(250_000n)
+    await new Promise((r) => setTimeout(r, 0))
   })
 
   it('calls onSelectCampaign when a card is clicked', async () => {

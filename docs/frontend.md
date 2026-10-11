@@ -139,7 +139,9 @@ All reads use `algosdk.Indexer` configured from the same env as algod:
   state.
 - **My pledges** - `fetchMyLeaves`: replay the campaign's pledge calls (with
   group payments paired by block position) and vault/campaign spends, keep the
-  viewer's unspent positions with amounts and payment TxIDs for proofs.
+  viewer's unspent positions with amounts and payment TxIDs for proofs. The
+  browse list renders from global state first and streams these totals in
+  afterwards, so a replay never blocks the cards.
 - **Vault box / window** - fresh reads (algod, not the indexer) drive refund
   routing (campaign vs vault path) and the refund-window banner.
 - **Read caching** - replay downloads (`searchAppCalls`, block lookups) are
