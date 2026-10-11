@@ -22,8 +22,7 @@ const fetchVaultBoxMock = vi.fn()
 const fetchVaultConfigMock = vi.fn()
 
 vi.mock('../../lib/transaction', async () => {
-  const actual: { isSessionError: (error: unknown) => boolean; disconnectQuietly: (wallet: unknown) => Promise<void> } =
-    await vi.importActual('../../lib/transaction')
+  const actual: { disconnectQuietly: (wallet: unknown) => Promise<void> } = await vi.importActual('../../lib/transaction')
   return {
     claim: (...args: unknown[]) => claimMock(...args),
     refund: (...args: unknown[]) => refundMock(...args),
@@ -32,10 +31,15 @@ vi.mock('../../lib/transaction', async () => {
     fetchMyLeaves: (...args: unknown[]) => fetchMyLeavesMock(...args),
     fetchVaultBox: (...args: unknown[]) => fetchVaultBoxMock(...args),
     fetchVaultConfig: (...args: unknown[]) => fetchVaultConfigMock(...args),
-    isSessionError: actual.isSessionError,
     disconnectQuietly: actual.disconnectQuietly,
   }
 })
+
+const logErrorMock = vi.fn()
+
+vi.mock('../../lib/log', () => ({
+  logError: (...args: unknown[]) => logErrorMock(...args),
+}))
 
 const useWalletMock = vi.fn()
 const disconnectMock = vi.fn()
@@ -319,6 +323,17 @@ describe('CampaignDetail', () => {
 
     await user.click(await screen.findByText('Claim funds'))
     expect(await screen.findByText(/Transaction failed/)).toBeInTheDocument()
+  })
+
+  it('reports a rejection plainly and logs the failure', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('funded', { creator: 'ADDRESS' }))
+    claimMock.mockRejectedValue(new Error('Transaction rejected by user'))
+    const user = userEvent.setup()
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await user.click(await screen.findByText('Claim funds'))
+    expect(await screen.findByText(/Transaction rejected in your wallet/)).toBeInTheDocument()
+    expect(logErrorMock).toHaveBeenCalledWith('transaction', expect.any(Error))
   })
 
   it('suggests reconnecting when the wallet session is dead', async () => {

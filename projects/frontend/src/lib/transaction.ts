@@ -7,6 +7,7 @@ import { FactoryClient } from '../contracts/Factory'
 import { algorand, waitForIndexerCatchUp, waitForIndexerRound } from './algorand'
 import { factoryAppId, vaultAppId } from './campaign'
 import { frontierForPledge, fetchMyLeaves as loadBackerLeaves, loadTree, pathBlobForRefund } from './claimtree'
+import { isStaleProofError } from './errors'
 
 /**
  * Write path: assembles + signs transactions through the generated `CampaignClient`, `ClaimsVaultClient`, and
@@ -56,21 +57,6 @@ const FEE_SPEND_EXTRA = 3_000n // 1 OpUp iteration (create+delete) + payout call
 const FEE_CLAIM_EXTRA = 2_000n // inner payClaim + inner payment
 const FEE_DELETE_EXTRA = 2_000n // inner settle/notify + escrow close
 const FEE_UNREGISTER_EXTRA = 1_000n // inner deposit-back
-
-// Contract error fragments that mean "rebuilt tree state moved under us" - safe to retry once with fresh proofs.
-const STALE_PROOF_PATTERN = /stale or forged frontier|proof does not match root/
-const SESSION_ERROR_PATTERN = /not initialized correctly|session expired|no session|has disconnected|disconnected/i
-
-/**
- * Whether a signing failure means the wallet session is dead (resumed state with no live bridge), as opposed to a
- * rejected or failing transaction. The fix is always the same: disconnect and reconnect the wallet.
- *
- * @param error The failure from a wallet signing call.
- * @returns True when the user should reconnect instead of retrying.
- */
-export function isSessionError(error: unknown): boolean {
-  return error instanceof Error && SESSION_ERROR_PATTERN.test(error.message)
-}
 
 /**
  * Best-effort disconnect to clear a dead wallet session, so reconnecting is one click instead of two. Never throws:
@@ -202,7 +188,7 @@ async function submitWithFreshProof(run: () => Promise<bigint | undefined>): Pro
   try {
     return await run()
   } catch (error) {
-    if (error instanceof Error && STALE_PROOF_PATTERN.test(error.message)) {
+    if (isStaleProofError(error)) {
       return await run()
     }
     throw error

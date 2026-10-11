@@ -4,13 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PledgeForm from './PledgeForm'
 
 const pledgeMock = vi.fn()
+const logErrorMock = vi.fn()
+
+vi.mock('../../lib/log', () => ({
+  logError: (...args: unknown[]) => logErrorMock(...args),
+}))
 
 vi.mock('../../lib/transaction', async () => {
-  const actual: { isSessionError: (error: unknown) => boolean; disconnectQuietly: (wallet: unknown) => Promise<void> } =
-    await vi.importActual('../../lib/transaction')
+  const actual: { disconnectQuietly: (wallet: unknown) => Promise<void> } = await vi.importActual('../../lib/transaction')
   return {
     pledge: (...args: unknown[]) => pledgeMock(...args),
-    isSessionError: actual.isSessionError,
     disconnectQuietly: actual.disconnectQuietly,
   }
 })
@@ -90,6 +93,18 @@ describe('PledgeForm', () => {
 
     expect(screen.getByText(/Connect your wallet to pledge/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Pledge' })).toBeDisabled()
+  })
+
+  it('reports a rejection plainly and logs the failure', async () => {
+    pledgeMock.mockRejectedValue(new Error('Transaction rejected by user'))
+    const user = userEvent.setup()
+    render(<PledgeForm appId={42n} onPledged={() => {}} />)
+
+    await user.type(screen.getByPlaceholderText('Amount in ALGO'), '5')
+    await user.click(screen.getByRole('button', { name: 'Pledge' }))
+
+    expect(await screen.findByText(/Transaction rejected in your wallet/)).toBeInTheDocument()
+    expect(logErrorMock).toHaveBeenCalledWith('pledge', expect.any(Error))
   })
 
   it('shows an error for invalid amounts', async () => {

@@ -10,7 +10,6 @@ import {
   fetchMyLeaves,
   fetchVaultBox,
   fetchVaultConfig,
-  isSessionError,
   pledge,
   refund,
   vaultAddress,
@@ -157,13 +156,6 @@ const session = {
 const VAULT_APP_ADDRESS = algosdk.getApplicationAddress(2002n).toString()
 
 describe('transaction helpers', () => {
-  it('detects dead wallet sessions', () => {
-    expect(isSessionError(new Error('PeraWalletConnect was not initialized correctly.'))).toBe(true)
-    expect(isSessionError(new Error('Wallet session expired'))).toBe(true)
-    expect(isSessionError(new Error('boom'))).toBe(false)
-    expect(isSessionError('boom')).toBe(false)
-  })
-
   it('disconnects quietly', async () => {
     const disconnect = vi.fn().mockResolvedValue(undefined)
     await expect(disconnectQuietly({ disconnect })).resolves.toBeUndefined()

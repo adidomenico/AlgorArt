@@ -1,7 +1,9 @@
 import { useWallet } from '@txnlab/use-wallet-react'
 import { useState } from 'react'
+import { classifyError, errorMessage } from '../../lib/errors'
 import { parseAlgoToMicroAlgos } from '../../lib/format'
-import { disconnectQuietly, isSessionError, pledge } from '../../lib/transaction'
+import { logError } from '../../lib/log'
+import { disconnectQuietly, pledge } from '../../lib/transaction'
 
 interface PledgeFormProps {
   appId: bigint
@@ -31,7 +33,9 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
       setMessage('Pledge sent!')
       onPledged()
     } catch (error) {
-      if (isSessionError(error)) {
+      logError('pledge', error)
+      const kind = classifyError(error)
+      if (kind === 'session') {
         if (activeWallet) {
           void disconnectQuietly(activeWallet)
           setMessage('Wallet session expired. Connect your wallet again to continue.')
@@ -39,7 +43,7 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
           setMessage('Wallet session expired. Disconnect and reconnect your wallet, then try again.')
         }
       } else {
-        setMessage('Failed to pledge. Please try again.')
+        setMessage(errorMessage(kind, 'pledge'))
       }
     } finally {
       setBusy(false)

@@ -3,7 +3,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { fetchChainTimestamp } from '../../lib/algorand'
 import type { CampaignViewModel } from '../../lib/campaign'
 import { getCampaign } from '../../lib/campaign'
+import { classifyError, errorMessage } from '../../lib/errors'
 import { formatAlgo, formatCountdown, formatDeadline } from '../../lib/format'
+import { logError } from '../../lib/log'
 import type { BackerLeaf } from '../../lib/transaction'
 import {
   cancelPledge,
@@ -13,7 +15,6 @@ import {
   fetchMyLeaves,
   fetchVaultBox,
   fetchVaultConfig,
-  isSessionError,
   refund,
 } from '../../lib/transaction'
 import CampaignImage from './CampaignImage'
@@ -126,13 +127,15 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
       setMessage(success)
       await load()
     } catch (error) {
-      if (isSessionError(error)) {
+      logError('transaction', error)
+      const kind = classifyError(error)
+      if (kind === 'session') {
         // Every action button here requires a connected wallet, so activeWallet is always set - and
         // disconnectQuietly tolerates null anyway.
         void disconnectQuietly(activeWallet)
         setMessage('Wallet session expired. Connect your wallet again to continue.')
       } else {
-        setMessage('Transaction failed. Another pledge or refund may have landed first - please try again.')
+        setMessage(errorMessage(kind, 'transaction'))
       }
     } finally {
       setBusy(false)

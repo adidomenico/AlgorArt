@@ -5,13 +5,16 @@ import CreateCampaignForm from './CreateCampaignForm'
 
 const createCampaignMock = vi.fn()
 const fetchChainTimestampMock = vi.fn()
+const logErrorMock = vi.fn()
+
+vi.mock('../../lib/log', () => ({
+  logError: (...args: unknown[]) => logErrorMock(...args),
+}))
 
 vi.mock('../../lib/transaction', async () => {
-  const actual: { isSessionError: (error: unknown) => boolean; disconnectQuietly: (wallet: unknown) => Promise<void> } =
-    await vi.importActual('../../lib/transaction')
+  const actual: { disconnectQuietly: (wallet: unknown) => Promise<void> } = await vi.importActual('../../lib/transaction')
   return {
     createCampaign: (...args: unknown[]) => createCampaignMock(...args),
-    isSessionError: actual.isSessionError,
     disconnectQuietly: actual.disconnectQuietly,
   }
 })
@@ -141,6 +144,19 @@ describe('CreateCampaignForm', () => {
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
     expect(await screen.findByText(/Disconnect and reconnect your wallet/)).toBeInTheDocument()
+  })
+
+  it('reports a rejection plainly and logs the failure', async () => {
+    createCampaignMock.mockRejectedValue(new Error('Transaction rejected by user'))
+    const user = userEvent.setup()
+    render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
+
+    await user.type(screen.getByLabelText(/Title/), 'My first novel')
+    await user.type(screen.getByPlaceholderText('e.g. 100'), '10')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(await screen.findByText(/Transaction rejected in your wallet/)).toBeInTheDocument()
+    expect(logErrorMock).toHaveBeenCalledWith('create', expect.any(Error))
   })
 
   it('calls onCancel', async () => {
