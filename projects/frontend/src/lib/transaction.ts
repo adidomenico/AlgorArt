@@ -255,8 +255,10 @@ export async function createCampaign(
 }
 
 /**
- * Pledge ALGO: one atomic group `[pay, campaign.pledge, vault.credit]` with a freshly rebuilt frontier. Retries once
- * when a concurrent pledge moved the frontier under us.
+ * Pledge ALGO: one atomic group `[pay, campaign.pledge, vault.credit]` with a freshly rebuilt frontier. Waits for the
+ * indexer to catch up before building proofs (a lagging indexer is the usual cause of stale first attempts, each of
+ * which costs the user an approval plus burned fees). Retries once when a concurrent pledge moved the frontier
+ * under us.
  *
  * @param appId Campaign application id.
  * @param session Wallet session holding the signer and address.
@@ -267,6 +269,7 @@ export async function pledge(appId: bigint, session: WalletSession, amountMicroA
   algorand.account.setSigner(session.address, session.signer)
 
   const attempt = async (): Promise<bigint | undefined> => {
+    await waitForIndexerCatchUp()
     const tree = await loadTree(appId, vaultAppId(), vaultAddress())
     const campaignClient = campaignClientFor(appId, session)
     const vaultClient = vaultClientFor(session)
@@ -313,8 +316,9 @@ export async function fetchMyLeaves(appId: bigint, address: string): Promise<Bac
 }
 
 /**
- * Withdraw one pledge before the deadline (backer, while the campaign is still open). Rebuilds the path fresh and
- * retries once when a concurrent spend moved the root under us.
+ * Withdraw one pledge before the deadline (backer, while the campaign is still open). Waits for the indexer to
+ * catch up before rebuilding the path (see pledge), then retries once when a concurrent spend moved the root
+ * under us.
  *
  * @param appId Campaign application id.
  * @param session Wallet session holding the signer and address.
@@ -322,6 +326,7 @@ export async function fetchMyLeaves(appId: bigint, address: string): Promise<Bac
  */
 export async function cancelPledge(appId: bigint, session: WalletSession, leaf: BackerLeaf): Promise<void> {
   const attempt = async (): Promise<bigint | undefined> => {
+    await waitForIndexerCatchUp()
     const tree = await loadTree(appId, vaultAppId(), vaultAddress())
     const client = campaignClientFor(appId, session)
     const result = await client.send.cancelPledge({
@@ -347,8 +352,9 @@ export async function cancelPledge(appId: bigint, session: WalletSession, leaf: 
 
 /**
  * Refund one pledge after a failed campaign. Routes by the vault box (fresh from algod): an `Open`/missing box goes
- * through the campaign, a `Failed` box goes straight to `vault.refund` (covers post-settle and post-delete). Rebuilds
- * the path fresh and retries once when a concurrent spend moved the root under us.
+ * through the campaign, a `Failed` box goes straight to `vault.refund` (covers post-settle and post-delete). Waits
+ * for the indexer to catch up before rebuilding the path (see pledge), then retries once when a concurrent spend
+ * moved the root under us.
  *
  * @param appId Campaign application id.
  * @param session Wallet session holding the signer and address.
@@ -356,6 +362,7 @@ export async function cancelPledge(appId: bigint, session: WalletSession, leaf: 
  */
 export async function refund(appId: bigint, session: WalletSession, leaf: BackerLeaf): Promise<void> {
   const attempt = async (): Promise<bigint | undefined> => {
+    await waitForIndexerCatchUp()
     const tree = await loadTree(appId, vaultAppId(), vaultAddress())
     const path = pathBlobForRefund(tree, leaf.position)
     const txid = Buffer.from(leaf.txidHex, 'hex')

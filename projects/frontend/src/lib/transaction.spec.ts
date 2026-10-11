@@ -251,7 +251,8 @@ describe('transaction helpers', () => {
     // Two app calls in one group (the payment rides along as the pledge's txn arg).
     expect(composerAddMock).toHaveBeenCalledTimes(2)
     expect(composerSendMock).toHaveBeenCalledOnce()
-    expect(waitForIndexerCatchUpMock).toHaveBeenCalledOnce()
+    // Once before building proofs (fresh tree on the first attempt), once after for UI refresh.
+    expect(waitForIndexerCatchUpMock).toHaveBeenCalledTimes(2)
   })
 
   it('pledge retries once on a stale frontier, then throws', async () => {
