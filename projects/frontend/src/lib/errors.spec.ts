@@ -1,7 +1,12 @@
+import { SessionError } from '@txnlab/use-wallet'
 import { describe, expect, it } from 'vitest'
 import { classifyError, errorMessage, isSessionError, isStaleProofError } from './errors'
 
 describe('classifyError', () => {
+  it('detects typed session errors without message matching', () => {
+    expect(classifyError(new SessionError('No session found!'))).toBe('session')
+  })
+
   it('detects dead wallet sessions', () => {
     expect(classifyError(new Error('PeraWalletConnect was not initialized correctly.'))).toBe('session')
     expect(classifyError(new Error('Wallet session expired'))).toBe('session')
@@ -11,6 +16,7 @@ describe('classifyError', () => {
   it('detects user rejections first', () => {
     expect(classifyError(new Error('Transaction rejected by user'))).toBe('rejected')
     expect(classifyError(new Error('Sign denied'))).toBe('rejected')
+    expect(classifyError(new Error('cancelled previous request'))).toBe('rejected')
   })
 
   it('detects stale proofs', () => {
