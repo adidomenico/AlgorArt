@@ -10,8 +10,12 @@ const indexerMock = vi.hoisted(() => ({
 
 const fetchMyLeavesMock = vi.hoisted(() => vi.fn())
 
+const fetchChainTimestampMock = vi.fn()
+fetchChainTimestampMock.mockResolvedValue(1_000n)
+
 vi.mock('./algorand', () => ({
   indexer: indexerMock,
+  fetchChainTimestamp: (...args: unknown[]) => fetchChainTimestampMock(...args),
 }))
 
 vi.mock('./claimtree', () => ({
@@ -147,7 +151,7 @@ describe('listCampaigns', () => {
     indexerMock.searchForApplicationBoxes.mockImplementation(() => boxSearchBuilder(() => [{ name: registrationBoxName(42n) }]))
     indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp({ id: 42n }) }))
 
-    const campaigns = await listCampaigns(1_000n)
+    const { campaigns } = await listCampaigns()
     expect(campaigns.map((c) => c.id)).toEqual([42n])
     expect(indexerMock.searchForApplications).not.toHaveBeenCalled()
   })
@@ -164,7 +168,7 @@ describe('listCampaigns', () => {
     indexerMock.searchForApplicationBoxes.mockImplementation(() => boxSearchBuilder(() => [{ name: registrationBoxName(44n) }]))
     indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: deleted }))
 
-    expect(await listCampaigns(1_000n)).toEqual([])
+    expect((await listCampaigns()).campaigns).toEqual([])
   })
 
   it('falls back to the full scan without a factory', async () => {
@@ -181,7 +185,7 @@ describe('listCampaigns', () => {
       })
       indexerMock.searchForApplications.mockImplementation(() => searchBuilder(() => [official, unrelated]))
 
-      const campaigns = await listCampaigns(1_000n)
+      const { campaigns } = await listCampaigns()
       expect(campaigns.map((c) => c.id)).toEqual([42n])
       expect(indexerMock.searchForApplicationBoxes).not.toHaveBeenCalled()
     } finally {
@@ -202,7 +206,7 @@ describe('listCampaigns', () => {
         }),
       }))
 
-      const campaigns = await listCampaigns(1_000n)
+      const { campaigns } = await listCampaigns()
       expect(campaigns.map((c) => c.id)).toEqual([42n, 43n])
     } finally {
       vi.unstubAllEnvs()
@@ -220,7 +224,7 @@ describe('listCampaigns', () => {
       indexerMock.searchForApplications.mockImplementation(() => searchBuilder(() => [campaignApp({ id: 42n })]))
       fetchMyLeavesMock.mockResolvedValue([{ position: 0, amount: 250_000n, txidHex: 'aa' }])
 
-      const campaigns = await listCampaigns(1_000n, 'ADDRESS')
+      const { campaigns } = await listCampaigns('ADDRESS')
       expect(campaigns[0]?.myPledgeMicroAlgos).toBe(250_000n)
     } finally {
       vi.unstubAllEnvs()

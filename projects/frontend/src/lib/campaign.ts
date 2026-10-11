@@ -1,6 +1,6 @@
 import type algosdk from 'algosdk'
 import { encodeAddress, getApplicationAddress } from 'algosdk'
-import { indexer } from './algorand'
+import { fetchChainTimestamp, indexer } from './algorand'
 import { fetchMyLeaves } from './claimtree'
 
 /**
@@ -267,40 +267,43 @@ export async function fetchRegisteredCampaignIds(factoryId: bigint): Promise<Set
  * scan below works on sandbox-sized chains but never finishes on TestNet-scale chains (tens of thousands of apps,
  * each response carrying full approval programs).
  *
- * @param nowSeconds Current UNIX timestamp (seconds).
  * @param viewerAddress Connected wallet address, if any.
- * @returns All official campaigns found in the indexer.
+ * @returns The campaigns with the chain timestamp used to derive them.
  */
-export async function listCampaigns(nowSeconds: bigint, viewerAddress?: string): Promise<CampaignViewModel[]> {
+export async function listCampaigns(viewerAddress?: string): Promise<{ campaigns: CampaignViewModel[]; nowSeconds: bigint }> {
   const factoryId = factoryAppId()
-  if (factoryId > 0n) {
-    const registered = await fetchRegisteredCampaignIds(factoryId)
-    const settled = await Promise.all([...registered].map((id) => getCampaign(id, nowSeconds, viewerAddress)))
-    return settled.filter((campaign): campaign is CampaignViewModel => campaign !== undefined && campaign.deleted !== true)
-  }
+  if (factoryId <= 0n) {
+    // No factory: fall back to scanning indexed applications for our global-state keys. There is no app-name filter
+    // on the indexer, so presence of the known keys is the discriminator (docs/frontend.md). Only viable on small
+    // chains.
+    const now = await fetchChainTimestamp()
+    const applications: algosdk.indexerModels.Application[] = []
+    let nextToken: string | undefined
+    do {
+      let query = indexer.searchForApplications().limit(100)
+      if (nextToken !== undefined) query = query.nextToken(nextToken)
+      const response = await query.do()
+      applications.push(...response.applications)
+      nextToken = response.nextToken
+    } while (nextToken !== undefined)
 
-  // No factory: fall back to scanning indexed applications for our global-state keys. There is no app-name filter on
-  // the indexer, so presence of the known keys is the discriminator (docs/frontend.md). Only viable on small chains.
-  const applications: algosdk.indexerModels.Application[] = []
-  let nextToken: string | undefined
-  do {
-    let query = indexer.searchForApplications().limit(100)
-    if (nextToken !== undefined) query = query.nextToken(nextToken)
-    const response = await query.do()
-    applications.push(...response.applications)
-    nextToken = response.nextToken
-  } while (nextToken !== undefined)
-
-  const campaigns: CampaignViewModel[] = []
-  for (const app of applications) {
-    if (!isCampaignApp(app)) continue
-    let myPledge: bigint | undefined
-    if (viewerAddress) {
-      myPledge = await fetchMyPledge(app.id, viewerAddress)
+    const campaigns: CampaignViewModel[] = []
+    for (const app of applications) {
+      if (!isCampaignApp(app)) continue
+      let myPledge: bigint | undefined
+      if (viewerAddress) {
+        myPledge = await fetchMyPledge(app.id, viewerAddress)
+      }
+      campaigns.push(toCampaignViewModel(app, now, myPledge))
     }
-    campaigns.push(toCampaignViewModel(app, nowSeconds, myPledge))
+    return { campaigns, nowSeconds: now }
   }
-  return campaigns
+
+  // Timestamp and registry are independent: fetch together so first paint waits on one round-trip, not two.
+  const [now, registered] = await Promise.all([fetchChainTimestamp(), fetchRegisteredCampaignIds(factoryId)])
+  const settled = await Promise.all([...registered].map((id) => getCampaign(id, now, viewerAddress)))
+  const campaigns = settled.filter((campaign): campaign is CampaignViewModel => campaign !== undefined && campaign.deleted !== true)
+  return { campaigns, nowSeconds: now }
 }
 
 /**

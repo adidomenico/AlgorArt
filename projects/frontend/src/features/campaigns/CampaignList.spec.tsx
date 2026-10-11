@@ -7,7 +7,7 @@ import CampaignList from './CampaignList'
 // Capture the resolver so we can control when the promise settles, letting us
 // unmount the component before the async result arrives (covers the
 // `cancelled` guard branches in the effect's cleanup path).
-let resolveList: ((value: CampaignViewModel[]) => void) | undefined
+let resolveList: ((value: { campaigns: CampaignViewModel[]; nowSeconds: bigint }) => void) | undefined
 let rejectList: ((reason: unknown) => void) | undefined
 
 vi.mock('@txnlab/use-wallet-react', () => ({
@@ -45,7 +45,6 @@ const campaigns: CampaignViewModel[] = [
 
 const listCampaignsMock = vi.fn()
 const fetchMyPledgeMock = vi.fn()
-const fetchChainTimestampMock = vi.fn()
 
 vi.mock('../../lib/campaign', async () => {
   const actual = await vi.importActual('../../lib/campaign')
@@ -56,17 +55,9 @@ vi.mock('../../lib/campaign', async () => {
   }
 })
 
-vi.mock('../../lib/algorand', () => ({
-  fetchChainTimestamp: (...args: unknown[]) => fetchChainTimestampMock(...args),
-}))
-
 describe('CampaignList', () => {
-  beforeEach(() => {
-    fetchChainTimestampMock.mockResolvedValue(1_000_000_000n)
-  })
-
   it('renders campaign cards when campaigns are loaded', async () => {
-    listCampaignsMock.mockResolvedValue(campaigns)
+    listCampaignsMock.mockResolvedValue({ campaigns, nowSeconds: 1_000_000_000n })
     render(<CampaignList onSelectCampaign={() => {}} />)
 
     expect(await screen.findByText('#1')).toBeInTheDocument()
@@ -74,7 +65,7 @@ describe('CampaignList', () => {
   })
 
   it('renders an empty state when there are no campaigns', async () => {
-    listCampaignsMock.mockResolvedValue([])
+    listCampaignsMock.mockResolvedValue({ campaigns: [], nowSeconds: 1_000_000_000n })
     render(<CampaignList onSelectCampaign={() => {}} />)
 
     expect(await screen.findByText(/No campaigns yet/)).toBeInTheDocument()
@@ -89,7 +80,7 @@ describe('CampaignList', () => {
 
   it('renders cards fast, then streams pledge totals in', async () => {
     useWalletMock.mockReturnValue({ activeAddress: 'CONNECTED' })
-    listCampaignsMock.mockResolvedValue(campaigns)
+    listCampaignsMock.mockResolvedValue({ campaigns, nowSeconds: 1_000_000_000n })
     let resolvePledge: ((value: bigint | undefined) => void) | undefined
     fetchMyPledgeMock.mockReturnValue(
       new Promise<bigint | undefined>((resolve) => {
@@ -100,7 +91,7 @@ describe('CampaignList', () => {
 
     // Cards render while pledge totals are still loading.
     expect(await screen.findByText('#1')).toBeInTheDocument()
-    expect(listCampaignsMock).toHaveBeenCalledWith(1_000_000_000n)
+    expect(listCampaignsMock).toHaveBeenCalledWith()
     expect(fetchMyPledgeMock).toHaveBeenCalledTimes(2)
 
     if (resolvePledge === undefined) throw new Error('pledges were not requested')
@@ -110,7 +101,7 @@ describe('CampaignList', () => {
 
   it('skips pledge totals that fail to load', async () => {
     useWalletMock.mockReturnValue({ activeAddress: 'CONNECTED' })
-    listCampaignsMock.mockResolvedValue(campaigns)
+    listCampaignsMock.mockResolvedValue({ campaigns, nowSeconds: 1_000_000_000n })
     fetchMyPledgeMock.mockRejectedValue(new Error('offline'))
     render(<CampaignList onSelectCampaign={() => {}} />)
 
@@ -121,7 +112,7 @@ describe('CampaignList', () => {
 
   it('does not merge pledges when unmounted mid-fill', async () => {
     useWalletMock.mockReturnValue({ activeAddress: 'CONNECTED' })
-    listCampaignsMock.mockResolvedValue(campaigns)
+    listCampaignsMock.mockResolvedValue({ campaigns, nowSeconds: 1_000_000_000n })
     let resolvePledge: ((value: bigint | undefined) => void) | undefined
     fetchMyPledgeMock.mockReturnValue(
       new Promise<bigint | undefined>((resolve) => {
@@ -138,7 +129,7 @@ describe('CampaignList', () => {
   })
 
   it('calls onSelectCampaign when a card is clicked', async () => {
-    listCampaignsMock.mockResolvedValue(campaigns)
+    listCampaignsMock.mockResolvedValue({ campaigns, nowSeconds: 1_000_000_000n })
     const onSelectCampaign = vi.fn()
     const user = userEvent.setup()
     render(<CampaignList onSelectCampaign={onSelectCampaign} />)
@@ -149,7 +140,7 @@ describe('CampaignList', () => {
 
   it('does not update state when unmounted before the load resolves', async () => {
     listCampaignsMock.mockReturnValue(
-      new Promise<CampaignViewModel[]>((resolve) => {
+      new Promise<{ campaigns: CampaignViewModel[]; nowSeconds: bigint }>((resolve) => {
         resolveList = resolve
       }),
     )
@@ -159,30 +150,13 @@ describe('CampaignList', () => {
     unmount()
 
     await new Promise((r) => setTimeout(r, 0))
-    resolveList?.(campaigns)
+    resolveList?.({ campaigns, nowSeconds: 1_000_000_000n })
     expect(screen.queryByText('#1')).not.toBeInTheDocument()
-  })
-
-  it('does not list campaigns when unmounted before the timestamp resolves', async () => {
-    let resolveTimestamp: ((value: bigint) => void) | undefined
-    fetchChainTimestampMock.mockReturnValue(
-      new Promise<bigint>((resolve) => {
-        resolveTimestamp = resolve
-      }),
-    )
-    listCampaignsMock.mockClear()
-    const { unmount } = render(<CampaignList onSelectCampaign={() => {}} />)
-    unmount()
-
-    if (resolveTimestamp === undefined) throw new Error('timestamp was not requested')
-    resolveTimestamp(1_000_000_000n)
-    await new Promise((r) => setTimeout(r, 0))
-    expect(listCampaignsMock).not.toHaveBeenCalled()
   })
 
   it('does not update state when unmounted before the load rejects', async () => {
     listCampaignsMock.mockReturnValue(
-      new Promise<CampaignViewModel[]>((_, reject) => {
+      new Promise<{ campaigns: CampaignViewModel[]; nowSeconds: bigint }>((_, reject) => {
         rejectList = reject
       }),
     )
