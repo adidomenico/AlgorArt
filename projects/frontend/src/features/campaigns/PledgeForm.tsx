@@ -1,7 +1,7 @@
 import { useWallet } from '@txnlab/use-wallet-react'
 import { useState } from 'react'
 import { parseAlgoToMicroAlgos } from '../../lib/format'
-import { pledge } from '../../lib/transaction'
+import { disconnectQuietly, isSessionError, pledge } from '../../lib/transaction'
 
 interface PledgeFormProps {
   appId: bigint
@@ -10,7 +10,7 @@ interface PledgeFormProps {
 }
 
 const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
-  const { activeAddress, transactionSigner } = useWallet()
+  const { activeAddress, activeWallet, transactionSigner } = useWallet()
   const [amount, setAmount] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -30,8 +30,17 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
       setAmount('')
       setMessage('Pledge sent!')
       onPledged()
-    } catch {
-      setMessage('Failed to pledge. Please try again.')
+    } catch (error) {
+      if (isSessionError(error)) {
+        if (activeWallet) {
+          void disconnectQuietly(activeWallet)
+          setMessage('Wallet session expired. Connect your wallet again to continue.')
+        } else {
+          setMessage('Wallet session expired. Disconnect and reconnect your wallet, then try again.')
+        }
+      } else {
+        setMessage('Failed to pledge. Please try again.')
+      }
     } finally {
       setBusy(false)
     }
@@ -58,6 +67,7 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
       >
         {busy ? 'Sending…' : 'Pledge'}
       </button>
+      {!activeAddress && <p className="mb-3 text-sm text-muted">Connect your wallet to pledge.</p>}
       <p className="text-sm text-muted">Network fee ≈0.004 ALGO. Refunds stay open after failure - no opt-ins needed.</p>
       {message && <p className="mb-0 mt-3 text-sm text-muted">{message}</p>}
     </div>

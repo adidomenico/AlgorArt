@@ -5,7 +5,17 @@ import type { CampaignViewModel } from '../../lib/campaign'
 import { getCampaign } from '../../lib/campaign'
 import { formatAlgo, formatCountdown, formatDeadline } from '../../lib/format'
 import type { BackerLeaf } from '../../lib/transaction'
-import { cancelPledge, claim, deleteCampaign, fetchMyLeaves, fetchVaultBox, fetchVaultConfig, refund } from '../../lib/transaction'
+import {
+  cancelPledge,
+  claim,
+  deleteCampaign,
+  disconnectQuietly,
+  fetchMyLeaves,
+  fetchVaultBox,
+  fetchVaultConfig,
+  isSessionError,
+  refund,
+} from '../../lib/transaction'
 import CampaignImage from './CampaignImage'
 import PledgeForm from './PledgeForm'
 import { useCampaignMetadata } from './useCampaignMetadata'
@@ -115,8 +125,15 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
       await action()
       setMessage(success)
       await load()
-    } catch {
-      setMessage('Transaction failed. Another pledge or refund may have landed first - please try again.')
+    } catch (error) {
+      if (isSessionError(error)) {
+        // Every action button here requires a connected wallet, so activeWallet is always set - and
+        // disconnectQuietly tolerates null anyway.
+        void disconnectQuietly(activeWallet)
+        setMessage('Wallet session expired. Connect your wallet again to continue.')
+      } else {
+        setMessage('Transaction failed. Another pledge or refund may have landed first - please try again.')
+      }
     } finally {
       setBusy(false)
       setBusyAction(null)

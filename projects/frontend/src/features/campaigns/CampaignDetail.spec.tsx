@@ -21,17 +21,24 @@ const fetchMyLeavesMock = vi.fn()
 const fetchVaultBoxMock = vi.fn()
 const fetchVaultConfigMock = vi.fn()
 
-vi.mock('../../lib/transaction', () => ({
-  claim: (...args: unknown[]) => claimMock(...args),
-  refund: (...args: unknown[]) => refundMock(...args),
-  cancelPledge: (...args: unknown[]) => cancelPledgeMock(...args),
-  deleteCampaign: (...args: unknown[]) => deleteCampaignMock(...args),
-  fetchMyLeaves: (...args: unknown[]) => fetchMyLeavesMock(...args),
-  fetchVaultBox: (...args: unknown[]) => fetchVaultBoxMock(...args),
-  fetchVaultConfig: (...args: unknown[]) => fetchVaultConfigMock(...args),
-}))
+vi.mock('../../lib/transaction', async () => {
+  const actual: { isSessionError: (error: unknown) => boolean; disconnectQuietly: (wallet: unknown) => Promise<void> } =
+    await vi.importActual('../../lib/transaction')
+  return {
+    claim: (...args: unknown[]) => claimMock(...args),
+    refund: (...args: unknown[]) => refundMock(...args),
+    cancelPledge: (...args: unknown[]) => cancelPledgeMock(...args),
+    deleteCampaign: (...args: unknown[]) => deleteCampaignMock(...args),
+    fetchMyLeaves: (...args: unknown[]) => fetchMyLeavesMock(...args),
+    fetchVaultBox: (...args: unknown[]) => fetchVaultBoxMock(...args),
+    fetchVaultConfig: (...args: unknown[]) => fetchVaultConfigMock(...args),
+    isSessionError: actual.isSessionError,
+    disconnectQuietly: actual.disconnectQuietly,
+  }
+})
 
 const useWalletMock = vi.fn()
+const disconnectMock = vi.fn()
 
 const fetchChainTimestampMock = vi.fn()
 
@@ -76,7 +83,8 @@ function viewModel(
 describe('CampaignDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', activeWallet: {}, transactionSigner: {} })
+    disconnectMock.mockResolvedValue(undefined)
+    useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', activeWallet: { disconnect: disconnectMock }, transactionSigner: {} })
     fetchChainTimestampMock.mockResolvedValue(1_000_000_000n)
     fetchMyLeavesMock.mockResolvedValue([])
     fetchVaultBoxMock.mockResolvedValue(undefined)
@@ -311,6 +319,17 @@ describe('CampaignDetail', () => {
 
     await user.click(await screen.findByText('Claim funds'))
     expect(await screen.findByText(/Transaction failed/)).toBeInTheDocument()
+  })
+
+  it('suggests reconnecting when the wallet session is dead', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('funded', { creator: 'ADDRESS' }))
+    claimMock.mockRejectedValue(new Error('PeraWalletConnect was not initialized correctly.'))
+    const user = userEvent.setup()
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await user.click(await screen.findByText('Claim funds'))
+    expect(await screen.findByText(/Connect your wallet again/)).toBeInTheDocument()
+    expect(disconnectMock).toHaveBeenCalledOnce()
   })
 
   it('shows the refund window banner on settled campaigns', async () => {

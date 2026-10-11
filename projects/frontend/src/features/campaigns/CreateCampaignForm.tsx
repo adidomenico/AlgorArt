@@ -2,7 +2,7 @@ import { useWallet } from '@txnlab/use-wallet-react'
 import { useState } from 'react'
 import { fetchChainTimestamp } from '../../lib/algorand'
 import { parseAlgoToMicroAlgos } from '../../lib/format'
-import { createCampaign } from '../../lib/transaction'
+import { createCampaign, disconnectQuietly, isSessionError } from '../../lib/transaction'
 
 interface CreateCampaignFormProps {
   /** Called with the new app id after a successful create. */
@@ -11,7 +11,7 @@ interface CreateCampaignFormProps {
 }
 
 const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) => {
-  const { activeAddress, transactionSigner } = useWallet()
+  const { activeAddress, activeWallet, transactionSigner } = useWallet()
   const [title, setTitle] = useState('')
   const [metadataUri, setMetadataUri] = useState('')
   const [goal, setGoal] = useState('')
@@ -60,8 +60,17 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
         deadlineSeconds,
       )
       onCreated(appId)
-    } catch {
-      setMessage('Failed to create campaign. Please try again.')
+    } catch (error) {
+      if (isSessionError(error)) {
+        if (activeWallet) {
+          void disconnectQuietly(activeWallet)
+          setMessage('Wallet session expired. Connect your wallet again to continue.')
+        } else {
+          setMessage('Wallet session expired. Disconnect and reconnect your wallet, then try again.')
+        }
+      } else {
+        setMessage('Failed to create campaign. Please try again.')
+      }
     } finally {
       setBusy(false)
     }

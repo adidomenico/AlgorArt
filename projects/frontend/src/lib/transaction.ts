@@ -59,6 +59,29 @@ const FEE_UNREGISTER_EXTRA = 1_000n // inner deposit-back
 
 // Contract error fragments that mean "rebuilt tree state moved under us" - safe to retry once with fresh proofs.
 const STALE_PROOF_PATTERN = /stale or forged frontier|proof does not match root/
+const SESSION_ERROR_PATTERN = /not initialized correctly|session expired|no session|has disconnected|disconnected/i
+
+/**
+ * Whether a signing failure means the wallet session is dead (resumed state with no live bridge), as opposed to a
+ * rejected or failing transaction. The fix is always the same: disconnect and reconnect the wallet.
+ *
+ * @param error The failure from a wallet signing call.
+ * @returns True when the user should reconnect instead of retrying.
+ */
+export function isSessionError(error: unknown): boolean {
+  return error instanceof Error && SESSION_ERROR_PATTERN.test(error.message)
+}
+
+/**
+ * Best-effort disconnect to clear a dead wallet session, so reconnecting is one click instead of two. Never throws:
+ * a dead bridge may fail to disconnect too. Callers must fire-and-forget (`void disconnectQuietly(...)`) - awaiting
+ * a hanging disconnect would stall the UI indefinitely.
+ *
+ * @param activeWallet The active wallet from useWallet, if any.
+ */
+export async function disconnectQuietly(activeWallet: { disconnect: () => Promise<void> } | null | undefined): Promise<void> {
+  await activeWallet?.disconnect().catch(() => undefined)
+}
 
 function campaignClientFor(appId: bigint, session: WalletSession): CampaignClient {
   return new CampaignClient({

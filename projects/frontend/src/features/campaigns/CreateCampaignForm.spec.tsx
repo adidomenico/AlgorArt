@@ -6,15 +6,22 @@ import CreateCampaignForm from './CreateCampaignForm'
 const createCampaignMock = vi.fn()
 const fetchChainTimestampMock = vi.fn()
 
-vi.mock('../../lib/transaction', () => ({
-  createCampaign: (...args: unknown[]) => createCampaignMock(...args),
-}))
+vi.mock('../../lib/transaction', async () => {
+  const actual: { isSessionError: (error: unknown) => boolean; disconnectQuietly: (wallet: unknown) => Promise<void> } =
+    await vi.importActual('../../lib/transaction')
+  return {
+    createCampaign: (...args: unknown[]) => createCampaignMock(...args),
+    isSessionError: actual.isSessionError,
+    disconnectQuietly: actual.disconnectQuietly,
+  }
+})
 
 vi.mock('../../lib/algorand', () => ({
   fetchChainTimestamp: (...args: unknown[]) => fetchChainTimestampMock(...args),
 }))
 
 const useWalletMock = vi.fn()
+const disconnectMock = vi.fn()
 
 vi.mock('@txnlab/use-wallet-react', () => ({
   useWallet: () => useWalletMock(),
@@ -23,7 +30,8 @@ vi.mock('@txnlab/use-wallet-react', () => ({
 describe('CreateCampaignForm', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', transactionSigner: {} })
+    disconnectMock.mockResolvedValue(undefined)
+    useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', activeWallet: { disconnect: disconnectMock }, transactionSigner: {} })
     fetchChainTimestampMock.mockResolvedValue(1_000_000_000n)
   })
 
@@ -107,6 +115,32 @@ describe('CreateCampaignForm', () => {
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
     expect(await screen.findByText(/Failed to create campaign/)).toBeInTheDocument()
+  })
+
+  it('suggests reconnecting when the wallet session is dead', async () => {
+    createCampaignMock.mockRejectedValue(new Error('PeraWalletConnect was not initialized correctly.'))
+    const user = userEvent.setup()
+    render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
+
+    await user.type(screen.getByLabelText(/Title/), 'My first novel')
+    await user.type(screen.getByPlaceholderText('e.g. 100'), '10')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(await screen.findByText(/Connect your wallet again/)).toBeInTheDocument()
+    expect(disconnectMock).toHaveBeenCalledOnce()
+  })
+
+  it('tells the user to reconnect manually when there is no wallet to clear', async () => {
+    useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', activeWallet: null, transactionSigner: {} })
+    createCampaignMock.mockRejectedValue(new Error('PeraWalletConnect was not initialized correctly.'))
+    const user = userEvent.setup()
+    render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
+
+    await user.type(screen.getByLabelText(/Title/), 'My first novel')
+    await user.type(screen.getByPlaceholderText('e.g. 100'), '10')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(await screen.findByText(/Disconnect and reconnect your wallet/)).toBeInTheDocument()
   })
 
   it('calls onCancel', async () => {
