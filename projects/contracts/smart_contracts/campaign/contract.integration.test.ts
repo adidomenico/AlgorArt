@@ -415,7 +415,7 @@ describe('Campaign + ClaimsVault claim-tree (localnet)', () => {
         sender: addrA,
         suppressLog: true,
       }),
-    ).rejects.toThrow()
+    ).rejects.toThrow(/stale or forged frontier/)
     const oracleState = oracle('state') as OracleState
     const st = await campaignState(appClient)
     expect(st.n).toEqual(BigInt(oracleState.n))
