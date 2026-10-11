@@ -20,6 +20,41 @@ import { indexer } from './algorand'
  * a root-mismatch rejection. See docs/claim-tree-protocol.md §7.
  */
 
+// Session memo for indexer reads, dropped wholesale by `clearTreeCache` (called around every mutation in
+// `lib/transaction.ts`). One invalidation rule for all replay inputs - blocks are immutable on-chain, but clearing
+// both maps keeps the rule simple and the cost is one re-download per mutation.
+const appCallCache = new Map<bigint, Promise<algosdk.indexerModels.Transaction[]>>()
+const blockCache = new Map<bigint, Promise<{ transactions?: algosdk.indexerModels.Transaction[] }>>()
+
+/**
+ * Drop memoized indexer reads. Call around every local mutation (proof-carrying submissions rebuild from a cleared
+ * cache, and post-write UI reloads refetch) - never on plain reads.
+ */
+export function clearTreeCache(): void {
+  appCallCache.clear()
+  blockCache.clear()
+}
+
+/**
+ * Memoized fetch: duplicate and repeat reads (detail reloads, list-to-detail navigation) reuse one download.
+ * Rejections are never cached - only resolved values stick, so a transient failure retries naturally.
+ *
+ * @param cache Memo map keyed by id.
+ * @param key Cache key.
+ * @param load The fetch to memoize.
+ * @returns The cached or freshly loaded value.
+ */
+function cached<T>(cache: Map<bigint, Promise<T>>, key: bigint, load: () => Promise<T>): Promise<T> {
+  const hit = cache.get(key)
+  if (hit !== undefined) return hit
+  const pending = load()
+  cache.set(key, pending)
+  void pending.catch(() => {
+    cache.delete(key)
+  })
+  return pending
+}
+
 // ARC-4 selectors of the tree-relevant methods (first 4 bytes of SHA-512/256 of the signature; the contract pins them
 // with selector-bytes tests - see smart_contracts/campaign/contract.integration.test.ts).
 const SELECTOR_PLEDGE = 'a4030bd2'
@@ -372,16 +407,18 @@ function selectorOf(args: Uint8Array[] | undefined): string | undefined {
  * @returns Every matching transaction.
  */
 async function searchAppCalls(appId: bigint): Promise<algosdk.indexerModels.Transaction[]> {
-  const calls: algosdk.indexerModels.Transaction[] = []
-  let nextToken: string | undefined
-  do {
-    let query = indexer.searchForTransactions().applicationID(appId).limit(1000)
-    if (nextToken !== undefined) query = query.nextToken(nextToken)
-    const response = await query.do()
-    calls.push(...response.transactions)
-    nextToken = response.nextToken
-  } while (nextToken !== undefined)
-  return calls
+  return cached(appCallCache, appId, async () => {
+    const calls: algosdk.indexerModels.Transaction[] = []
+    let nextToken: string | undefined
+    do {
+      let query = indexer.searchForTransactions().applicationID(appId).limit(1000)
+      if (nextToken !== undefined) query = query.nextToken(nextToken)
+      const response = await query.do()
+      calls.push(...response.transactions)
+      nextToken = response.nextToken
+    } while (nextToken !== undefined)
+    return calls
+  })
 }
 
 /**
@@ -405,8 +442,15 @@ export async function fetchPledges(campaignId: bigint, vaultAddress: string): Pr
     byRound.set(call.confirmedRound, list)
   }
   const pledges: (PledgeEvent & { blockIndex: number })[] = []
-  for (const [round, roundCalls] of [...byRound.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
-    const block = await indexer.lookupBlock(round).do()
+  const rounds = [...byRound.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))
+  const withBlocks = await Promise.all(
+    rounds.map(async ([round, roundCalls]) => ({
+      round,
+      roundCalls,
+      block: await cached(blockCache, round, () => indexer.lookupBlock(round).do()),
+    })),
+  )
+  for (const { round, roundCalls, block } of withBlocks) {
     const txns = block.transactions ?? []
     const positionOf = new Map<string, number>()
     txns.forEach((txn, index) => {
@@ -461,7 +505,8 @@ export async function fetchPledges(campaignId: bigint, vaultAddress: string): Pr
  */
 export async function fetchSpends(campaignId: bigint, vaultId: bigint): Promise<SpendEvent[]> {
   const spends: SpendEvent[] = []
-  for (const call of await searchAppCalls(campaignId)) {
+  const [campaignCalls, vaultCalls] = await Promise.all([searchAppCalls(campaignId), searchAppCalls(vaultId)])
+  for (const call of campaignCalls) {
     const args = call.applicationTransaction?.applicationArgs
     const selector = selectorOf(args)
     if (selector !== SELECTOR_CANCEL && selector !== SELECTOR_REFUND) continue
@@ -469,7 +514,7 @@ export async function fetchSpends(campaignId: bigint, vaultId: bigint): Promise<
     if (rawK === undefined) continue
     spends.push({ position: Number(u64beDecode(rawK)) })
   }
-  for (const call of await searchAppCalls(vaultId)) {
+  for (const call of vaultCalls) {
     const args = call.applicationTransaction?.applicationArgs
     if (selectorOf(args) !== SELECTOR_VAULT_REFUND) continue
     const rawApp = args?.[1]

@@ -142,6 +142,13 @@ All reads use `algosdk.Indexer` configured from the same env as algod:
   viewer's unspent positions with amounts and payment TxIDs for proofs.
 - **Vault box / window** - fresh reads (algod, not the indexer) drive refund
   routing (campaign vs vault path) and the refund-window banner.
+- **Read caching** - replay downloads (`searchAppCalls`, block lookups) are
+  memoized per session (`clearTreeCache` in `lib/claimtree.ts`); independent
+  reads fan out over `Promise.all` instead of sequential awaits. Mutating calls
+  (`pledge`, `cancelPledge`, `refund`) drop the cache before each proof build
+  and after success, so submissions and post-write reloads always refetch.
+  Passive staleness (other users' pledges while you browse) resolves on the
+  next write-triggered reload. Rejections are never cached.
 
 ## Writes (generated clients)
 

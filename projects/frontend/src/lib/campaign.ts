@@ -275,13 +275,8 @@ export async function listCampaigns(nowSeconds: bigint, viewerAddress?: string):
   const factoryId = factoryAppId()
   if (factoryId > 0n) {
     const registered = await fetchRegisteredCampaignIds(factoryId)
-    const campaigns: CampaignViewModel[] = []
-    for (const id of registered) {
-      const campaign = await getCampaign(id, nowSeconds, viewerAddress)
-      // Deleted campaigns resolve to a stub for the detail page; the list shows live ones only.
-      if (campaign !== undefined && campaign.deleted !== true) campaigns.push(campaign)
-    }
-    return campaigns
+    const settled = await Promise.all([...registered].map((id) => getCampaign(id, nowSeconds, viewerAddress)))
+    return settled.filter((campaign): campaign is CampaignViewModel => campaign !== undefined && campaign.deleted !== true)
   }
 
   // No factory: fall back to scanning indexed applications for our global-state keys. There is no app-name filter on

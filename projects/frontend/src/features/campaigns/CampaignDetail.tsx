@@ -60,7 +60,11 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
     setLoading(true)
     setError(null)
     try {
-      const now = await fetchChainTimestamp()
+      const [now, leaves, box] = await Promise.all([
+        fetchChainTimestamp(),
+        activeAddress ? fetchMyLeaves(appId, activeAddress).catch(() => []) : Promise.resolve<BackerLeaf[]>([]),
+        fetchVaultBox(appId).catch(() => undefined),
+      ])
       setNowSeconds(now)
       const result = await getCampaign(appId, now, activeAddress ?? undefined)
       if (!result) {
@@ -68,17 +72,7 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
       } else {
         setCampaign(result)
       }
-      if (activeAddress) {
-        try {
-          setLeaves(await fetchMyLeaves(appId, activeAddress))
-        } catch {
-          setLeaves([])
-        }
-      } else {
-        setLeaves([])
-      }
-      // Refund-window banner data (failed campaigns only): fresh vault box + configured window.
-      const box = await fetchVaultBox(appId).catch(() => undefined)
+      setLeaves(leaves)
       if (box !== undefined && box.status === 2 && box.settledAt > 0n) {
         const config = await fetchVaultConfig().catch(() => undefined)
         if (config !== undefined) {

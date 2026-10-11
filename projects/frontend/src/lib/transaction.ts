@@ -6,7 +6,7 @@ import { ClaimsVaultClient } from '../contracts/ClaimsVault'
 import { FactoryClient } from '../contracts/Factory'
 import { algorand, waitForIndexerCatchUp, waitForIndexerRound } from './algorand'
 import { factoryAppId, vaultAppId } from './campaign'
-import { frontierForPledge, fetchMyLeaves as loadBackerLeaves, loadTree, pathBlobForRefund } from './claimtree'
+import { clearTreeCache, frontierForPledge, fetchMyLeaves as loadBackerLeaves, loadTree, pathBlobForRefund } from './claimtree'
 import { isStaleProofError } from './errors'
 
 /**
@@ -186,9 +186,11 @@ export async function fetchVaultConfig(): Promise<{ window: bigint; sweepTarget:
  */
 async function submitWithFreshProof(run: () => Promise<bigint | undefined>): Promise<bigint | undefined> {
   try {
+    clearTreeCache()
     return await run()
   } catch (error) {
     if (isStaleProofError(error)) {
+      clearTreeCache()
       return await run()
     }
     throw error
@@ -301,6 +303,8 @@ export async function pledge(appId: bigint, session: WalletSession, amountMicroA
   }
 
   await submitWithFreshProof(attempt)
+  // Our own write superseded the cache: drop it so the UI reload below refetches.
+  clearTreeCache()
   await waitForIndexerCatchUp()
 }
 
@@ -345,6 +349,8 @@ export async function cancelPledge(appId: bigint, session: WalletSession, leaf: 
   }
 
   const confirmedRound = await submitWithFreshProof(attempt)
+  // Our own write superseded the cache: drop it so the UI reload below refetches.
+  clearTreeCache()
   if (confirmedRound !== undefined) {
     await waitForIndexerRound(confirmedRound)
   }
@@ -390,6 +396,8 @@ export async function refund(appId: bigint, session: WalletSession, leaf: Backer
   }
 
   const confirmedRound = await submitWithFreshProof(attempt)
+  // Our own write superseded the cache: drop it so the UI reload below refetches.
+  clearTreeCache()
   if (confirmedRound !== undefined) {
     await waitForIndexerRound(confirmedRound)
   }

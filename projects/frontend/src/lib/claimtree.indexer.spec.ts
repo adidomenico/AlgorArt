@@ -1,6 +1,6 @@
 import { encodeAddress } from 'algosdk'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchMyLeaves, fetchPledges, fetchSpends, loadTree } from './claimtree'
+import { clearTreeCache, fetchMyLeaves, fetchPledges, fetchSpends, loadTree } from './claimtree'
 
 const indexerMock = vi.hoisted(() => ({
   searchForTransactions: vi.fn(),
@@ -123,6 +123,7 @@ function blockMock(blocks: Map<bigint, unknown[]>) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  clearTreeCache()
 })
 
 describe('fetchPledges', () => {
@@ -271,6 +272,51 @@ describe('fetchPledges', () => {
     }))
 
     await expect(fetchPledges(CAMPAIGN, VAULT)).rejects.toThrow(/not found in its round block/)
+  })
+})
+
+describe('tree cache', () => {
+  const payA = payment('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', BACKER_A, VAULT, 3_000_000n)
+  const callA = pledgeCall('MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM', BACKER_A, 100n)
+
+  function mockSuccessfulReplay(): void {
+    indexerMock.searchForTransactions.mockImplementation(searchMock(new Map([[CAMPAIGN, [[callA]]]])))
+    indexerMock.lookupBlock.mockImplementation(blockMock(new Map([[100n, [payA, callA]]])))
+  }
+
+  it('reuses downloads across repeat reads', async () => {
+    mockSuccessfulReplay()
+
+    await fetchPledges(CAMPAIGN, VAULT)
+    await fetchPledges(CAMPAIGN, VAULT)
+    expect(indexerMock.searchForTransactions).toHaveBeenCalledTimes(1)
+    expect(indexerMock.lookupBlock).toHaveBeenCalledTimes(1)
+  })
+
+  it('refetches after clearTreeCache', async () => {
+    mockSuccessfulReplay()
+
+    await fetchPledges(CAMPAIGN, VAULT)
+    clearTreeCache()
+    await fetchPledges(CAMPAIGN, VAULT)
+    expect(indexerMock.searchForTransactions).toHaveBeenCalledTimes(2)
+    expect(indexerMock.lookupBlock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not cache failures', async () => {
+    mockSuccessfulReplay()
+    indexerMock.searchForTransactions.mockImplementationOnce(() => ({
+      applicationID: () => ({
+        limit: () => ({
+          do: () => Promise.reject(new Error('offline')),
+        }),
+      }),
+    }))
+
+    await expect(fetchPledges(CAMPAIGN, VAULT)).rejects.toThrow('offline')
+    const pledges = await fetchPledges(CAMPAIGN, VAULT)
+    expect(pledges).toHaveLength(1)
+    expect(indexerMock.searchForTransactions).toHaveBeenCalledTimes(2)
   })
 })
 

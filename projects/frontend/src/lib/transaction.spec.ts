@@ -37,6 +37,7 @@ const {
   waitForIndexerRoundMock,
   waitForIndexerCatchUpMock,
   loadTreeMock,
+  clearTreeCacheMock,
   frontierMock,
   pathBlobMock,
   fetchMyLeavesMock,
@@ -63,6 +64,7 @@ const {
   waitForIndexerRoundMock: vi.fn(),
   waitForIndexerCatchUpMock: vi.fn(),
   loadTreeMock: vi.fn(),
+  clearTreeCacheMock: vi.fn(),
   frontierMock: vi.fn(),
   pathBlobMock: vi.fn(),
   fetchMyLeavesMock: vi.fn(),
@@ -129,6 +131,7 @@ vi.mock('./campaign', () => ({
 }))
 
 vi.mock('./claimtree', () => ({
+  clearTreeCache: (...args: unknown[]) => clearTreeCacheMock(...args),
   loadTree: (...args: unknown[]) => loadTreeMock(...args),
   frontierForPledge: (...args: unknown[]) => frontierMock(...args),
   pathBlobForRefund: (...args: unknown[]) => pathBlobMock(...args),
