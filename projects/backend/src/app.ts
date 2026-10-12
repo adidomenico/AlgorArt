@@ -38,21 +38,21 @@ export function buildApp() {
     await reply.send(await createChallenge(request.body.address))
   })
 
-  app.post<{ Body: { address: unknown; message: unknown; authenticatorData: unknown; signature: unknown } }>(
+  app.post<{ Body: { address: unknown; data: unknown; authenticatorData: unknown; signature: unknown } }>(
     '/auth/verify',
     async (request, reply) => {
-      const { address, message, authenticatorData, signature } = request.body
+      const { address, data, authenticatorData, signature } = request.body
       if (
         typeof address !== 'string' ||
-        typeof message !== 'string' ||
+        typeof data !== 'string' ||
         typeof authenticatorData !== 'string' ||
         typeof signature !== 'string'
       ) {
-        await reply.code(400).send({ error: 'address, message, authenticatorData, and signature are required' })
+        await reply.code(400).send({ error: 'address, data, authenticatorData, and signature are required' })
         return
       }
       try {
-        await reply.send({ token: await verifyChallenge(address, message, authenticatorData, signature) })
+        await reply.send({ token: await verifyChallenge(address, data, authenticatorData, signature) })
       } catch {
         await reply.code(400).send({ error: 'challenge verification failed' })
       }

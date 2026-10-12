@@ -27,20 +27,26 @@ function bytesToBase64(bytes) {
 const account = algosdk.generateAccount()
 const address = account.addr.toString()
 const challenge = await post('/auth/challenge', { address })
-// ARC-60 signing input: sha256(message) || sha256(authenticatorData).
-const domain = challenge.message
-  .split('\n')
-  .find((line) => line.startsWith('Domain: '))
-  .slice('Domain: '.length)
-  .trim()
+// SIWA request carrying the challenge nonce; the wallet would canonify it, but the backend hashes the exact bytes
+// it receives, so plain JSON is enough here.
+const domain = process.env.APP_DOMAIN ?? 'localhost'
+const uri = process.env.APP_URI ?? 'http://localhost:5173'
+const data = JSON.stringify({
+  domain,
+  account_address: address,
+  type: 'ed25519',
+  uri,
+  version: '1',
+  statement: 'manual API testing',
+  nonce: challenge.nonce,
+  'issued-at': new Date().toISOString(),
+})
+// ARC-60 signing input: sha256(data) || sha256(authenticatorData).
 const authenticatorData = createHash('sha256').update(domain).digest()
-const toSign = Buffer.concat([
-  createHash('sha256').update(challenge.message).digest(),
-  createHash('sha256').update(authenticatorData).digest(),
-])
+const toSign = Buffer.concat([createHash('sha256').update(data).digest(), createHash('sha256').update(authenticatorData).digest()])
 const verified = await post('/auth/verify', {
   address,
-  message: challenge.message,
+  data,
   authenticatorData: bytesToBase64(authenticatorData),
   signature: bytesToBase64(nacl.sign.detached(toSign, account.sk)),
 })

@@ -6,6 +6,7 @@ function uploadInput(overrides: Partial<CoverUpload> = {}): CoverUpload {
   return {
     baseUrl: 'http://backend',
     address: 'ADDRESS',
+    chainId: 'algorand:testnet',
     sign: () => Promise.resolve({ signature: new Uint8Array([1, 2, 3]), authenticatorData: new Uint8Array([4, 5, 6]) }),
     file: new File(['bytes'], 'cover.png', { type: 'image/png' }),
     ...overrides,
@@ -40,7 +41,7 @@ describe('uploadCover', () => {
   it('signs in and returns the ipfs URI', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(okJson({ message: 'challenge' }))
+      .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
       .mockResolvedValueOnce(okJson({ token: 'session' }))
       .mockResolvedValueOnce(okJson({ cid: 'QmCover' }))
     vi.stubGlobal('fetch', fetchMock)
@@ -49,7 +50,8 @@ describe('uploadCover', () => {
     const calls = fetchMock.mock.calls as unknown[][]
     expect(calls[0]?.[0]).toBe('http://backend/auth/challenge')
     const verifyInit = calls[1]?.[1] as { body?: unknown } | undefined
-    expect(verifyInit?.body).toContain('"message":"challenge"')
+    expect(verifyInit?.body).toContain('\\"nonce\\":\\"abc123\\"')
+    expect(verifyInit?.body).toContain('\\"chain_id\\":\\"algorand:testnet\\"')
     // [4, 5, 6] in base64.
     expect(verifyInit?.body).toContain('"authenticatorData":"BAUG"')
     const uploadInit = calls[2]?.[1] as { headers?: unknown; body?: unknown } | undefined
@@ -57,11 +59,54 @@ describe('uploadCover', () => {
     expect(uploadInit?.body).toBeInstanceOf(File)
   })
 
+  it('signs canonical SIWA carrying the nonce', async () => {
+    const payloads: string[] = []
+    const sign = (payload: string) => {
+      payloads.push(payload)
+      return Promise.resolve({ signature: new Uint8Array([1, 2, 3]), authenticatorData: new Uint8Array([4, 5, 6]) })
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
+        .mockResolvedValueOnce(okJson({ token: 'session' }))
+        .mockResolvedValueOnce(okJson({ cid: 'QmCover' })),
+    )
+
+    await uploadCover(uploadInput({ sign }))
+    expect(payloads).toHaveLength(1)
+    const siwa = JSON.parse(atob(String(payloads[0]))) as Record<string, unknown>
+    expect(siwa).toMatchObject({
+      account_address: 'ADDRESS',
+      type: 'ed25519',
+      version: '1',
+      nonce: 'abc123',
+      chain_id: 'algorand:testnet',
+    })
+    expect(siwa.domain).toBe(location.host)
+    expect(siwa.uri).toBe(location.origin)
+  })
+
+  it('falls back to localnet without a chain id', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
+      .mockResolvedValueOnce(okJson({ token: 'session' }))
+      .mockResolvedValueOnce(okJson({ cid: 'QmCover' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(uploadCover(uploadInput({ chainId: undefined }))).resolves.toBe('ipfs://QmCover')
+    const calls = fetchMock.mock.calls as unknown[][]
+    const verifyInit = calls[1]?.[1] as { body?: unknown } | undefined
+    expect(verifyInit?.body).toContain('\\"chain_id\\":\\"algorand:localnet\\"')
+  })
+
   it('sends the wallet signature as base64', async () => {
     const sign = () => Promise.resolve({ signature: Uint8Array.from([72, 69, 76, 76, 79]), authenticatorData: new Uint8Array([4, 5, 6]) })
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(okJson({ message: 'challenge' }))
+      .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
       .mockResolvedValueOnce(okJson({ token: 'session' }))
       .mockResolvedValueOnce(okJson({ cid: 'QmCover' }))
     vi.stubGlobal('fetch', fetchMock)
@@ -92,7 +137,7 @@ describe('uploadCover', () => {
       'fetch',
       vi
         .fn()
-        .mockResolvedValueOnce(okJson({ message: 'challenge' }))
+        .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
         .mockResolvedValueOnce({ status: 400, json: () => Promise.resolve({}) }),
     )
     await expect(uploadCover(uploadInput())).rejects.toThrow('Sign-in failed')
@@ -103,14 +148,14 @@ describe('uploadCover', () => {
       'fetch',
       vi
         .fn()
-        .mockResolvedValueOnce(okJson({ message: 'challenge' }))
+        .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
         .mockResolvedValueOnce(okJson({})),
     )
     await expect(uploadCover(uploadInput())).rejects.toThrow('Sign-in failed')
   })
 
   it('lets wallet rejections propagate', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ message: 'challenge' })))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ nonce: 'abc123' })))
     const sign = () => Promise.reject(new Error('rejected in wallet'))
     await expect(uploadCover(uploadInput({ sign }))).rejects.toThrow('rejected in wallet')
   })
@@ -120,7 +165,7 @@ describe('uploadCover', () => {
       'fetch',
       vi
         .fn()
-        .mockResolvedValueOnce(okJson({ message: 'challenge' }))
+        .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
         .mockResolvedValueOnce(okJson({ token: 'session' }))
         .mockResolvedValueOnce({ status: 502, json: () => Promise.resolve({}) }),
     )
@@ -132,7 +177,7 @@ describe('uploadCover', () => {
       'fetch',
       vi
         .fn()
-        .mockResolvedValueOnce(okJson({ message: 'challenge' }))
+        .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
         .mockResolvedValueOnce(okJson({ token: 'session' }))
         .mockResolvedValueOnce(okJson({})),
     )
@@ -144,7 +189,7 @@ describe('uploadCover', () => {
       'fetch',
       vi
         .fn()
-        .mockResolvedValueOnce(okJson({ message: 'challenge' }))
+        .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
         .mockResolvedValueOnce(okJson({ token: 'session' }))
         .mockRejectedValueOnce(new Error('offline')),
     )

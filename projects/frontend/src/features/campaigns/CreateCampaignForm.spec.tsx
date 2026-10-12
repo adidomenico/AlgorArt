@@ -26,10 +26,12 @@ vi.mock('../../lib/algorand', () => ({
 }))
 
 const useWalletMock = vi.fn()
+const useNetworkMock = vi.fn()
 const disconnectMock = vi.fn()
 
 vi.mock('@txnlab/use-wallet-react', () => ({
   useWallet: () => useWalletMock(),
+  useNetwork: () => useNetworkMock(),
 }))
 
 describe('CreateCampaignForm', () => {
@@ -43,6 +45,7 @@ describe('CreateCampaignForm', () => {
       signData: (...args: unknown[]) => signDataMock(...args),
       transactionSigner: {},
     })
+    useNetworkMock.mockReturnValue({ activeNetworkConfig: { caipChainId: 'algorand:testnet' } })
     fetchChainTimestampMock.mockResolvedValue(1_000_000_000n)
   })
 
@@ -187,7 +190,7 @@ describe('CreateCampaignForm', () => {
       'fetch',
       vi
         .fn()
-        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ message: 'challenge' }) })
+        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ nonce: 'abc123' }) })
         .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ token: 'session' }) })
         .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ cid: 'QmCover' }) }),
     )
@@ -198,7 +201,13 @@ describe('CreateCampaignForm', () => {
     await user.click(screen.getByRole('button', { name: 'Upload cover' }))
 
     expect(await screen.findByDisplayValue('ipfs://QmCover')).toBeInTheDocument()
-    expect(signDataMock).toHaveBeenCalledWith(btoa('challenge'), { encoding: 'base64', scope: ScopeType.AUTH })
+    const calls = signDataMock.mock.calls as unknown[][]
+    const payload = calls[0]?.[0] as string
+    const siwa = JSON.parse(atob(payload)) as { nonce?: unknown; account_address?: unknown; chain_id?: unknown }
+    expect(siwa.nonce).toBeTruthy()
+    expect(siwa.account_address).toBe('ADDRESS')
+    expect(siwa.chain_id).toBe('algorand:testnet')
+    expect(signDataMock).toHaveBeenCalledWith(payload, { encoding: 'base64', scope: ScopeType.AUTH })
   })
 
   it('shows a message when the upload fails', async () => {
@@ -216,7 +225,7 @@ describe('CreateCampaignForm', () => {
 
   it('shows a message when signing fails', async () => {
     vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ message: 'challenge' }) }))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ nonce: 'abc123' }) }))
     signDataMock.mockRejectedValueOnce(new Error('rejected in wallet'))
     const user = userEvent.setup()
     render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
@@ -253,7 +262,7 @@ describe('CreateCampaignForm', () => {
     expect(button).toBeDisabled()
   })
 
-  it('hides the upload controls when the wallet cannot sign', async () => {
+  it('hides the upload controls when the wallet cannot sign', () => {
     useWalletMock.mockReturnValue({
       activeAddress: 'ADDRESS',
       activeWallet: { disconnect: disconnectMock, canSignData: false },

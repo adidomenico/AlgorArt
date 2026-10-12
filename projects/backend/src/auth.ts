@@ -15,9 +15,8 @@ const CHALLENGE_TTL_MS = 5 * 60 * 1000
 const TOKEN_TTL = '7d'
 const TOKEN_ISSUER = 'algorart'
 
-/** A sign-in challenge for one address. */
+/** A sign-in challenge for one address: the client embeds the nonce in its SIWA request. */
 export interface Challenge {
-  message: string
   nonce: string
   expiresAt: string
 }
@@ -34,6 +33,16 @@ function concatBytes(first: Uint8Array, second: Uint8Array): Uint8Array {
   out.set(first)
   out.set(second, first.length)
   return out
+}
+
+/**
+ * Narrow an unknown value to a string-keyed record.
+ *
+ * @param value Value to check.
+ * @returns True for non-null objects.
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }
 
 /**
@@ -78,55 +87,50 @@ function sessionSecret(): Uint8Array {
 }
 
 /**
- * Issue a single-use sign-in challenge for an address. The wallet signs `message`; `verifyChallenge` checks it.
- * The message carries the SIWE-style `Domain` and `URI` lines so the wallet shows the user which site they sign
- * into; verification rejects anything not bound to this deployment.
+ * Issue a single-use sign-in nonce for an address. The client embeds it in a SIWA request object that the wallet
+ * signs; `verifyChallenge` checks the signature and the binding.
  *
  * @param address Algorand address to challenge.
- * @returns The challenge message, nonce, and expiry.
+ * @returns The nonce and expiry.
  */
 export async function createChallenge(address: string): Promise<Challenge> {
   const nonceBytes = new Uint8Array(16)
   crypto.getRandomValues(nonceBytes)
   const nonce = Buffer.from(nonceBytes).toString('hex')
   const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS)
-  const message = [
-    'AlgorArt sign-in',
-    `Domain: ${appDomain()}`,
-    `Address: ${address}`,
-    `Nonce: ${nonce}`,
-    `Issued: ${new Date().toISOString()}`,
-    `Expires: ${expiresAt.toISOString()}`,
-    `URI: ${appUri()}`,
-  ].join('\n')
   await pool().query('INSERT INTO auth_nonces (nonce, address, expires_at) VALUES ($1, $2, $3)', [nonce, address, expiresAt.toISOString()])
-  return { message, nonce, expiresAt: expiresAt.toISOString() }
+  return { nonce, expiresAt: expiresAt.toISOString() }
 }
 
 /**
- * Verify a wallet-signed challenge (ARC-60) and issue a session JWT. Nonces are single-use and expire after five
- * minutes. The wallet signs `sha256(message) || sha256(authenticatorData)` where the authenticator data is the
- * SHA-256 of this deployment's domain (see use-wallet's `createStdSignData`); rekeyed accounts are not supported,
- * the signature must come from the address key itself.
+ * Verify a wallet-signed SIWA request (ARC-60) and issue a session JWT. Nonces are single-use and expire after five
+ * minutes. The wallet signs `sha256(data) || sha256(authenticatorData)` where the authenticator data starts with
+ * the SHA-256 of this deployment's domain (see use-wallet's `createStdSignData`); rekeyed accounts are not
+ * supported, the signature must come from the address key itself. `chain_id` is informational: the nonce anchors
+ * replay protection.
  *
  * @param address Claimed Algorand address.
- * @param message The exact challenge message that was signed.
- * @param authenticatorData Base64 ARC-60 authenticator data (SHA-256 of the domain).
+ * @param data The exact canonified SIWA JSON string that was signed.
+ * @param authenticatorData Base64 ARC-60 authenticator data.
  * @param signature Base64 signature over the ARC-60 signing input.
  * @returns Session JWT (Bearer token, seven days).
  */
-export async function verifyChallenge(address: string, message: string, authenticatorData: string, signature: string): Promise<string> {
-  const lines = message.split('\n')
-  const field = (prefix: string): string | undefined => {
-    const line = lines.find((candidate) => candidate.startsWith(prefix))
-    return line?.slice(prefix.length).trim() || undefined
+export async function verifyChallenge(address: string, data: string, authenticatorData: string, signature: string): Promise<string> {
+  let siwa: unknown
+  try {
+    siwa = JSON.parse(data) as unknown
+  } catch {
+    throw new Error('malformed SIWA request')
   }
-  const nonce = field('Nonce: ')
-  if (nonce === undefined) {
-    throw new Error('malformed challenge message')
+  if (!isRecord(siwa)) {
+    throw new Error('malformed SIWA request')
   }
-  if (field('Domain: ') !== appDomain() || field('URI: ') !== appUri() || field('Address: ') !== address) {
-    throw new Error('challenge is not bound to this deployment')
+  const { domain, uri, account_address, type, version, nonce } = siwa
+  if (typeof nonce !== 'string' || nonce === '') {
+    throw new Error('malformed SIWA request')
+  }
+  if (domain !== appDomain() || uri !== appUri() || account_address !== address || type !== 'ed25519' || version !== '1') {
+    throw new Error('SIWA request is not bound to this deployment')
   }
   const found = await pool().query<{ address: string }>(
     'SELECT address FROM auth_nonces WHERE nonce = $1 AND address = $2 AND used_at IS NULL AND expires_at > now()',
@@ -146,7 +150,7 @@ export async function verifyChallenge(address: string, message: string, authenti
     throw new Error('signature is not bound to this deployment')
   }
   const valid = nacl.sign.detached.verify(
-    concatBytes(sha256(new TextEncoder().encode(message)), sha256(base64ToBytes(authenticatorData))),
+    concatBytes(sha256(new TextEncoder().encode(data)), sha256(base64ToBytes(authenticatorData))),
     base64ToBytes(signature),
     algosdk.decodeAddress(address).publicKey,
   )

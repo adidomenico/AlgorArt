@@ -1,5 +1,5 @@
 import { ScopeType } from '@txnlab/use-wallet'
-import { useWallet } from '@txnlab/use-wallet-react'
+import { useNetwork, useWallet } from '@txnlab/use-wallet-react'
 import { useState } from 'react'
 import { fetchChainTimestamp } from '../../lib/algorand'
 import { backendUrl, uploadCover } from '../../lib/backend'
@@ -16,6 +16,7 @@ interface CreateCampaignFormProps {
 
 const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) => {
   const { activeAddress, activeWallet, signData, transactionSigner } = useWallet()
+  const { activeNetworkConfig } = useNetwork()
   const [title, setTitle] = useState('')
   const [metadataUri, setMetadataUri] = useState('')
   const [imageFile, setImageFile] = useState<File | null>(null)
@@ -42,8 +43,9 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
       const uri = await uploadCover({
         baseUrl: backendUrl(),
         address: activeAddress,
-        sign: (message) =>
-          signData(btoa(message), { encoding: 'base64', scope: ScopeType.AUTH }).then((result) => ({
+        chainId: activeNetworkConfig.caipChainId,
+        sign: (payload) =>
+          signData(payload, { encoding: 'base64', scope: ScopeType.AUTH }).then((result) => ({
             signature: result.signature,
             authenticatorData: result.authenticatorData,
           })),

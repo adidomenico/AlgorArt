@@ -16,27 +16,32 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /**
- * ARC-60 test signature: ed25519 over sha256(message) || sha256(authenticatorData).
+ * ARC-60 test signature: ed25519 over sha256(data) || sha256(authenticatorData).
  *
- * @param message Challenge message that was signed.
+ * @param data Exact SIWA JSON string that was signed.
  * @param sk Signing secret key.
  * @returns Base64 authenticator data and signature.
  */
-function arc60Sign(message: string, sk: Uint8Array): { authenticatorData: string; signature: string } {
+function arc60Sign(data: string, sk: Uint8Array): { authenticatorData: string; signature: string } {
   const authenticatorData = createHash('sha256').update('localhost').digest()
-  const toSign = new Uint8Array([
-    ...createHash('sha256').update(message).digest(),
-    ...createHash('sha256').update(authenticatorData).digest(),
-  ])
+  const toSign = new Uint8Array([...createHash('sha256').update(data).digest(), ...createHash('sha256').update(authenticatorData).digest()])
   return { authenticatorData: bytesToBase64(authenticatorData), signature: bytesToBase64(nacl.sign.detached(toSign, sk)) }
 }
 
 async function token(app: FastifyInstance): Promise<string> {
   const { address, sk } = keypair()
   const challenge = await app.inject({ method: 'POST', url: '/auth/challenge', payload: { address } })
-  const { message } = challenge.json<{ message: string }>()
-  const { authenticatorData, signature } = arc60Sign(message, sk)
-  const verified = await app.inject({ method: 'POST', url: '/auth/verify', payload: { address, message, authenticatorData, signature } })
+  const { nonce } = challenge.json<{ nonce: string }>()
+  const data = JSON.stringify({
+    domain: 'localhost',
+    account_address: address,
+    type: 'ed25519',
+    uri: 'http://localhost:5173',
+    version: '1',
+    nonce,
+  })
+  const { authenticatorData, signature } = arc60Sign(data, sk)
+  const verified = await app.inject({ method: 'POST', url: '/auth/verify', payload: { address, data, authenticatorData, signature } })
   return verified.json<{ token: string }>().token
 }
 

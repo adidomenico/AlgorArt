@@ -1,3 +1,5 @@
+import { canonify } from 'canonify'
+
 /**
  * Backend (catalog) API client: wallet sign-in plus cover-image upload.
  *
@@ -24,7 +26,8 @@ export function backendUrl(): string {
 export interface CoverUpload {
   baseUrl: string
   address: string
-  sign: (message: string) => Promise<{ signature: Uint8Array; authenticatorData: Uint8Array }>
+  chainId: string | undefined
+  sign: (payload: string) => Promise<{ signature: Uint8Array; authenticatorData: Uint8Array }>
   file: File
 }
 
@@ -54,11 +57,11 @@ async function postJson(url: string, body: unknown): Promise<{ status: number; j
   return { status: response.status, json: await readJson(response) }
 }
 
-function challengeMessage(json: unknown): string {
-  if (!isRecord(json) || typeof json.message !== 'string' || json.message === '') {
+function challengeNonce(json: unknown): string {
+  if (!isRecord(json) || typeof json.nonce !== 'string' || json.nonce === '') {
     throw new Error('Could not start the upload. Try again.')
   }
-  return json.message
+  return json.nonce
 }
 
 function sessionToken(json: unknown): string {
@@ -76,7 +79,8 @@ function pinnedCid(json: unknown): string {
 }
 
 /**
- * Pin a cover image through the backend: sign-in challenge, ARC-60 wallet signature, session verify, then upload.
+ * Pin a cover image through the backend: sign-in challenge, ARC-60 wallet signature over a SIWA request carrying
+ * the nonce, session verify, then upload.
  *
  * Signing support is probed by attempting it: wallets without message signing
  * reject, and the rejection propagates to the caller as the user-facing message.
@@ -84,21 +88,34 @@ function pinnedCid(json: unknown): string {
  * @param upload Upload inputs.
  * @param upload.baseUrl Backend base URL.
  * @param upload.address Signer address for the challenge.
- * @param upload.sign Wallet message signer, returning the raw signature and authenticator bytes.
+ * @param upload.chainId CAIP-2 chain id for the SIWA request, if the network config provides one.
+ * @param upload.sign Wallet message signer (receives the base64 SIWA payload), returning raw signature bytes.
  * @param upload.file Image file to pin.
  * @returns The `ipfs://` URI to store as the campaign metadata URI.
  */
-export async function uploadCover({ baseUrl, address, sign, file }: CoverUpload): Promise<string> {
+export async function uploadCover({ baseUrl, address, chainId, sign, file }: CoverUpload): Promise<string> {
   if (baseUrl === '') throw new Error('Image upload needs the backend configured (VITE_BACKEND_URL).')
 
   const challenge = await postJson(`${baseUrl}/auth/challenge`, { address })
   if (challenge.status !== 200) throw new Error('Could not start the upload. Is the backend reachable?')
-  const message = challengeMessage(challenge.json)
+  const nonce = challengeNonce(challenge.json)
 
-  const { signature, authenticatorData } = await sign(message)
+  // The wallet requires canonical SIWA JSON; canonify of this plain object cannot fail.
+  const data = canonify({
+    domain: location.host,
+    chain_id: chainId ?? 'algorand:localnet',
+    account_address: address,
+    type: 'ed25519',
+    uri: location.origin,
+    version: '1',
+    statement: 'Sign in to AlgorArt to upload a cover image.',
+    nonce,
+    'issued-at': new Date().toISOString(),
+  }) as string
+  const { signature, authenticatorData } = await sign(btoa(data))
   const verified = await postJson(`${baseUrl}/auth/verify`, {
     address,
-    message,
+    data,
     authenticatorData: bytesToBase64(authenticatorData),
     signature: bytesToBase64(signature),
   })

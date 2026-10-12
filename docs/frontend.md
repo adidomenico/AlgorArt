@@ -122,11 +122,12 @@ view also shows `description` and `category`. A blob
 with none of the four fields is treated as absent, so seed URIs render
 the placeholder instead of erroring. The create form shows a cover picker that
 pins through the backend's `POST /uploads` (ARC-60 wallet `signData` sign-in:
-the wallet signs `sha256(challenge)||sha256(authenticatorData)` and the
-backend verifies it plus the domain binding; needs `VITE_BACKEND_URL`)
-wherever the wallet reports message-signing support; other wallets only get
-the manual metadata-URI paste field, which stays as fallback everywhere.
-Pera support needs use-wallet v5 (see roadmap). Descriptions
+the client canonifies a SIWA request carrying the backend nonce, the wallet
+signs `sha256(data)||sha256(authenticatorData)`, and the backend verifies the
+signature plus the domain binding; needs `VITE_BACKEND_URL`) wherever the
+wallet reports message-signing support; other wallets only get the manual
+metadata-URI paste field, which stays as fallback everywhere. Pera support
+needs use-wallet v5 (see roadmap). Descriptions
 evolve through the creator updates feed (roadmap), not by editing the blob -
 the pledge-time content stays frozen and always viewable.
 
