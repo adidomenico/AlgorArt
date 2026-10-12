@@ -25,7 +25,7 @@ const CampaignList = ({ onSelectCampaign }: CampaignListProps) => {
     // Pledge totals need a full history replay each, so they stream in afterwards without blocking.
     listCampaigns()
       .then((result) => {
-        if (!cancelled && result) {
+        if (!cancelled) {
           setNowSeconds(result.nowSeconds)
           setCampaigns(result.campaigns)
           if (activeAddress) {
