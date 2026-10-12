@@ -445,6 +445,31 @@ describe('CampaignDetail', () => {
     expect(screen.getByText(/Your pledge/)).toBeInTheDocument()
   })
 
+  it('keeps old data when the campaign vanishes before refresh', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('funded', { creator: 'ADDRESS' }))
+    claimMock.mockResolvedValue({})
+    const user = userEvent.setup()
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await screen.findByText('Claim funds')
+    getCampaignMock.mockResolvedValue(undefined)
+    await user.click(screen.getByText('Claim funds'))
+    expect(screen.getByText('Campaign #42')).toBeInTheDocument()
+  })
+
+  it('keeps old data with a message when post-action refresh fails', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('funded', { creator: 'ADDRESS' }))
+    claimMock.mockResolvedValue({})
+    const user = userEvent.setup()
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await screen.findByText('Claim funds')
+    getCampaignMock.mockRejectedValue(new Error('boom'))
+    await user.click(screen.getByText('Claim funds'))
+    expect(await screen.findByText(/Could not refresh data/)).toBeInTheDocument()
+    expect(screen.getByText('Campaign #42')).toBeInTheDocument()
+  })
+
   it('shows a success message after a successful claim', async () => {
     getCampaignMock.mockResolvedValue(viewModel('funded', { creator: 'ADDRESS' }))
     claimMock.mockResolvedValue(undefined)

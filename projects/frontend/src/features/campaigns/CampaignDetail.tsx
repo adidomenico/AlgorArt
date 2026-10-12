@@ -56,49 +56,97 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
+  const readCore = useCallback(async () => {
+    const now = await fetchChainTimestamp()
+    const result = await getCampaign(appId, now, activeAddress ?? undefined)
+    return { now, result }
+  }, [appId, activeAddress])
+
+  const readLeaves = useCallback(async (): Promise<BackerLeaf[]> => {
+    if (!activeAddress) return []
+    try {
+      return await fetchMyLeaves(appId, activeAddress)
+    } catch {
+      return []
+    }
+  }, [appId, activeAddress])
+
+  const readWindow = useCallback(async () => {
+    const box = await fetchVaultBox(appId).catch(() => undefined)
+    if (box === undefined || box.status !== 2 || box.settledAt <= 0n) return null
+    const config = await fetchVaultConfig().catch(() => undefined)
+    if (config === undefined) return null
+    return { endsAt: box.settledAt + config.window, sweepTarget: config.sweepTarget }
+  }, [appId])
+
+  // Full initial load with a spinner. Later refreshes use refreshSpend so the page never flashes.
+  const loadAll = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [now, leaves, box] = await Promise.all([
-        fetchChainTimestamp(),
-        activeAddress ? fetchMyLeaves(appId, activeAddress).catch(() => []) : Promise.resolve<BackerLeaf[]>([]),
-        fetchVaultBox(appId).catch(() => undefined),
-      ])
+      const [{ now, result }, leaves, window] = await Promise.all([readCore(), readLeaves(), readWindow()])
       setNowSeconds(now)
-      const result = await getCampaign(appId, now, activeAddress ?? undefined)
       if (!result) {
         setError('Campaign not found (or it is not a Campaign app).')
       } else {
         setCampaign(result)
       }
       setLeaves(leaves)
-      if (box !== undefined && box.status === 2 && box.settledAt > 0n) {
-        const config = await fetchVaultConfig().catch(() => undefined)
-        if (config !== undefined) {
-          setWindowInfo({ endsAt: box.settledAt + config.window, sweepTarget: config.sweepTarget })
-        } else {
-          setWindowInfo(null)
-        }
-      } else {
-        setWindowInfo(null)
-      }
+      setWindowInfo(window)
     } catch {
       setError('Failed to load campaign. Is the indexer reachable?')
     } finally {
       setLoading(false)
     }
-  }, [appId, activeAddress])
+  }, [readCore, readLeaves, readWindow])
+
+  // Post-action refresh: raised, status, and leaves only. Metadata, window, and timestamp cannot change under an
+  // action, so they are left alone - and the old UI stays visible throughout (no spinner).
+  const refreshSpend = useCallback(async () => {
+    try {
+      const [{ now, result }, leaves] = await Promise.all([readCore(), readLeaves()])
+      setNowSeconds(now)
+      if (result) setCampaign(result)
+      setLeaves(leaves)
+    } catch {
+      setMessage('Could not refresh data. It will update on your next action.')
+    }
+  }, [readCore, readLeaves])
+
+  const noRefresh = useCallback(() => Promise.resolve(), [])
 
   useEffect(() => {
-    void load()
-  }, [load])
+    void loadAll()
+  }, [loadAll])
 
   const metadata = useCampaignMetadata(campaign?.metadataUri ?? '')
 
-  if (loading || nowSeconds === null) return <p className="text-muted">Loading campaign…</p>
-  if (error) return <p className="text-badge-failed">{error}</p>
-  // load() sets either campaign or error, so a null campaign here is unreachable.
+  if (loading) {
+    return (
+      <div>
+        <p className="text-muted">Loading campaign…</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div>
+        <p className="text-badge-failed">{error}</p>
+      </div>
+    )
+  }
+
+  // A finished load with no error always sets the timestamp: reaching here with null means a logic bug.
+  /* v8 ignore next */
+  if (nowSeconds === null) {
+    return (
+      <div>
+        <p className="text-muted">Loading campaign…</p>
+      </div>
+    )
+  }
+  // loadAll() sets either campaign or error, so a null campaign here is unreachable.
   /* v8 ignore next */
   if (!campaign) return null
 
@@ -112,14 +160,14 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   const canCancelPledge = campaign.status === 'open' && connected && hasPledge
   const canDelete = isCreator && (campaign.status !== 'open' || campaign.raisedMicroAlgos === 0n)
 
-  const runAction = async (key: string, action: () => Promise<void>, success: string) => {
+  const runAction = async (key: string, action: () => Promise<void>, success: string, refresh: () => Promise<unknown>) => {
     setBusy(true)
     setBusyAction(key)
     setMessage(null)
     try {
       await action()
       setMessage(success)
-      await load()
+      await refresh()
     } catch (error) {
       logError('transaction', error)
       const kind = classifyError(error)
@@ -145,11 +193,11 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   }
 
   const handleClaim = () => {
-    void runAction('claim', () => claim(appId, sessionOf()), 'Claim submitted!')
+    void runAction('claim', () => claim(appId, sessionOf()), 'Claim submitted!', refreshSpend)
   }
 
   const handleDelete = () => {
-    void runAction('delete', () => deleteCampaign(appId, sessionOf()), 'Campaign deleted!').then(() => {
+    void runAction('delete', () => deleteCampaign(appId, sessionOf()), 'Campaign deleted!', noRefresh).then(() => {
       onBack()
     })
   }
@@ -157,7 +205,7 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   const handleSpend = (leaf: BackerLeaf, kind: 'cancel' | 'refund') => {
     const key = `${kind}-${leaf.position.toString()}`
     const action = kind === 'cancel' ? () => cancelPledge(appId, sessionOf(), leaf) : () => refund(appId, sessionOf(), leaf)
-    void runAction(key, action, kind === 'cancel' ? 'Pledge withdrawn!' : 'Refund submitted!')
+    void runAction(key, action, kind === 'cancel' ? 'Pledge withdrawn!' : 'Refund submitted!', refreshSpend)
   }
 
   // Deleted on-chain (global state gone): no actions except vault-direct refunds of live leaves.
@@ -271,7 +319,7 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
           </p>
         )}
 
-        {canPledge && <PledgeForm appId={campaign.id} onPledged={() => void load()} />}
+        {canPledge && <PledgeForm appId={campaign.id} onPledged={() => void refreshSpend()} />}
 
         {canClaim && (
           <div className="mt-5 border-t border-line pt-5">
