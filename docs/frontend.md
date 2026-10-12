@@ -126,7 +126,11 @@ the client canonifies a SIWA request carrying the backend nonce, the wallet
 signs `sha256(data)||sha256(authenticatorData)`, and the backend verifies the
 signature plus the domain binding; needs `VITE_BACKEND_URL`) wherever the
 wallet reports message-signing support, and shows the resulting URI in a
-readonly debug field; other wallets see no upload controls at all. Descriptions
+readonly debug field; other wallets see no upload controls at all. Below it, a
+description box plus a category dropdown feed an Upload metadata button that pins
+`{name, description, image, category}` through `POST /uploads/metadata` (name is the
+campaign title), replacing the display with the metadata URI the create call stores.
+Descriptions
 evolve through the creator updates feed (roadmap), not by editing the blob -
 the pledge-time content stays frozen and always viewable.
 

@@ -60,7 +60,7 @@ each open item links to the doc with the details. Design context is in
 
 ## Content & metadata
 
-- [x] Rich off-chain rendering (IPFS image/description/category) - ARC-3-style blob rendered in card/detail via the public gateway; upload/pinning still open (see [`frontend.md`](frontend.md) → Campaign metadata).
+- [x] Rich off-chain rendering (IPFS image/description/category) - ARC-3-style blob rendered in card/detail via the public gateway; cover and metadata pinning flow through the backend, single-click create still open (see [`frontend.md`](frontend.md) → Campaign metadata).
 - [ ] Real styled UI: design tokens, layout, cards, detail page, create flow, states, accessibility - see [`design.md`](design.md).
 
 ## TestNet & deployment
@@ -91,6 +91,7 @@ one commit each - CI wiring comes last:
 - [x] **`POST /uploads`** - authenticated server-side Pinata pinning, returns the CID.
 - [x] **Create-form upload** - cover picker pins through `POST /uploads` (wallet `signData` sign-in) into a readonly metadata-URI display, upload button first. Gated on the wallet's signing capability.
 - [x] **Cover upload button + readonly URI** - the metadata URI renders as readonly debug text, not an editable field.
+- [x] **Metadata upload** - description box plus category dropdown; an Upload metadata button pins `{name, description, image, category}` through `POST /uploads/metadata` (Name = campaign title, required) into the same display.
 - [ ] **use-wallet v5 + ARC-60 sign-in** - unlocks Pera cover uploads (v5 adds Pera `signData`, but signs ARC-60 structures, so verification moves off `MX||message`). Lands in two commits, in order:
   1. [x] Frontend v5 upgrade (adapter packages, factory config, storage key, type renames). Uploads fail closed until step 2 lands.
   2. [x] ARC-60 verification end-to-end (backend verifies `sha256(data)||sha256(authenticatorData)` + domain binding; frontend sends the ARC-60 payload). Pera trial on TestNet still open - see below.
