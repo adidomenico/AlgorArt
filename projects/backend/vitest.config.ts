@@ -4,6 +4,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     globalSetup: ['./vitest.global-setup.ts'],
+    // Spec files share one throwaway database and clean it with blanket
+    // DELETEs, so concurrent files can wipe each other's in-flight rows.
+    fileParallelism: false,
     coverage: {
       provider: 'v8',
       thresholds: {

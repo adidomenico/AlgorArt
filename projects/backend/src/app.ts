@@ -1,6 +1,9 @@
 import algosdk from 'algosdk'
 import Fastify from 'fastify'
 import { authenticate, createChallenge, verifyChallenge } from './auth.js'
+import { PinningError, pinImage } from './uploads.js'
+
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 /**
  * Build the Fastify application with all routes. Exported for inject-based tests.
@@ -38,6 +41,33 @@ export function buildApp() {
   app.get('/me', { preHandler: authenticate }, (request) => {
     return { address: request.address }
   })
+
+  // Raw image bytes (no multipart parser needed); anything else 400s below.
+  app.addContentTypeParser(/^image\//, { parseAs: 'buffer' }, (_request, body, done) => {
+    done(null, body)
+  })
+
+  // Authenticated: pinning spends the platform's Pinata quota.
+  // The image/* parser above only runs when that content-type is present, so both generics hold at runtime.
+  app.post<{ Body: Uint8Array<ArrayBuffer>; Headers: { 'content-type': string } }>(
+    '/uploads',
+    { preHandler: authenticate, bodyLimit: MAX_UPLOAD_BYTES },
+    async (request, reply) => {
+      if (!(request.body instanceof Uint8Array)) {
+        await reply.code(400).send({ error: 'an image body is required' })
+        return
+      }
+      try {
+        await reply.send({ cid: await pinImage(request.body, request.headers['content-type']) })
+      } catch (error) {
+        if (error instanceof PinningError) {
+          await reply.code(502).send({ error: 'pinning failed' })
+        } else {
+          await reply.code(500).send({ error: 'upload failed' })
+        }
+      }
+    },
+  )
 
   return app
 }

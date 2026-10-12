@@ -46,7 +46,7 @@ Both settlement paths finalize in O(1) time and cost. Refunds stay available for
 
 ## Optional catalog
 
-The Factory plus the indexer already cover discovery (which campaigns exist) and the outcome record (what happened). The backend (`projects/backend`, Fastify + Postgres) implements wallet-signature auth and the profiles/settings tables so far; profiles and settings CRUD, server-side IPFS pinning, and the per-campaign catalog row with its chain watcher are planned (see [`roadmap.md`](roadmap.md)). It never holds keys, funds, or outcome decisions. Without it the dApp still runs.
+The Factory plus the indexer already cover discovery (which campaigns exist) and the outcome record (what happened). The backend (`projects/backend`, Fastify + Postgres) implements wallet-signature auth, the profiles/settings tables, and authenticated image uploads pinned to IPFS (`POST /uploads`) so far; profiles and settings CRUD, create-form upload wiring, and the per-campaign catalog row with its chain watcher are planned (see [`roadmap.md`](roadmap.md)). It never holds keys, funds, or outcome decisions. Without it the dApp still runs.
 
 ## Tech stack
 

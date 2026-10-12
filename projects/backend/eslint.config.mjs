@@ -8,7 +8,7 @@ import tseslint from 'typescript-eslint'
 
 export default defineConfig(
   {
-    ignores: ['node_modules/', 'dist/'],
+    ignores: ['node_modules/', 'dist/', 'coverage/', 'migrations/'],
   },
   {
     files: ['**/*.{js,mjs,cjs,ts}'],
@@ -19,7 +19,7 @@ export default defineConfig(
       },
       parserOptions: {
         projectService: {
-          allowDefaultProject: ['eslint.config.mjs'],
+          allowDefaultProject: ['eslint.config.mjs', 'vitest.config.ts', 'vitest.global-setup.ts'],
         },
         tsconfigRootDir: import.meta.dirname,
       },
