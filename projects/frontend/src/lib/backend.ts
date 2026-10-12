@@ -24,7 +24,6 @@ export function backendUrl(): string {
 export interface CoverUpload {
   baseUrl: string
   address: string
-  canSign: boolean
   sign: (message: string) => Promise<Uint8Array>
   file: File
 }
@@ -75,17 +74,18 @@ function pinnedCid(json: unknown): string {
 /**
  * Pin a cover image through the backend: sign-in challenge, wallet signature, session verify, then upload.
  *
+ * Signing support is probed by attempting it: wallets without message signing
+ * reject, and the rejection propagates to the caller as the user-facing message.
+ *
  * @param upload Upload inputs.
  * @param upload.baseUrl Backend base URL.
  * @param upload.address Signer address for the challenge.
- * @param upload.canSign Whether the wallet can sign arbitrary messages.
  * @param upload.sign Wallet message signer, returning the raw signature bytes.
  * @param upload.file Image file to pin.
  * @returns The `ipfs://` URI to store as the campaign metadata URI.
  */
-export async function uploadCover({ baseUrl, address, canSign, sign, file }: CoverUpload): Promise<string> {
+export async function uploadCover({ baseUrl, address, sign, file }: CoverUpload): Promise<string> {
   if (baseUrl === '') throw new Error('Image upload needs the backend configured (VITE_BACKEND_URL).')
-  if (!canSign) throw new Error('This wallet cannot sign messages - paste the metadata URI manually.')
 
   const challenge = await postJson(`${baseUrl}/auth/challenge`, { address })
   if (challenge.status !== 200) throw new Error('Could not start the upload. Is the backend reachable?')

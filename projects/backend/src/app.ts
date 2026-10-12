@@ -13,6 +13,19 @@ const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 export function buildApp() {
   const app = Fastify({ logger: true })
 
+  // Browsers call the API cross-origin (frontend :5173 -> backend :3001). Auth rides on Bearer headers, not
+  // cookies, so a wildcard origin is sufficient - no credentials mode involved.
+  app.addHook('onSend', async (_request, reply, payload) => {
+    reply.header('access-control-allow-origin', '*')
+    reply.header('access-control-allow-methods', 'GET, POST, OPTIONS')
+    reply.header('access-control-allow-headers', 'authorization, content-type')
+    return payload
+  })
+
+  app.options('/*', (_request, reply) => {
+    reply.code(204).send()
+  })
+
   app.get('/health', () => {
     return { status: 'ok' }
   })

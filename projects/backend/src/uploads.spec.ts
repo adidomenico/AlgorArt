@@ -133,6 +133,17 @@ describe('POST /uploads', () => {
     expect(response.statusCode).toBe(502)
   })
 
+  it('answers CORS preflights', async () => {
+    const app = buildApp()
+
+    const preflight = await app.inject({ method: 'OPTIONS', url: '/uploads' })
+    expect(preflight.statusCode).toBe(204)
+    expect(preflight.headers['access-control-allow-origin']).toBe('*')
+
+    const health = await app.inject({ method: 'GET', url: '/health' })
+    expect(health.headers['access-control-allow-origin']).toBe('*')
+  })
+
   it('returns 500 without PINATA_JWT', async () => {
     vi.stubEnv('PINATA_JWT', '')
     pinOk('QmTestCid')

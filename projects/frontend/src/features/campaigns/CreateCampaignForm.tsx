@@ -42,7 +42,6 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
       const uri = await uploadCover({
         baseUrl: backendUrl(),
         address: activeAddress,
-        canSign: activeWallet.canSignData,
         sign: (message) => signData(message, { encoding: 'utf8', scope: ScopeType.AUTH }).then((result) => result.signature),
         file,
       })

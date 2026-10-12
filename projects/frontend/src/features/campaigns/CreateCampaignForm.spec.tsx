@@ -39,7 +39,7 @@ describe('CreateCampaignForm', () => {
     signDataMock.mockResolvedValue({ signature: new Uint8Array([7, 8]) })
     useWalletMock.mockReturnValue({
       activeAddress: 'ADDRESS',
-      activeWallet: { disconnect: disconnectMock, canSignData: true },
+      activeWallet: { disconnect: disconnectMock },
       signData: (...args: unknown[]) => signDataMock(...args),
       transactionSigner: {},
     })
@@ -214,25 +214,22 @@ describe('CreateCampaignForm', () => {
     expect(screen.getByPlaceholderText('ipfs://…')).toHaveValue('')
   })
 
-  it('shows a message when the wallet cannot sign', async () => {
+  it('shows a message when signing fails', async () => {
     vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
-    useWalletMock.mockReturnValue({
-      activeAddress: 'ADDRESS',
-      activeWallet: { disconnect: disconnectMock, canSignData: false },
-      signData: signDataMock,
-      transactionSigner: {},
-    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ message: 'challenge' }) }))
+    signDataMock.mockRejectedValueOnce(new Error('rejected in wallet'))
     const user = userEvent.setup()
     render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
 
     await user.upload(screen.getByLabelText(/Cover image/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
     await user.click(screen.getByRole('button', { name: 'Upload cover' }))
 
-    expect(await screen.findByText(/cannot sign messages/)).toBeInTheDocument()
-    expect(signDataMock).not.toHaveBeenCalled()
+    expect(await screen.findByText(/rejected in wallet/)).toBeInTheDocument()
   })
 
   it('shows a message when the backend is not configured', async () => {
+    // Explicitly blank: the developer's own .env may set VITE_BACKEND_URL and Vite loads it into tests.
+    vi.stubEnv('VITE_BACKEND_URL', '')
     const user = userEvent.setup()
     render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
 

@@ -123,8 +123,8 @@ with none of the four fields is treated as absent, so seed URIs render
 the placeholder instead of erroring. The create form offers a cover picker that
 pins through the backend's `POST /uploads` (wallet `signData` sign-in, needs
 `VITE_BACKEND_URL`) and fills the metadata URI; manual paste stays as
-fallback, and KMD/LocalNet wallets without message signing only get the
-paste field. Descriptions
+fallback, and wallets that reject signing surface the wallet's message
+instead. Descriptions
 evolve through the creator updates feed (roadmap), not by editing the blob -
 the pledge-time content stays frozen and always viewable.
 

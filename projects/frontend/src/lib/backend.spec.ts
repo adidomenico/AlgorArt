@@ -6,7 +6,6 @@ function uploadInput(overrides: Partial<CoverUpload> = {}): CoverUpload {
   return {
     baseUrl: 'http://backend',
     address: 'ADDRESS',
-    canSign: true,
     sign: () => Promise.resolve(new Uint8Array([1, 2, 3])),
     file: new File(['bytes'], 'cover.png', { type: 'image/png' }),
     ...overrides,
@@ -74,10 +73,6 @@ describe('uploadCover', () => {
 
   it('throws when the backend is not configured', async () => {
     await expect(uploadCover(uploadInput({ baseUrl: '' }))).rejects.toThrow('VITE_BACKEND_URL')
-  })
-
-  it('throws when the wallet cannot sign', async () => {
-    await expect(uploadCover(uploadInput({ canSign: false }))).rejects.toThrow('cannot sign messages')
   })
 
   it('throws when the challenge is unreachable', async () => {
