@@ -1,6 +1,7 @@
 import algosdk from 'algosdk'
 import Fastify from 'fastify'
 import { authenticate, createChallenge, verifyChallenge } from './auth.js'
+import { getProfile, getSettings, upsertProfile, upsertSettings } from './profiles.js'
 import { PinningError, pinImage, pinJson, safeFilename } from './uploads.js'
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
@@ -61,6 +62,40 @@ export function buildApp() {
 
   app.get('/me', { preHandler: authenticate }, (request) => {
     return { address: request.address }
+  })
+
+  app.get<{ Querystring: { address: unknown } }>('/profiles', async (request, reply) => {
+    const { address } = request.query
+    if (typeof address !== 'string' || address === '') {
+      await reply.code(400).send({ error: 'address is required' })
+      return
+    }
+    const profile = await getProfile(address)
+    if (profile === null) {
+      await reply.code(404).send({ error: 'profile not found' })
+      return
+    }
+    await reply.send(profile)
+  })
+
+  app.put('/profiles', { preHandler: authenticate }, async (request, reply) => {
+    try {
+      await reply.send(await upsertProfile(request.address as string, request.body))
+    } catch {
+      await reply.code(400).send({ error: 'invalid profile' })
+    }
+  })
+
+  app.get('/settings', { preHandler: authenticate }, async (request) => {
+    return getSettings(request.address as string)
+  })
+
+  app.put('/settings', { preHandler: authenticate }, async (request, reply) => {
+    try {
+      await reply.send(await upsertSettings(request.address as string, request.body))
+    } catch {
+      await reply.code(400).send({ error: 'invalid settings' })
+    }
   })
 
   // Raw image bytes (no multipart parser needed); anything else 400s below.
