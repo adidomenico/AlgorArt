@@ -125,8 +125,11 @@ pins through the backend's `POST /uploads` (ARC-60 wallet `signData` sign-in:
 the client canonifies a SIWA request carrying the backend nonce, the wallet
 signs `sha256(data)||sha256(authenticatorData)`, and the backend verifies the
 signature plus the domain binding; needs `VITE_BACKEND_URL`) wherever the
-wallet reports message-signing support, and shows the resulting URI in a
-readonly debug field; other wallets see no upload controls at all. Below it, a
+wallet reports message-signing support; other wallets see no upload controls at all.
+The session JWT is cached in the app and
+shared by both uploads (one wallet popup per 7-day session, pre-warmed silently at
+connect time with on-demand signing as fallback); a 401 clears it with a retry
+message. Below the picker, a
 description box plus a category dropdown feed an Upload metadata button that pins
 `{name, description, image, category}` through `POST /uploads/metadata` (name is the
 campaign title), replacing the display with the metadata URI the create call stores.

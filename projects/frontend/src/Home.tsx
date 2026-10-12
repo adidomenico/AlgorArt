@@ -1,3 +1,4 @@
+import { useWallet } from '@txnlab/use-wallet-react'
 import { useCallback, useEffect, useState } from 'react'
 import Footer from './features/app/Footer'
 import Nav from './features/app/Nav'
@@ -9,6 +10,7 @@ type View = { kind: 'list' } | { kind: 'detail'; appId: bigint } | { kind: 'crea
 
 const Home = () => {
   const [view, setView] = useState<View>({ kind: 'list' })
+  const { activeAddress } = useWallet()
 
   const navigate = useCallback((next: View) => {
     window.history.pushState(next, '')
@@ -46,6 +48,8 @@ const Home = () => {
               <button
                 type="button"
                 className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!activeAddress}
+                title={!activeAddress ? 'Connect your wallet to create a campaign' : undefined}
                 onClick={() => {
                   navigate({ kind: 'create' })
                 }}
@@ -53,6 +57,7 @@ const Home = () => {
                 + New campaign
               </button>
             </div>
+            {!activeAddress && <p className="mb-6 text-sm text-muted">Connect your wallet to create a campaign.</p>}
             <CampaignList
               onSelectCampaign={(appId) => {
                 navigate({ kind: 'detail', appId })

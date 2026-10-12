@@ -76,6 +76,26 @@ describe('Home', () => {
     expect(screen.getByText('Campaigns')).toBeInTheDocument()
   })
 
+  it('disables creating when disconnected', () => {
+    render(<Home />)
+
+    expect(screen.getByRole('button', { name: '+ New campaign' })).toBeDisabled()
+    expect(screen.getByText(/Connect your wallet to create a campaign/)).toBeInTheDocument()
+  })
+
+  it('opens the create view when connected', async () => {
+    useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS' })
+    const user = userEvent.setup()
+    render(<Home />)
+    const button = screen.getByRole('button', { name: '+ New campaign' })
+
+    expect(button).toBeEnabled()
+    expect(screen.queryByText(/Connect your wallet to create a campaign/)).not.toBeInTheDocument()
+    await user.click(button)
+
+    expect(screen.getByText('CREATE_FORM')).toBeInTheDocument()
+  })
+
   it('opens the detail view when a campaign is selected', async () => {
     const user = userEvent.setup()
     render(<Home />)

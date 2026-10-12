@@ -25,8 +25,8 @@ each open item links to the doc with the details. Design context is in
 ## Frontend UX
 
 - [ ] Backer banner on failed campaigns ("You're owed X ALGO - Refund my pledge").
-- [ ] **Gate creating behind connection** - disconnected visitors see a "connect wallet to
-       create a campaign" prompt instead of a dead form with a disabled button.
+- [x] **Gate creating behind connection** - disconnected visitors see a "connect wallet to
+       create a campaign" prompt and a disabled New campaign button instead of a dead form.
 - [ ] **Single-click create** - fold sign-in + cover pin into the Create button: one SIWA
        popup, silent upload over HTTP, then the existing atomic create group (already one
        popup). Two wallet interactions total, zero orphan uploads on the happy path; the

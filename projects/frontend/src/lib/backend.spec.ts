@@ -1,6 +1,7 @@
+import { ScopeType } from '@txnlab/use-wallet'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CoverUpload, MetadataUpload } from './backend'
-import { backendUrl, uploadCover, uploadMetadata } from './backend'
+import { adaptSignData, backendUrl, clearSession, uploadCover, uploadMetadata } from './backend'
 
 function uploadInput(overrides: Partial<CoverUpload> = {}): CoverUpload {
   return {
@@ -33,8 +34,21 @@ describe('backendUrl', () => {
   })
 })
 
+describe('adaptSignData', () => {
+  it('calls signData with the ARC-60 shape and maps the response', async () => {
+    const signData = vi.fn().mockResolvedValue({ signature: new Uint8Array([1]), authenticatorData: new Uint8Array([2]), extra: true })
+
+    await expect(adaptSignData(signData)('cGF5bG9hZA==')).resolves.toEqual({
+      signature: new Uint8Array([1]),
+      authenticatorData: new Uint8Array([2]),
+    })
+    expect(signData).toHaveBeenCalledWith('cGF5bG9hZA==', { encoding: 'base64', scope: ScopeType.AUTH })
+  })
+})
+
 describe('uploadCover', () => {
   afterEach(() => {
+    clearSession()
     vi.unstubAllGlobals()
   })
 
@@ -114,6 +128,55 @@ describe('uploadCover', () => {
     await uploadCover(uploadInput({ file: new File(['bytes'], 'Kyogre art (1).png', { type: 'image/png' }) }))
     const calls = fetchMock.mock.calls as unknown[][]
     expect(calls[2]?.[0]).toBe('http://backend/uploads?filename=Kyogre%20art%20(1).png')
+  })
+
+  it('reuses the session across uploads', async () => {
+    let signCalls = 0
+    const sign = (_payload: string) => {
+      signCalls += 1
+      return Promise.resolve({ signature: new Uint8Array([1, 2, 3]), authenticatorData: new Uint8Array([4, 5, 6]) })
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
+        .mockResolvedValueOnce(okJson({ token: 'session' }))
+        .mockResolvedValueOnce(okJson({ cid: 'QmCover' }))
+        .mockResolvedValueOnce(okJson({ cid: 'QmCover2' })),
+    )
+
+    await expect(uploadCover(uploadInput({ sign }))).resolves.toBe('ipfs://QmCover')
+    await expect(uploadCover(uploadInput({ sign }))).resolves.toBe('ipfs://QmCover2')
+    expect(signCalls).toBe(1)
+  })
+
+  it('clears an expired session and signs in again', async () => {
+    let signCalls = 0
+    const sign = (_payload: string) => {
+      signCalls += 1
+      return Promise.resolve({ signature: new Uint8Array([1, 2, 3]), authenticatorData: new Uint8Array([4, 5, 6]) })
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
+        .mockResolvedValueOnce(okJson({ token: 'stale' }))
+        .mockResolvedValueOnce({ status: 401, json: () => Promise.resolve({}) }),
+    )
+
+    await expect(uploadCover(uploadInput({ sign }))).rejects.toThrow('Session expired')
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
+        .mockResolvedValueOnce(okJson({ token: 'session' }))
+        .mockResolvedValueOnce(okJson({ cid: 'QmCover' })),
+    )
+    await expect(uploadCover(uploadInput({ sign }))).resolves.toBe('ipfs://QmCover')
+    expect(signCalls).toBe(2)
   })
 
   it('sends the wallet signature as base64', async () => {
@@ -227,6 +290,7 @@ function metadataInput(overrides: Partial<MetadataUpload> = {}): MetadataUpload 
 
 describe('uploadMetadata', () => {
   afterEach(() => {
+    clearSession()
     vi.unstubAllGlobals()
   })
 
@@ -332,5 +396,33 @@ describe('uploadMetadata', () => {
         .mockRejectedValueOnce(new Error('offline')),
     )
     await expect(uploadMetadata(metadataInput())).rejects.toThrow('Is the backend reachable?')
+  })
+
+  it('clears an expired session and signs in again', async () => {
+    let signCalls = 0
+    const sign = (_payload: string) => {
+      signCalls += 1
+      return Promise.resolve({ signature: new Uint8Array([1, 2, 3]), authenticatorData: new Uint8Array([4, 5, 6]) })
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
+        .mockResolvedValueOnce(okJson({ token: 'stale' }))
+        .mockResolvedValueOnce({ status: 401, json: () => Promise.resolve({}) }),
+    )
+
+    await expect(uploadMetadata(metadataInput({ sign }))).rejects.toThrow('Session expired')
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
+        .mockResolvedValueOnce(okJson({ token: 'session' }))
+        .mockResolvedValueOnce(okJson({ cid: 'QmMeta' })),
+    )
+    await expect(uploadMetadata(metadataInput({ sign }))).resolves.toBe('ipfs://QmMeta')
+    expect(signCalls).toBe(2)
   })
 })

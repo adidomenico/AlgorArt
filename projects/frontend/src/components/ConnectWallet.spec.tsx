@@ -1,18 +1,30 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ConnectWallet from './ConnectWallet'
 
 const wallets = [
-  { id: 'pera', metadata: { name: 'Pera Wallet', icon: 'http://icon/pera.png' }, connect: vi.fn(), isActive: false },
-  { id: 'defly', metadata: { name: 'Defly Wallet', icon: 'http://icon/defly.png' }, connect: vi.fn(), isActive: false },
+  {
+    id: 'pera',
+    metadata: { name: 'Pera Wallet', icon: 'http://icon/pera.png' },
+    connect: vi.fn().mockResolvedValue([{ address: 'ADDRESS' }]),
+    isActive: false,
+  },
+  {
+    id: 'defly',
+    metadata: { name: 'Defly Wallet', icon: 'http://icon/defly.png' },
+    connect: vi.fn().mockResolvedValue([{ address: 'ADDRESS' }]),
+    isActive: false,
+  },
   { id: 'exodus', metadata: { name: 'Exodus', icon: 'http://icon/exodus.png' }, connect: vi.fn(), isActive: false },
 ]
 
 const useWalletMock = vi.fn()
+const useNetworkMock = vi.fn()
 
 vi.mock('@txnlab/use-wallet-react', () => ({
   useWallet: () => useWalletMock(),
+  useNetwork: () => useNetworkMock(),
 }))
 
 vi.mock('./Account', () => ({
@@ -20,6 +32,14 @@ vi.mock('./Account', () => ({
 }))
 
 describe('ConnectWallet', () => {
+  beforeEach(() => {
+    useNetworkMock.mockReturnValue({ activeNetworkConfig: { caipChainId: 'algorand:testnet' } })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('renders provider buttons when disconnected', () => {
     useWalletMock.mockReturnValue({ wallets, activeAddress: null })
     render(<ConnectWallet openModal onHide={() => {}} onShow={() => {}} />)
@@ -30,11 +50,45 @@ describe('ConnectWallet', () => {
 
   it('connects a provider when clicked', async () => {
     useWalletMock.mockReturnValue({ wallets, activeAddress: null })
+    useNetworkMock.mockReturnValue({ activeNetworkConfig: { caipChainId: 'algorand:testnet' } })
+    wallets[0]?.connect.mockResolvedValueOnce([{ address: 'ADDRESS' }])
     const user = userEvent.setup()
     render(<ConnectWallet openModal onHide={() => {}} onShow={() => {}} />)
 
     await user.click(screen.getByText('Pera Wallet'))
     expect(wallets[0]?.connect).toHaveBeenCalled()
+  })
+
+  it('stays silent when connecting returns no accounts', async () => {
+    useWalletMock.mockReturnValue({ wallets, activeAddress: null })
+    useNetworkMock.mockReturnValue({ activeNetworkConfig: { caipChainId: 'algorand:testnet' } })
+    wallets[0]?.connect.mockResolvedValueOnce([])
+    const user = userEvent.setup()
+    render(<ConnectWallet openModal onHide={() => {}} onShow={() => {}} />)
+
+    await user.click(screen.getByText('Pera Wallet'))
+    expect(wallets[0]?.connect).toHaveBeenCalled()
+    expect(screen.queryByText(/Could not connect/)).not.toBeInTheDocument()
+  })
+
+  it('pre-warms the backend session on connect', async () => {
+    const signData = vi.fn().mockResolvedValue({ signature: new Uint8Array([1]), authenticatorData: new Uint8Array([2]) })
+    useWalletMock.mockReturnValue({ wallets, activeAddress: null, signData })
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ nonce: 'n' }) })
+        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ token: 't' }) }),
+    )
+    const user = userEvent.setup()
+    render(<ConnectWallet openModal onHide={() => {}} onShow={() => {}} />)
+
+    await user.click(screen.getByText('Pera Wallet'))
+    await waitFor(() => {
+      expect(signData).toHaveBeenCalled()
+    })
+    expect(screen.queryByText(/Could not connect/)).not.toBeInTheDocument()
   })
 
   it('renders the account view and logout when connected', () => {

@@ -1,8 +1,9 @@
 import { WALLET_ID as EXODUS_WALLET_ID } from '@txnlab/use-wallet-exodus'
 import { WALLET_ID as KMD_WALLET_ID } from '@txnlab/use-wallet-kmd'
 import type { Wallet } from '@txnlab/use-wallet-react'
-import { useWallet } from '@txnlab/use-wallet-react'
+import { useNetwork, useWallet } from '@txnlab/use-wallet-react'
 import { useState } from 'react'
+import { adaptSignData, backendUrl, ensureSession } from '../lib/backend'
 import Account from './Account'
 
 interface ConnectWalletInterface {
@@ -14,7 +15,8 @@ interface ConnectWalletInterface {
 }
 
 const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) => {
-  const { wallets, activeAddress } = useWallet()
+  const { wallets, activeAddress, signData } = useWallet()
+  const { activeNetworkConfig } = useNetwork()
   const [connectError, setConnectError] = useState<string | null>(null)
 
   const isKmd = (wallet: Wallet) => wallet.id === KMD_WALLET_ID
@@ -56,7 +58,20 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
                     setConnectError(null)
                     onHide()
                     try {
-                      await wallet.connect()
+                      const accounts = await wallet.connect()
+                      const [account] = accounts
+                      if (account !== undefined) {
+                        // Pre-warm the backend session so later uploads skip their sign-in popup.
+                        // Silent: anything failing here falls back to signing on demand.
+                        void ensureSession({
+                          baseUrl: backendUrl(),
+                          address: account.address,
+                          chainId: activeNetworkConfig.caipChainId,
+                          sign: adaptSignData(signData),
+                          statement: 'Sign in to AlgorArt.',
+                          action: 'sign-in',
+                        }).catch(() => undefined)
+                      }
                     } catch {
                       setConnectError(
                         wallet.id === EXODUS_WALLET_ID

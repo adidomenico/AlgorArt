@@ -1,8 +1,7 @@
-import { ScopeType } from '@txnlab/use-wallet'
 import { useNetwork, useWallet } from '@txnlab/use-wallet-react'
 import { useState } from 'react'
 import { fetchChainTimestamp } from '../../lib/algorand'
-import { backendUrl, uploadCover, uploadMetadata } from '../../lib/backend'
+import { adaptSignData, backendUrl, uploadCover, uploadMetadata } from '../../lib/backend'
 import { classifyError, errorMessage } from '../../lib/errors'
 import { parseAlgoToMicroAlgos } from '../../lib/format'
 import { logError } from '../../lib/log'
@@ -50,11 +49,7 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
         baseUrl: backendUrl(),
         address: activeAddress,
         chainId: activeNetworkConfig.caipChainId,
-        sign: (payload) =>
-          signData(payload, { encoding: 'base64', scope: ScopeType.AUTH }).then((result) => ({
-            signature: result.signature,
-            authenticatorData: result.authenticatorData,
-          })),
+        sign: adaptSignData(signData),
         file,
       })
       setImageUri(uri)
@@ -78,11 +73,7 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
         baseUrl: backendUrl(),
         address: activeAddress,
         chainId: activeNetworkConfig.caipChainId,
-        sign: (payload) =>
-          signData(payload, { encoding: 'base64', scope: ScopeType.AUTH }).then((result) => ({
-            signature: result.signature,
-            authenticatorData: result.authenticatorData,
-          })),
+        sign: adaptSignData(signData),
         name: title.trim(),
         description: description.trim(),
         image: imageUri,
@@ -195,16 +186,6 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
           </button>
         </div>
       )}
-      <label className="mb-3 block text-sm text-muted">
-        Metadata URI (from the metadata upload)
-        <input
-          type="text"
-          placeholder="ipfs://…"
-          value={metadataUri}
-          readOnly
-          className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
-        />
-      </label>
       <label className="mb-3 block text-sm text-muted">
         Description (optional)
         <textarea

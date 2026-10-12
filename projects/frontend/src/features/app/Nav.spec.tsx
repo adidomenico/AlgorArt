@@ -4,16 +4,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Nav from './Nav'
 
 const useWalletMock = vi.fn()
+const useNetworkMock = vi.fn()
 
 vi.mock('@txnlab/use-wallet-react', () => ({
   useWallet: () => useWalletMock(),
-  WalletId: { KMD: 'kmd' },
+  useNetwork: () => useNetworkMock(),
 }))
 
 describe('Nav', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useWalletMock.mockReturnValue({ activeAddress: null, wallets: [] })
+    useNetworkMock.mockReturnValue({ activeNetworkConfig: { caipChainId: 'algorand:testnet' } })
   })
 
   it('renders the brand and connect button when disconnected', () => {
@@ -72,7 +74,7 @@ describe('Nav', () => {
   })
 
   it('hides the menu when a provider flow starts', async () => {
-    const connect = vi.fn().mockResolvedValue(undefined)
+    const connect = vi.fn().mockResolvedValue([{ address: 'ADDRESS' }])
     useWalletMock.mockReturnValue({
       activeAddress: null,
       wallets: [{ id: 'pera', metadata: { name: 'Pera Wallet', icon: '' }, connect, isActive: false }],

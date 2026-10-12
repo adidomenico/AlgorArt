@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ScopeType } from '@txnlab/use-wallet'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearSession } from '../../lib/backend'
 import CreateCampaignForm from './CreateCampaignForm'
 
 const createCampaignMock = vi.fn()
@@ -50,6 +51,7 @@ describe('CreateCampaignForm', () => {
   })
 
   afterEach(() => {
+    clearSession()
     vi.unstubAllEnvs()
     vi.unstubAllGlobals()
   })
@@ -61,8 +63,6 @@ describe('CreateCampaignForm', () => {
       .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ nonce: 'cover-nonce' }) })
       .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ token: 'session' }) })
       .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ cid: 'QmCover' }) })
-      .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ nonce: 'meta-nonce' }) })
-      .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ token: 'session' }) })
       .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ cid: 'QmMeta' }) })
     vi.stubGlobal('fetch', fetchMock)
     createCampaignMock.mockResolvedValue({ appId: 99n, appAddress: 'ESCROW' })
@@ -76,14 +76,13 @@ describe('CreateCampaignForm', () => {
     await user.type(screen.getByLabelText(/Description/), 'A tale of algorithms')
     await user.selectOptions(screen.getByLabelText(/Category/), 'Games')
     await user.click(screen.getByRole('button', { name: 'Upload metadata' }))
-    expect(await screen.findByDisplayValue('ipfs://QmMeta')).toBeInTheDocument()
     await user.type(screen.getByPlaceholderText('e.g. 100'), '10')
     await user.clear(screen.getByLabelText(/Duration/))
     await user.type(screen.getByLabelText(/Duration/), '7')
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
     const calls = fetchMock.mock.calls as unknown[][]
-    const metaInit = calls[5]?.[1] as { body?: unknown } | undefined
+    const metaInit = calls[3]?.[1] as { body?: unknown } | undefined
     expect(metaInit?.body).toContain('"name":"My first novel"')
     expect(metaInit?.body).toContain('"description":"A tale of algorithms"')
     expect(metaInit?.body).toContain('"image":"ipfs://QmCover"')
@@ -129,8 +128,6 @@ describe('CreateCampaignForm', () => {
         .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ nonce: 'cover-nonce' }) })
         .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ token: 'session' }) })
         .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ cid: 'QmCover' }) })
-        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ nonce: 'meta-nonce' }) })
-        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ token: 'session' }) })
         .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ cid: `Q${'x'.repeat(200)}` }) }),
     )
     const user = userEvent.setup()
@@ -235,8 +232,6 @@ describe('CreateCampaignForm', () => {
     await user.upload(screen.getByLabelText(/Choose cover/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
     await user.click(screen.getByRole('button', { name: 'Upload cover' }))
 
-    expect(screen.getByPlaceholderText('ipfs://…')).toHaveValue('')
-    expect(screen.queryByDisplayValue('ipfs://QmCover')).not.toBeInTheDocument()
     const calls = signDataMock.mock.calls as unknown[][]
     const payload = calls[0]?.[0] as string
     const siwa = JSON.parse(atob(payload)) as { nonce?: unknown; account_address?: unknown; chain_id?: unknown }
@@ -246,7 +241,7 @@ describe('CreateCampaignForm', () => {
     expect(signDataMock).toHaveBeenCalledWith(payload, { encoding: 'base64', scope: ScopeType.AUTH })
   })
 
-  it('uploads metadata and fills the metadata URI', async () => {
+  it('shares one session across cover and metadata uploads', async () => {
     vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
     vi.stubGlobal(
       'fetch',
@@ -255,8 +250,6 @@ describe('CreateCampaignForm', () => {
         .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ nonce: 'cover-nonce' }) })
         .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ token: 'session' }) })
         .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ cid: 'QmCover' }) })
-        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ nonce: 'meta-nonce' }) })
-        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ token: 'session' }) })
         .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ cid: 'QmMeta' }) }),
     )
     const user = userEvent.setup()
@@ -267,7 +260,7 @@ describe('CreateCampaignForm', () => {
     await user.click(screen.getByRole('button', { name: 'Upload cover' }))
     await user.click(screen.getByRole('button', { name: 'Upload metadata' }))
 
-    expect(await screen.findByDisplayValue('ipfs://QmMeta')).toBeInTheDocument()
+    expect(signDataMock).toHaveBeenCalledTimes(1)
   })
 
   it('shows a message when the metadata upload fails', async () => {
@@ -289,7 +282,7 @@ describe('CreateCampaignForm', () => {
     await user.click(screen.getByRole('button', { name: 'Upload cover' }))
     await user.click(screen.getByRole('button', { name: 'Upload metadata' }))
 
-    expect(await screen.findByText(/Could not start the metadata upload/)).toBeInTheDocument()
+    expect(await screen.findByText(/Metadata pinning failed/)).toBeInTheDocument()
   })
 
   it('keeps the metadata button disabled without a title or cover', async () => {
@@ -312,7 +305,6 @@ describe('CreateCampaignForm', () => {
     await user.click(screen.getByRole('button', { name: 'Upload cover' }))
 
     expect(await screen.findByText(/Could not start the upload/)).toBeInTheDocument()
-    expect(screen.getByPlaceholderText('ipfs://…')).toHaveValue('')
   })
 
   it('shows a message when signing fails', async () => {
@@ -368,6 +360,5 @@ describe('CreateCampaignForm', () => {
 
     expect(screen.queryByLabelText(/Choose cover/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Upload cover' })).not.toBeInTheDocument()
-    expect(screen.getByLabelText(/Metadata URI/)).toBeInTheDocument()
   })
 })
