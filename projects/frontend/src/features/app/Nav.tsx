@@ -11,13 +11,7 @@ interface NavProps {
   onNavigateSettings: () => void
 }
 
-const Nav = ({
-  onNavigateHome,
-  onNavigateProfile,
-  onNavigatePledges,
-  onNavigateProjects,
-  onNavigateSettings,
-}: NavProps) => {
+const Nav = ({ onNavigateHome, onNavigateProfile, onNavigatePledges, onNavigateProjects, onNavigateSettings }: NavProps) => {
   const { activeAddress } = useWallet()
   const [walletOpen, setWalletOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)

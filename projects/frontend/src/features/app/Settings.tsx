@@ -1,7 +1,7 @@
 import { useNetwork, useWallet } from '@txnlab/use-wallet-react'
 import { useEffect, useState } from 'react'
-import { fetchSettings, saveSettings, clearSettingsCache } from '../../lib/profiles'
 import { adaptSignData } from '../../lib/backend'
+import { clearSettingsCache, fetchSettings, saveSettings } from '../../lib/profiles'
 
 interface SettingsProps {
   onBack: () => void
@@ -76,7 +76,11 @@ const Settings = ({ onBack }: SettingsProps) => {
     return (
       <div className="max-w-md mx-auto text-center py-12">
         <p className="text-muted">Connect your wallet to manage settings.</p>
-        <button type="button" className="mt-4 cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark" onClick={onBack}>
+        <button
+          type="button"
+          className="mt-4 cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark"
+          onClick={onBack}
+        >
           Back
         </button>
       </div>
@@ -101,12 +105,7 @@ const Settings = ({ onBack }: SettingsProps) => {
               <p className="text-xs text-muted">Email me when a campaign I backed reaches its goal.</p>
             </div>
             <label className="cursor-pointer relative inline-flex items-center">
-              <input
-                type="checkbox"
-                checked={notifyFunded}
-                onChange={(e) => setNotifyFunded(e.target.checked)}
-                className="sr-only peer"
-              />
+              <input type="checkbox" checked={notifyFunded} onChange={(e) => setNotifyFunded(e.target.checked)} className="sr-only peer" />
               <div className="w-11 h-6 bg-muted/50 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-teal rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal"></div>
             </label>
           </div>
@@ -116,12 +115,7 @@ const Settings = ({ onBack }: SettingsProps) => {
               <p className="text-xs text-muted">Email me when a campaign I backed fails and I can refund.</p>
             </div>
             <label className="cursor-pointer relative inline-flex items-center">
-              <input
-                type="checkbox"
-                checked={notifyFailed}
-                onChange={(e) => setNotifyFailed(e.target.checked)}
-                className="sr-only peer"
-              />
+              <input type="checkbox" checked={notifyFailed} onChange={(e) => setNotifyFailed(e.target.checked)} className="sr-only peer" />
               <div className="w-11 h-6 bg-muted/50 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-teal rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal"></div>
             </label>
           </div>
@@ -134,19 +128,12 @@ const Settings = ({ onBack }: SettingsProps) => {
             <div className="flex gap-4">
               {(['light', 'dark', 'system'] as const).map((t) => (
                 <label key={t} className="cursor-pointer flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="theme"
-                    value={t}
-                    checked={theme === t}
-                    onChange={() => setTheme(t)}
-                    className="sr-only peer"
-                  />
-                  <div className={`px-4 py-2 rounded-md border text-sm transition-colors ${
-                    theme === t
-                      ? 'border-teal bg-teal/10 text-teal'
-                      : 'border-line hover:border-teal/50'
-                  }`}>
+                  <input type="radio" name="theme" value={t} checked={theme === t} onChange={() => setTheme(t)} className="sr-only peer" />
+                  <div
+                    className={`px-4 py-2 rounded-md border text-sm transition-colors ${
+                      theme === t ? 'border-teal bg-teal/10 text-teal' : 'border-line hover:border-teal/50'
+                    }`}
+                  >
                     {t.charAt(0).toUpperCase() + t.slice(1)}
                   </div>
                 </label>

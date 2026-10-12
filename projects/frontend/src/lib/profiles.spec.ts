@@ -44,7 +44,9 @@ describe('fetchProfile', () => {
 
   it('returns the profile when backend is configured', async () => {
     vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
-    const fetchMock = vi.fn().mockResolvedValue(okJson({ display_name: 'Kyogre Fan', bio: 'Collector', avatar_cid: 'QmAvatar', email: 'kyogre@example.com' }))
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okJson({ display_name: 'Kyogre Fan', bio: 'Collector', avatar_cid: 'QmAvatar', email: 'kyogre@example.com' }))
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(fetchProfile('ADDRESS')).resolves.toEqual({
@@ -72,7 +74,13 @@ describe('fetchProfile', () => {
     vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ display_name: '', bio: 7 })))
 
-    await expect(fetchProfile('ADDRESS')).resolves.toEqual({ address: 'ADDRESS', display_name: null, bio: null, avatar_cid: null, email: null })
+    await expect(fetchProfile('ADDRESS')).resolves.toEqual({
+      address: 'ADDRESS',
+      display_name: null,
+      bio: null,
+      avatar_cid: null,
+      email: null,
+    })
   })
 
   it('treats malformed profiles as missing', async () => {
@@ -80,7 +88,13 @@ describe('fetchProfile', () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(okJson({})).mockResolvedValueOnce(okJson('oops'))
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(fetchProfile('ADDRESS')).resolves.toEqual({ address: 'ADDRESS', display_name: null, bio: null, avatar_cid: null, email: null })
+    await expect(fetchProfile('ADDRESS')).resolves.toEqual({
+      address: 'ADDRESS',
+      display_name: null,
+      bio: null,
+      avatar_cid: null,
+      email: null,
+    })
     clearProfileCache()
     await expect(fetchProfile('ADDRESS')).toBeNull()
   })
@@ -97,10 +111,7 @@ describe('fetchProfile', () => {
 
   it('returns null on HTTP errors and network failures', async () => {
     vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(notOkJson(404))
-      .mockRejectedValueOnce(new Error('offline'))
+    const fetchMock = vi.fn().mockResolvedValueOnce(notOkJson(404)).mockRejectedValueOnce(new Error('offline'))
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(fetchProfile('ADDRESS')).resolves.toBeNull()
@@ -116,7 +127,7 @@ describe('saveProfile', () => {
     vi.unstubAllEnvs()
   })
 
-  it('signs in, saves, and caches the profile', async () {
+  it('signs in, saves, and caches the profile', async () => {
     vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
     const fetchMock = vi
       .fn()
@@ -134,7 +145,9 @@ describe('saveProfile', () => {
     })
     const calls = fetchMock.mock.calls as unknown[][]
     const saveInit = calls[2]?.[1] as { body?: unknown } | undefined
-    expect(saveInit?.body).toEqual(JSON.stringify({ display_name: 'Kyogre Fan', bio: 'Collector', avatar_cid: 'QmAvatar', email: 'kyogre@example.com' }))
+    expect(saveInit?.body).toEqual(
+      JSON.stringify({ display_name: 'Kyogre Fan', bio: 'Collector', avatar_cid: 'QmAvatar', email: 'kyogre@example.com' }),
+    )
     await expect(fetchProfile('ADDRESS')).resolves.toEqual({
       address: 'ADDRESS',
       display_name: 'Kyogre Fan',
@@ -145,7 +158,7 @@ describe('saveProfile', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
-  it('clears blank fields', async () {
+  it('clears blank fields', async () => {
     vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
     const fetchMock = vi
       .fn()
@@ -202,7 +215,7 @@ describe('saveProfile', () => {
     await expect(saveProfile(profileInput())).rejects.toThrow('Is the backend reachable?')
   })
 
-  it('throws on a malformed save response', async () {
+  it('throws on a malformed save response', async () => {
     vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
     vi.stubGlobal(
       'fetch',
@@ -225,7 +238,8 @@ describe('fetchSettings', () => {
 
   it('returns the settings when backend is configured', async () => {
     vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
       .mockResolvedValueOnce(okJson({ token: 'session' }))
       .mockResolvedValueOnce(okJson({ notify_funded: false, notify_failed: true, theme: 'dark' }))
@@ -242,7 +256,8 @@ describe('fetchSettings', () => {
 
   it('caches settings per address', async () => {
     vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
       .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
       .mockResolvedValueOnce(okJson({ token: 'session' }))
       .mockResolvedValueOnce(okJson({ notify_funded: false, notify_failed: true, theme: 'dark' }))
@@ -337,7 +352,7 @@ describe('saveSettings', () => {
     await expect(saveSettings(settingsInput({}))).rejects.toThrow('Is the backend reachable?')
   })
 
-  it('throws on a malformed save response', async () {
+  it('throws on a malformed save response', async () => {
     vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
     vi.stubGlobal(
       'fetch',
@@ -352,6 +367,12 @@ describe('saveSettings', () => {
 
   it('throws when nothing to update', async () => {
     vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
-    await expect(saveSettings({ address: 'ADDRESS', chainId: 'algorand:testnet', sign: () => Promise.resolve({ signature: new Uint8Array(), authenticatorData: new Uint8Array() }) })).rejects.toThrow('Nothing to update.')
+    await expect(
+      saveSettings({
+        address: 'ADDRESS',
+        chainId: 'algorand:testnet',
+        sign: () => Promise.resolve({ signature: new Uint8Array(), authenticatorData: new Uint8Array() }),
+      }),
+    ).rejects.toThrow('Nothing to update.')
   })
 })

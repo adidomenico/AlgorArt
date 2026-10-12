@@ -1,7 +1,7 @@
 import { useNetwork, useWallet } from '@txnlab/use-wallet-react'
 import { useEffect, useState } from 'react'
-import { fetchProfile, saveProfile, clearProfileCache } from '../../lib/profiles'
 import { adaptSignData } from '../../lib/backend'
+import { clearProfileCache, fetchProfile, saveProfile } from '../../lib/profiles'
 import { ellipseAddress } from '../../utils/ellipseAddress'
 
 interface ProfileProps {
@@ -81,7 +81,11 @@ const Profile = ({ onBack }: ProfileProps) => {
     return (
       <div className="max-w-md mx-auto text-center py-12">
         <p className="text-muted">Connect your wallet to view your profile.</p>
-        <button type="button" className="mt-4 cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark" onClick={onBack}>
+        <button
+          type="button"
+          className="mt-4 cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark"
+          onClick={onBack}
+        >
           Back
         </button>
       </div>
@@ -100,9 +104,7 @@ const Profile = ({ onBack }: ProfileProps) => {
       <div className="space-y-4">
         <div>
           <label className="block text-sm text-muted mb-1">Address</label>
-          <div className="font-mono text-sm bg-muted/20 px-3 py-2 rounded">
-            {ellipseAddress(activeAddress)}
-          </div>
+          <div className="font-mono text-sm bg-muted/20 px-3 py-2 rounded">{ellipseAddress(activeAddress)}</div>
         </div>
 
         <div>
