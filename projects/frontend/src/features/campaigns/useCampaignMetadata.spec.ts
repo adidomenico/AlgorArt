@@ -8,7 +8,14 @@ describe('useCampaignMetadata', () => {
   })
 
   it('returns the parsed blob', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ description: 'A story' }) }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: () => Promise.resolve({ description: 'A story' }),
+      }),
+    )
     const { result } = renderHook(() => useCampaignMetadata('ipfs://QmYwAPJzv9CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG'))
     await waitFor(() => {
       expect(result.current).toEqual({

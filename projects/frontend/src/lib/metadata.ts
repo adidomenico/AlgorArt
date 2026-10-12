@@ -67,16 +67,18 @@ export function parseCampaignMetadata(json: unknown): CampaignMetadata | null {
 }
 
 /**
- * Fetch and parse the metadata blob; null on blank/unresolvable URIs and any failure.
+ * Fetch and parse the metadata blob; null on blank/unresolvable URIs and any failure. When the pointer serves raw
+ * image bytes instead of JSON, returns them as `{ image }` so extensionless CIDs still render.
  *
  * @param uri The `metadataUri` pointer.
- * @returns The parsed metadata, or null when unavailable.
+ * @returns The parsed metadata, a synthetic `{ image }` for raw image bytes, or null when unavailable.
  */
 export async function fetchCampaignMetadata(uri: string): Promise<CampaignMetadata | null> {
   if (!looksResolvable(uri)) return null
   try {
     const response = await fetch(resolveIpfsUri(uri))
     if (!response.ok) return null
+    if ((response.headers.get('content-type') ?? '').startsWith('image/')) return { image: uri }
     return parseCampaignMetadata((await response.json()) as unknown)
   } catch {
     return null

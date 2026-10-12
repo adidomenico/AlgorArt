@@ -63,6 +63,7 @@ describe('fetchCampaignMetadata', () => {
   it('fetches and parses the blob', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
+      headers: new Headers({ 'content-type': 'application/json' }),
       json: () => Promise.resolve({ image: 'ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi' }),
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -89,6 +90,32 @@ describe('fetchCampaignMetadata', () => {
     expect(await fetchCampaignMetadata('https://example.com/m.json')).toBeNull()
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
     expect(await fetchCampaignMetadata('https://example.com/m.json')).toBeNull()
+  })
+
+  it('treats the URI itself as the image when it serves raw image bytes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        headers: new Headers({ 'content-type': 'image/png' }),
+        json: () => Promise.reject(new Error('not json')),
+      }),
+    )
+    expect(await fetchCampaignMetadata('ipfs://QmdXogkkm6cbwLar1CtQE5JR45vgT3PFwDxAdajpM519yn')).toEqual({
+      image: 'ipfs://QmdXogkkm6cbwLar1CtQE5JR45vgT3PFwDxAdajpM519yn',
+    })
+  })
+
+  it('returns null for non-JSON, non-image blobs', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        headers: new Headers(),
+        json: () => Promise.reject(new Error('not json')),
+      }),
+    )
+    expect(await fetchCampaignMetadata('https://example.com/file.bin')).toBeNull()
   })
 })
 

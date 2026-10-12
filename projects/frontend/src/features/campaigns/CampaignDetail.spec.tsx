@@ -167,6 +167,7 @@ describe('CampaignDetail', () => {
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
+        headers: new Headers({ 'content-type': 'application/json' }),
         json: () =>
           Promise.resolve({
             description: 'A story',
