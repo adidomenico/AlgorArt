@@ -325,6 +325,7 @@ describe('transaction helpers', () => {
   it('deleteCampaign settles, closes, and unregisters in one atomic group', async () => {
     await deleteCampaign(9n, session)
 
+    expect(setSignerMock).toHaveBeenCalledWith('ADDRESS', session.signer)
     expect(paramsUnregisterMock).toHaveBeenCalledOnce()
     expect(paramsPledgeMock).toHaveBeenCalledOnce()
     // Unregister first (references resolve while the app exists), delete second: one group, one approval.

@@ -435,6 +435,8 @@ export async function claim(appId: bigint, session: WalletSession): Promise<void
  */
 export async function deleteCampaign(appId: bigint, session: WalletSession): Promise<void> {
   const client = campaignClientFor(appId, session)
+  // The manual composer resolves signers by sender address - register the wallet signer for this address first.
+  algorand.account.setSigner(session.address, session.signer)
   const composer = algorand.send.newGroup()
   if (factoryAppId() > 0n) {
     const factoryClient = factoryClientFor(session)
