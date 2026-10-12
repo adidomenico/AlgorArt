@@ -6,6 +6,7 @@ import {
   claim,
   createCampaign,
   deleteCampaign,
+  disconnectQuietly,
   fetchMyLeaves,
   fetchVaultBox,
   fetchVaultConfig,
@@ -25,6 +26,7 @@ const {
   sendVaultRefundMock,
   paramsPledgeMock,
   paramsCreditMock,
+  paramsUnregisterMock,
   paymentMock,
   composerAddMock,
   composerSendMock,
@@ -35,9 +37,11 @@ const {
   waitForIndexerRoundMock,
   waitForIndexerCatchUpMock,
   loadTreeMock,
+  clearTreeCacheMock,
   frontierMock,
   pathBlobMock,
   fetchMyLeavesMock,
+  factoryAppIdMock,
 } = vi.hoisted(() => ({
   sendCreateMock: vi.fn(),
   sendRegisterMock: vi.fn(),
@@ -49,6 +53,7 @@ const {
   sendVaultRefundMock: vi.fn(),
   paramsPledgeMock: vi.fn(),
   paramsCreditMock: vi.fn(),
+  paramsUnregisterMock: vi.fn(),
   paymentMock: vi.fn(),
   composerAddMock: vi.fn(),
   composerSendMock: vi.fn(),
@@ -59,9 +64,11 @@ const {
   waitForIndexerRoundMock: vi.fn(),
   waitForIndexerCatchUpMock: vi.fn(),
   loadTreeMock: vi.fn(),
+  clearTreeCacheMock: vi.fn(),
   frontierMock: vi.fn(),
   pathBlobMock: vi.fn(),
   fetchMyLeavesMock: vi.fn(),
+  factoryAppIdMock: vi.fn(),
 }))
 
 vi.mock('../contracts/Campaign', () => ({
@@ -108,6 +115,9 @@ vi.mock('../contracts/ClaimsVault', () => ({
 vi.mock('../contracts/Factory', () => ({
   FactoryClient: class {
     appAddress = 'FACTORYADDRESS'
+    params = {
+      unregister: (...args: unknown[]) => paramsUnregisterMock(...args),
+    }
     send = {
       register: sendRegisterMock,
       unregister: sendUnregisterMock,
@@ -116,11 +126,12 @@ vi.mock('../contracts/Factory', () => ({
 }))
 
 vi.mock('./campaign', () => ({
-  factoryAppId: () => 1001n,
+  factoryAppId: (...args: unknown[]) => factoryAppIdMock(...args),
   vaultAppId: () => 2002n,
 }))
 
 vi.mock('./claimtree', () => ({
+  clearTreeCache: (...args: unknown[]) => clearTreeCacheMock(...args),
   loadTree: (...args: unknown[]) => loadTreeMock(...args),
   frontierForPledge: (...args: unknown[]) => frontierMock(...args),
   pathBlobForRefund: (...args: unknown[]) => pathBlobMock(...args),
@@ -148,6 +159,18 @@ const session = {
 const VAULT_APP_ADDRESS = algosdk.getApplicationAddress(2002n).toString()
 
 describe('transaction helpers', () => {
+  it('disconnects quietly', async () => {
+    const disconnect = vi.fn().mockResolvedValue(undefined)
+    await expect(disconnectQuietly({ disconnect })).resolves.toBeUndefined()
+    expect(disconnect).toHaveBeenCalledOnce()
+
+    const failing = vi.fn().mockRejectedValue(new Error('already dead'))
+    await expect(disconnectQuietly({ disconnect: failing })).resolves.toBeUndefined()
+
+    await expect(disconnectQuietly(null)).resolves.toBeUndefined()
+    await expect(disconnectQuietly(undefined)).resolves.toBeUndefined()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     waitForIndexerRoundMock.mockResolvedValue(undefined)
@@ -156,8 +179,10 @@ describe('transaction helpers', () => {
     frontierMock.mockReturnValue(new Uint8Array())
     pathBlobMock.mockReturnValue(new Uint8Array())
     fetchMyLeavesMock.mockResolvedValue([])
+    factoryAppIdMock.mockReturnValue(1001n)
     paramsPledgeMock.mockResolvedValue({ pledge: 'params' })
     paramsCreditMock.mockResolvedValue({ credit: 'params' })
+    paramsUnregisterMock.mockResolvedValue({ unregister: 'params' })
     paymentMock.mockResolvedValue({ payment: 'pay-txn' })
     composerSendMock.mockResolvedValue({ confirmation: { confirmedRound: 99n } })
     sendCreateMock.mockResolvedValue({ result: { appId: 9n, appAddress: { toString: () => 'ESCROW' } } })
@@ -186,6 +211,38 @@ describe('transaction helpers', () => {
     expect(waitForIndexerCatchUpMock).toHaveBeenCalledOnce()
   })
 
+  it('creates without registering when no factory is configured', async () => {
+    factoryAppIdMock.mockReturnValue(0n)
+    await createCampaign(session, 'Title', 'ipfs://meta', 1_000_000n, 2_000n)
+
+    expect(sendCreateMock).toHaveBeenCalledOnce()
+    expect(sendRegisterMock).not.toHaveBeenCalled()
+  })
+
+  it('deletes without unregistering when no factory is configured', async () => {
+    factoryAppIdMock.mockReturnValue(0n)
+    await deleteCampaign(9n, session)
+
+    expect(composerAddMock).toHaveBeenCalledTimes(1)
+    expect(paramsUnregisterMock).not.toHaveBeenCalled()
+    expect(composerSendMock).toHaveBeenCalledOnce()
+  })
+
+  it('skips the indexer wait when confirmations carry no round', async () => {
+    composerSendMock.mockResolvedValue({ confirmation: {} })
+    for (const mock of [sendCancelPledgeMock, sendRefundMock, sendClaimMock, sendDeleteMock, sendVaultRefundMock]) {
+      mock.mockResolvedValue({ confirmation: {} })
+    }
+    campaignBoxValueMock.mockResolvedValue(new Uint8Array(65).fill(1))
+
+    await pledge(9n, session, 1_000_000n)
+    await cancelPledge(9n, session, { position: 2, amount: 1_000_000n, txidHex: 'ab'.repeat(32) })
+    await refund(9n, session, { position: 0, amount: 1_000_000n, txidHex: 'ab'.repeat(32) })
+    await claim(9n, session)
+    await deleteCampaign(9n, session)
+    expect(waitForIndexerRoundMock).not.toHaveBeenCalled()
+  })
+
   it('pledge submits one atomic [pay, pledge, credit] group with a fresh frontier', async () => {
     await pledge(9n, session, 1_000_000n)
 
@@ -197,7 +254,8 @@ describe('transaction helpers', () => {
     // Two app calls in one group (the payment rides along as the pledge's txn arg).
     expect(composerAddMock).toHaveBeenCalledTimes(2)
     expect(composerSendMock).toHaveBeenCalledOnce()
-    expect(waitForIndexerCatchUpMock).toHaveBeenCalledOnce()
+    // Once before building proofs (fresh tree on the first attempt), once after for UI refresh.
+    expect(waitForIndexerCatchUpMock).toHaveBeenCalledTimes(2)
   })
 
   it('pledge retries once on a stale frontier, then throws', async () => {
@@ -264,12 +322,17 @@ describe('transaction helpers', () => {
     expect(waitForIndexerRoundMock).toHaveBeenCalledWith(99n)
   })
 
-  it('deleteCampaign settles, closes, and unregisters', async () => {
+  it('deleteCampaign settles, closes, and unregisters in one atomic group', async () => {
     await deleteCampaign(9n, session)
 
-    expect(sendDeleteMock).toHaveBeenCalledOnce()
-    expect(sendUnregisterMock).toHaveBeenCalledOnce()
-    expect(waitForIndexerRoundMock).toHaveBeenCalledWith(99n)
+    expect(paramsUnregisterMock).toHaveBeenCalledOnce()
+    expect(paramsPledgeMock).toHaveBeenCalledOnce()
+    // Unregister first (references resolve while the app exists), delete second: one group, one approval.
+    expect(composerAddMock).toHaveBeenCalledTimes(2)
+    expect(composerSendMock).toHaveBeenCalledOnce()
+    expect(waitForIndexerCatchUpMock).toHaveBeenCalledOnce()
+    expect(sendDeleteMock).not.toHaveBeenCalled()
+    expect(sendUnregisterMock).not.toHaveBeenCalled()
   })
 
   it('fetchMyLeaves passes through the proof builder', async () => {

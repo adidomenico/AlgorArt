@@ -44,6 +44,33 @@ describe('Nav', () => {
     expect(screen.getByText('Select wallet provider')).toBeInTheDocument()
   })
 
+  it('reopens the menu when connecting fails', async () => {
+    const connect = vi.fn().mockRejectedValue(new Error('no extension'))
+    useWalletMock.mockReturnValue({
+      activeAddress: null,
+      wallets: [{ id: 'pera', metadata: { name: 'Pera Wallet', icon: '' }, connect, isActive: false }],
+    })
+    const user = userEvent.setup()
+    render(<Nav onNavigateHome={() => {}} />)
+    await user.click(screen.getByText('Connect wallet'))
+    await user.click(screen.getByText('Pera Wallet'))
+    const dialog = document.getElementById('connect_wallet_modal')
+    expect(dialog).not.toHaveClass('hidden')
+    expect(await screen.findByText(/Could not connect with Pera Wallet/)).toBeInTheDocument()
+  })
+
+  it('keeps the menu open when disconnecting while it is open', async () => {
+    useWalletMock.mockReturnValue({ activeAddress: 'CONNECTED', wallets: [] })
+    const user = userEvent.setup()
+    const { rerender } = render(<Nav onNavigateHome={() => {}} />)
+    await user.click(screen.getByRole('button', { name: 'Account' }))
+    const dialog = document.getElementById('connect_wallet_modal')
+    expect(dialog).not.toHaveClass('hidden')
+    useWalletMock.mockReturnValue({ activeAddress: null, wallets: [] })
+    rerender(<Nav onNavigateHome={() => {}} />)
+    expect(dialog).not.toHaveClass('hidden')
+  })
+
   it('hides the menu when a provider flow starts', async () => {
     const connect = vi.fn().mockResolvedValue(undefined)
     useWalletMock.mockReturnValue({

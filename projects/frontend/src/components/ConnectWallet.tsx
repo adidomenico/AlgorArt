@@ -21,7 +21,7 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
   const isAvailable = (wallet: Wallet) =>
     wallet.id !== WalletId.EXODUS || (typeof window !== 'undefined' && (window as unknown as { algorand?: unknown }).algorand !== undefined)
 
-  const unavailableHint = 'Exodus browser extension not detected — install it to use Exodus'
+  const unavailableHint = 'Exodus browser extension not detected - install it to use Exodus'
 
   return (
     <dialog

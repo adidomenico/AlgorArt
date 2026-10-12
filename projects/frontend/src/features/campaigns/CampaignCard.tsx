@@ -4,7 +4,7 @@ import CampaignImage from './CampaignImage'
 
 interface CampaignCardProps {
   campaign: CampaignViewModel
-  /** Chain timestamp (seconds) for the countdown — never wall-clock (see `fetchChainTimestamp`). */
+  /** Chain timestamp (seconds) for the countdown - never wall-clock (see `fetchChainTimestamp`). */
   nowSeconds: bigint
   onSelect: (id: bigint) => void
 }

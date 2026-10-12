@@ -7,6 +7,8 @@ import type { AlgoViteClientConfig, AlgoViteKMDConfig } from '../../interfaces/n
  * @returns The merged environment.
  */
 function appEnv(): Record<string, string | undefined> {
+  // Browser-only builds have no process object; vitest always runs under node.
+  /* v8 ignore next */
   return {
     ...(typeof process === 'undefined' ? {} : process.env),
     ...import.meta.env,

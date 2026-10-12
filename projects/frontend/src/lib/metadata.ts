@@ -3,7 +3,7 @@
  *
  * The on-chain `metadataUri` is capped at 128 bytes, so it is always a short
  * pointer (an `ipfs://` URI or an `https://` URL) to a JSON blob shaped like
- * this — never the JSON itself:
+ * this - never the JSON itself:
  *
  * ```json
  * { "name": "My first novel", "description": "…", "image": "ipfs://…", "category": "books" }
@@ -104,7 +104,7 @@ const MIN_CID_LENGTH = 32
 /**
  * Whether a URI is worth a network round-trip. `ipfs://` pointers whose first path segment is far shorter than any
  * real CID (e.g. the seed script's `ipfs://seed/<name>` placeholders) can never resolve, so skip them silently instead
- * of spamming the console with gateway 400s. `https://` URLs always go through — only the fetch can judge those.
+ * of spamming the console with gateway 400s. `https://` URLs always go through - only the fetch can judge those.
  *
  * @param uri The `metadataUri` pointer.
  * @returns True when a fetch might succeed.
@@ -112,6 +112,8 @@ const MIN_CID_LENGTH = 32
 export function looksResolvable(uri: string): boolean {
   const trimmed = uri.trim()
   if (!trimmed.startsWith('ipfs://')) return trimmed !== ''
+  // split() always yields at least one segment; the fallback satisfies noUncheckedIndexedAccess.
+  /* v8 ignore next */
   const firstSegment = trimmed.slice('ipfs://'.length).split('/')[0] ?? ''
   return firstSegment.length >= MIN_CID_LENGTH
 }

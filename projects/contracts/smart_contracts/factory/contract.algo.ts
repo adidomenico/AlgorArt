@@ -14,14 +14,14 @@ import {
 } from '@algorandfoundation/algorand-typescript'
 
 /**
- * Factory — the canonical, on-chain registry for AlgorArt campaigns.
+ * Factory - the canonical, on-chain registry for AlgorArt campaigns.
  *
  * The Factory is **not** a shared escrow: every campaign keeps its own application account and its own funds. The Factory's only job is
- * authenticity and registration — it verifies that a new `Campaign` app runs the official AlgorArt approval program (by SHA-256 hash) and
+ * authenticity and registration - it verifies that a new `Campaign` app runs the official AlgorArt approval program (by SHA-256 hash) and
  * records `app id → creator`, so the frontend can tell official campaigns apart from arbitrary copies of the contract.
  *
  * Registration costs a small, refundable deposit (the registration box's minimum balance, ~0.019 ALGO), paid to the Factory account and
- * returned by `unregister()` when the creator deletes their campaign. The Factory takes no part in pledging, refunding, or cleanup — it
+ * returned by `unregister()` when the creator deletes their campaign. The Factory takes no part in pledging, refunding, or cleanup - it
  * is never a bottleneck and never performs per-backer operations.
  */
 
@@ -29,7 +29,7 @@ import {
 const REGISTER_MBR = 18_900
 
 export class Factory extends Contract {
-  /** The platform owner — the only account allowed to configure the official approval hash. */
+  /** The platform owner - the only account allowed to configure the official approval hash. */
   owner = GlobalState<Account>()
 
   /** SHA-256 of the official Campaign approval program; set by the owner. Empty until configured. */

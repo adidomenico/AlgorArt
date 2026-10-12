@@ -6,12 +6,13 @@ import { ClaimsVaultClient } from '../contracts/ClaimsVault'
 import { FactoryClient } from '../contracts/Factory'
 import { algorand, waitForIndexerCatchUp, waitForIndexerRound } from './algorand'
 import { factoryAppId, vaultAppId } from './campaign'
-import { frontierForPledge, fetchMyLeaves as loadBackerLeaves, loadTree, pathBlobForRefund } from './claimtree'
+import { clearTreeCache, frontierForPledge, fetchMyLeaves as loadBackerLeaves, loadTree, pathBlobForRefund } from './claimtree'
+import { isStaleProofError } from './errors'
 
 /**
  * Write path: assembles + signs transactions through the generated `CampaignClient`, `ClaimsVaultClient`, and
  * `FactoryClient`, plus a manual composer for the two-app pledge group. Each helper takes the wallet's signer/address
- * so the wallet — never the app — holds the keys.
+ * so the wallet - never the app - holds the keys.
  *
  * The claim-tree design (see docs/campaign.md):
  *
@@ -49,7 +50,7 @@ export interface VaultBoxView {
 // The Factory registration deposit: the registration box's minimum balance, returned by `unregister()`.
 const REGISTER_DEPOSIT_MICRO_ALGOS = 18_900n
 
-// Fee headroom per call (measured on LocalNet — see docs/campaign.md "Minimum balances"): the outer call always covers
+// Fee headroom per call (measured on LocalNet - see docs/campaign.md "Minimum balances"): the outer call always covers
 // its inners via fee pooling, so every extra inner transaction costs one more minimum fee on the outer call.
 const FEE_CREDIT_EXTRA = 1_000n // possible first-touch factory check
 const FEE_SPEND_EXTRA = 3_000n // 1 OpUp iteration (create+delete) + payout call
@@ -57,8 +58,16 @@ const FEE_CLAIM_EXTRA = 2_000n // inner payClaim + inner payment
 const FEE_DELETE_EXTRA = 2_000n // inner settle/notify + escrow close
 const FEE_UNREGISTER_EXTRA = 1_000n // inner deposit-back
 
-// Contract error fragments that mean "rebuilt tree state moved under us" — safe to retry once with fresh proofs.
-const STALE_PROOF_PATTERN = /stale or forged frontier|proof does not match root/
+/**
+ * Best-effort disconnect to clear a dead wallet session, so reconnecting is one click instead of two. Never throws:
+ * a dead bridge may fail to disconnect too. Callers must fire-and-forget (`void disconnectQuietly(...)`) - awaiting
+ * a hanging disconnect would stall the UI indefinitely.
+ *
+ * @param activeWallet The active wallet from useWallet, if any.
+ */
+export async function disconnectQuietly(activeWallet: { disconnect: () => Promise<void> } | null | undefined): Promise<void> {
+  await activeWallet?.disconnect().catch(() => undefined)
+}
 
 function campaignClientFor(appId: bigint, session: WalletSession): CampaignClient {
   return new CampaignClient({
@@ -88,7 +97,7 @@ function factoryClientFor(session: WalletSession): FactoryClient {
 }
 
 /**
- * The vault's campaign box reference (key prefix 'c' + 8-byte big-endian app id) — inner vault calls require it
+ * The vault's campaign box reference (key prefix 'c' + 8-byte big-endian app id) - inner vault calls require it
  * declared on the outer transaction.
  *
  * @param appId The campaign application id.
@@ -105,7 +114,7 @@ function vaultBoxRef(appId: bigint): { appId: bigint; name: Uint8Array }[] {
 }
 
 /**
- * The Factory's registration box for a campaign (prefix 'r' + 8-byte big-endian app id) — the inner `isRegistered`
+ * The Factory's registration box for a campaign (prefix 'r' + 8-byte big-endian app id) - the inner `isRegistered`
  * check needs it.
  *
  * @param appId The campaign application id.
@@ -131,7 +140,7 @@ export function vaultAddress(): string {
 }
 
 /**
- * Read and unpack a campaign's vault box (fresh from algod — routing decisions must not use stale indexer state).
+ * Read and unpack a campaign's vault box (fresh from algod - routing decisions must not use stale indexer state).
  *
  * @param appId Campaign application id.
  * @returns The unpacked box, or undefined when no box exists yet.
@@ -149,6 +158,8 @@ export async function fetchVaultBox(appId: bigint): Promise<VaultBoxView | undef
   return {
     paidIn: view.getBigUint64(0),
     paidOut: view.getBigUint64(8),
+    // The length check above guarantees byte 56 exists; the fallback satisfies noUncheckedIndexedAccess.
+    /* v8 ignore next */
     status: raw[56] ?? 0,
     settledAt: view.getBigUint64(57),
   }
@@ -175,9 +186,11 @@ export async function fetchVaultConfig(): Promise<{ window: bigint; sweepTarget:
  */
 async function submitWithFreshProof(run: () => Promise<bigint | undefined>): Promise<bigint | undefined> {
   try {
+    clearTreeCache()
     return await run()
   } catch (error) {
-    if (error instanceof Error && STALE_PROOF_PATTERN.test(error.message)) {
+    if (isStaleProofError(error)) {
+      clearTreeCache()
       return await run()
     }
     throw error
@@ -185,7 +198,7 @@ async function submitWithFreshProof(run: () => Promise<bigint | undefined>): Pro
 }
 
 /**
- * Deploy a new campaign: create → register with the Factory. Nothing is funded — the v2 escrow never holds funds.
+ * Deploy a new campaign: create → register with the Factory. Nothing is funded - the v2 escrow never holds funds.
  *
  * @param session Wallet session holding the signer and address.
  * @param title Short campaign title (stored on-chain).
@@ -244,18 +257,21 @@ export async function createCampaign(
 }
 
 /**
- * Pledge ALGO: one atomic group `[pay, campaign.pledge, vault.credit]` with a freshly rebuilt frontier. Retries once
- * when a concurrent pledge moved the frontier under us.
+ * Pledge ALGO: one atomic group `[pay, campaign.pledge, vault.credit]` with a freshly rebuilt frontier. Waits for the
+ * indexer to catch up before building proofs (a lagging indexer is the usual cause of stale first attempts, each of
+ * which costs the user an approval plus burned fees). Retries once when a concurrent pledge moved the frontier
+ * under us.
  *
  * @param appId Campaign application id.
  * @param session Wallet session holding the signer and address.
  * @param amountMicroAlgos Pledge amount in microAlgos.
  */
 export async function pledge(appId: bigint, session: WalletSession, amountMicroAlgos: bigint): Promise<void> {
-  // The manual composer resolves signers by sender address — register the wallet signer for this address first.
+  // The manual composer resolves signers by sender address - register the wallet signer for this address first.
   algorand.account.setSigner(session.address, session.signer)
 
   const attempt = async (): Promise<bigint | undefined> => {
+    await waitForIndexerCatchUp()
     const tree = await loadTree(appId, vaultAppId(), vaultAddress())
     const campaignClient = campaignClientFor(appId, session)
     const vaultClient = vaultClientFor(session)
@@ -287,6 +303,8 @@ export async function pledge(appId: bigint, session: WalletSession, amountMicroA
   }
 
   await submitWithFreshProof(attempt)
+  // Our own write superseded the cache: drop it so the UI reload below refetches.
+  clearTreeCache()
   await waitForIndexerCatchUp()
 }
 
@@ -302,8 +320,9 @@ export async function fetchMyLeaves(appId: bigint, address: string): Promise<Bac
 }
 
 /**
- * Withdraw one pledge before the deadline (backer, while the campaign is still open). Rebuilds the path fresh and
- * retries once when a concurrent spend moved the root under us.
+ * Withdraw one pledge before the deadline (backer, while the campaign is still open). Waits for the indexer to
+ * catch up before rebuilding the path (see pledge), then retries once when a concurrent spend moved the root
+ * under us.
  *
  * @param appId Campaign application id.
  * @param session Wallet session holding the signer and address.
@@ -311,6 +330,7 @@ export async function fetchMyLeaves(appId: bigint, address: string): Promise<Bac
  */
 export async function cancelPledge(appId: bigint, session: WalletSession, leaf: BackerLeaf): Promise<void> {
   const attempt = async (): Promise<bigint | undefined> => {
+    await waitForIndexerCatchUp()
     const tree = await loadTree(appId, vaultAppId(), vaultAddress())
     const client = campaignClientFor(appId, session)
     const result = await client.send.cancelPledge({
@@ -329,6 +349,8 @@ export async function cancelPledge(appId: bigint, session: WalletSession, leaf: 
   }
 
   const confirmedRound = await submitWithFreshProof(attempt)
+  // Our own write superseded the cache: drop it so the UI reload below refetches.
+  clearTreeCache()
   if (confirmedRound !== undefined) {
     await waitForIndexerRound(confirmedRound)
   }
@@ -336,8 +358,9 @@ export async function cancelPledge(appId: bigint, session: WalletSession, leaf: 
 
 /**
  * Refund one pledge after a failed campaign. Routes by the vault box (fresh from algod): an `Open`/missing box goes
- * through the campaign, a `Failed` box goes straight to `vault.refund` (covers post-settle and post-delete). Rebuilds
- * the path fresh and retries once when a concurrent spend moved the root under us.
+ * through the campaign, a `Failed` box goes straight to `vault.refund` (covers post-settle and post-delete). Waits
+ * for the indexer to catch up before rebuilding the path (see pledge), then retries once when a concurrent spend
+ * moved the root under us.
  *
  * @param appId Campaign application id.
  * @param session Wallet session holding the signer and address.
@@ -345,6 +368,7 @@ export async function cancelPledge(appId: bigint, session: WalletSession, leaf: 
  */
 export async function refund(appId: bigint, session: WalletSession, leaf: BackerLeaf): Promise<void> {
   const attempt = async (): Promise<bigint | undefined> => {
+    await waitForIndexerCatchUp()
     const tree = await loadTree(appId, vaultAppId(), vaultAddress())
     const path = pathBlobForRefund(tree, leaf.position)
     const txid = Buffer.from(leaf.txidHex, 'hex')
@@ -372,6 +396,8 @@ export async function refund(appId: bigint, session: WalletSession, leaf: Backer
   }
 
   const confirmedRound = await submitWithFreshProof(attempt)
+  // Our own write superseded the cache: drop it so the UI reload below refetches.
+  clearTreeCache()
   if (confirmedRound !== undefined) {
     await waitForIndexerRound(confirmedRound)
   }
@@ -400,32 +426,36 @@ export async function claim(appId: bigint, session: WalletSession): Promise<void
 
 /**
  * Delete a settled campaign (creator only): settles the vault on the failed path, closes the escrow to the creator,
- * and unregisters from the Factory (returning the registration deposit). One O(1) call on every path.
+ * and unregisters from the Factory (returning the registration deposit). One atomic group (one wallet approval):
+ * unregister runs first so every app reference resolves while the campaign app still exists; atomicity makes the
+ * order irrelevant to the outcome.
  *
  * @param appId Campaign application id.
  * @param session Wallet session holding the signer and address.
  */
 export async function deleteCampaign(appId: bigint, session: WalletSession): Promise<void> {
   const client = campaignClientFor(appId, session)
-
-  const result = await client.send.delete.delete({
-    args: [],
-    appReferences: [vaultAppId()],
-    boxReferences: vaultBoxRef(appId),
-    extraFee: microAlgos(FEE_DELETE_EXTRA),
-  })
-
-  const confirmedRound = result.confirmation.confirmedRound
-  if (confirmedRound !== undefined) {
-    await waitForIndexerRound(confirmedRound)
-  }
-
+  const composer = algorand.send.newGroup()
   if (factoryAppId() > 0n) {
     const factoryClient = factoryClientFor(session)
-    await factoryClient.send.unregister({
-      args: { app: appId },
-      appReferences: [appId],
-      extraFee: microAlgos(FEE_UNREGISTER_EXTRA),
-    })
+    composer.addAppCallMethodCall(
+      await factoryClient.params.unregister({
+        args: { app: appId },
+        sender: session.address,
+        appReferences: [appId],
+        extraFee: microAlgos(FEE_UNREGISTER_EXTRA),
+      }),
+    )
   }
+  composer.addAppCallMethodCall(
+    await client.params.delete.delete({
+      args: [],
+      sender: session.address,
+      appReferences: [vaultAppId()],
+      boxReferences: vaultBoxRef(appId),
+      extraFee: microAlgos(FEE_DELETE_EXTRA),
+    }),
+  )
+  await composer.send()
+  await waitForIndexerCatchUp()
 }
