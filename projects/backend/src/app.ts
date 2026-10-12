@@ -1,7 +1,7 @@
 import algosdk from 'algosdk'
 import Fastify from 'fastify'
 import { authenticate, createChallenge, verifyChallenge } from './auth.js'
-import { PinningError, pinImage, pinJson } from './uploads.js'
+import { PinningError, pinImage, pinJson, safeFilename } from './uploads.js'
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
@@ -69,8 +69,8 @@ export function buildApp() {
   })
 
   // Authenticated: pinning spends the platform's Pinata quota.
-  // The image/* parser above only runs when that content-type is present, so both generics hold at runtime.
-  app.post<{ Body: Uint8Array<ArrayBuffer>; Headers: { 'content-type': string } }>(
+  // The image/* parser above only runs when that content-type is present, so the Headers generic holds at runtime.
+  app.post<{ Body: Uint8Array<ArrayBuffer>; Headers: { 'content-type': string }; Querystring: { filename?: unknown } }>(
     '/uploads',
     { preHandler: authenticate, bodyLimit: MAX_UPLOAD_BYTES },
     async (request, reply) => {
@@ -79,7 +79,7 @@ export function buildApp() {
         return
       }
       try {
-        await reply.send({ cid: await pinImage(request.body, request.headers['content-type']) })
+        await reply.send({ cid: await pinImage(request.body, request.headers['content-type'], safeFilename(request.query.filename)) })
       } catch (error) {
         request.log.error({ err: error }, 'upload failed')
         if (error instanceof PinningError) {

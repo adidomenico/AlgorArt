@@ -77,7 +77,10 @@ describe('POST /uploads/metadata', () => {
     expect(seen).toHaveLength(1)
     expect(seen[0]?.url).toBe('https://api.pinata.cloud/pinning/pinJSONToIPFS')
     const body = JSON.parse(String(seen[0]?.init.body)) as Record<string, unknown>
-    expect(body).toEqual({ pinataContent: { name: 'Kyogre', description: 'A story', image: 'ipfs://QmCover', category: 'Games' } })
+    expect(body).toEqual({
+      pinataContent: { name: 'Kyogre', description: 'A story', image: 'ipfs://QmCover', category: 'Games' },
+      pinataMetadata: { name: 'Kyogre' },
+    })
   })
 
   it('omits blank optional fields', async () => {
@@ -101,7 +104,7 @@ describe('POST /uploads/metadata', () => {
 
     expect(response.statusCode).toBe(200)
     const body = JSON.parse(String(seen[0]?.body)) as Record<string, unknown>
-    expect(body).toEqual({ pinataContent: { name: 'Kyogre', image: 'ipfs://QmCover' } })
+    expect(body).toEqual({ pinataContent: { name: 'Kyogre', image: 'ipfs://QmCover' }, pinataMetadata: { name: 'Kyogre' } })
   })
 
   it('rejects unauthenticated uploads', async () => {

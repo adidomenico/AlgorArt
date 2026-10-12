@@ -34,9 +34,9 @@ each open item links to the doc with the details. Design context is in
        stays a later cleanup item.
 - [ ] **Cover upload button + readonly URI** - file picker plus an explicit Upload button;
        the metadata URI renders as readonly text (kept for debugging), not an editable field.
-- [ ] **Upload filenames** - pin uploads under their real names (Pinata display name; the CID
-       is content-addressed either way). Once creating folds into one click, name the file
-       after the campaign title instead.
+- [x] **Upload filenames** - cover pins keep the original file name (sanitized); metadata
+       blobs are named after the campaign title. (CIDs are content-addressed either way, so
+       names are display-only in Pinata.)
 - [ ] **Creator display names via NFDs** - resolve NFDomains (`name.algo`) for creator/backer
        display on cards and detail, with truncated-address fallback for unnamed accounts
        (names are opt-in and cost ALGO; resolution is a free off-chain read).

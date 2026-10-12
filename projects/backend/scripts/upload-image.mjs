@@ -5,6 +5,7 @@
 //   node scripts/upload-image.mjs path/to/cover.png
 // Prints the CID, the `ipfs://` URI for the create form, and a gateway URL.
 import { readFile } from 'node:fs/promises'
+import { basename } from 'node:path'
 
 const IMAGE_TYPES = {
   '.png': 'image/png',
@@ -34,7 +35,7 @@ if (!contentType) {
   process.exit(1)
 }
 
-const response = await fetch(`${base}/uploads`, {
+const response = await fetch(`${base}/uploads?filename=${encodeURIComponent(basename(file))}`, {
   method: 'POST',
   headers: { authorization: `Bearer ${token}`, 'content-type': contentType },
   body: await readFile(file),

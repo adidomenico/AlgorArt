@@ -12,6 +12,22 @@ function pinataJwt(): string {
   return jwt
 }
 
+/**
+ * Sanitize a client-supplied display name. Display-only (Pinata dashboard): the worst case is an ugly name, never
+ * a path - nothing is written to disk.
+ *
+ * @param raw Raw `filename` query value.
+ * @returns The trailing path segment, trimmed and capped, or `'upload'`.
+ */
+export function safeFilename(raw: unknown): string {
+  if (typeof raw !== 'string') return 'upload'
+  const trimmed = raw
+    .replace(/.*[\\/]/, '')
+    .trim()
+    .slice(0, 100)
+  return trimmed === '' ? 'upload' : trimmed
+}
+
 function extractCid(json: unknown): string {
   const cid = typeof json === 'object' && json !== null && 'IpfsHash' in json ? json.IpfsHash : undefined
   if (typeof cid !== 'string' || cid === '') {
@@ -25,13 +41,15 @@ function extractCid(json: unknown): string {
  *
  * @param bytes Image bytes.
  * @param contentType Image MIME type (for example `image/png`).
+ * @param filename Display name for the pin (never touches disk).
  * @returns The IPFS CID of the pinned file.
  */
-export async function pinImage(bytes: Uint8Array<ArrayBuffer>, contentType: string): Promise<string> {
+export async function pinImage(bytes: Uint8Array<ArrayBuffer>, contentType: string, filename: string): Promise<string> {
   const jwt = pinataJwt()
   try {
     const form = new FormData()
-    form.append('file', new Blob([bytes], { type: contentType }), 'upload')
+    form.append('file', new Blob([bytes], { type: contentType }), filename)
+    form.append('pinataMetadata', JSON.stringify({ name: filename }))
     const response = await fetch(PINATA_FILE_URL, {
       method: 'POST',
       headers: { Authorization: `Bearer ${jwt}` },
@@ -48,7 +66,7 @@ export async function pinImage(bytes: Uint8Array<ArrayBuffer>, contentType: stri
 }
 
 /**
- * Pin a metadata JSON blob to IPFS via Pinata.
+ * Pin a metadata JSON blob to IPFS via Pinata, named after the campaign title.
  *
  * @param metadata String fields to pin (`name` and `image` required, the rest optional).
  * @returns The IPFS CID of the pinned blob.
@@ -59,7 +77,7 @@ export async function pinJson(metadata: Record<string, string>): Promise<string>
     const response = await fetch(PINATA_JSON_URL, {
       method: 'POST',
       headers: { Authorization: `Bearer ${jwt}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ pinataContent: metadata }),
+      body: JSON.stringify({ pinataContent: metadata, pinataMetadata: { name: metadata.name } }),
     })
     if (!response.ok) {
       throw new PinningError(`pinning failed with status ${String(response.status)}`)

@@ -85,6 +85,27 @@ describe('POST /uploads', () => {
     expect(seen[0]?.init.body).toBeInstanceOf(FormData)
   })
 
+  it('pins under the given filename, sanitized', async () => {
+    vi.stubEnv('PINATA_JWT', 'test-jwt')
+    const names: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: unknown, init: { body?: unknown }) => {
+        const body = init.body as FormData
+        names.push((body.get('file') as File).name)
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ IpfsHash: 'QmTestCid' }) })
+      }),
+    )
+    const app = buildApp()
+    const headers = { authorization: `Bearer ${await token(app)}`, 'content-type': 'image/png' }
+
+    await app.inject({ method: 'POST', url: '/uploads?filename=Kyogre.png', headers, payload: PNG_BYTES })
+    await app.inject({ method: 'POST', url: '/uploads?filename=..%2F..%2Fevil.png', headers, payload: PNG_BYTES })
+    await app.inject({ method: 'POST', url: '/uploads?filename=%2F%2F%2F', headers, payload: PNG_BYTES })
+
+    expect(names).toEqual(['Kyogre.png', 'evil.png', 'upload'])
+  })
+
   it('rejects unauthenticated uploads', async () => {
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
