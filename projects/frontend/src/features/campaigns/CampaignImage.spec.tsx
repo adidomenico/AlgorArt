@@ -22,16 +22,17 @@ describe('CampaignImage', () => {
     )
   })
 
-  it('renders nothing for blank URIs', () => {
-    const { container } = render(<CampaignImage metadataUri="  " title="Novel" />)
-    expect(container).toBeEmptyDOMElement()
+  it('renders the placeholder fallback for blank URIs', () => {
+    render(<CampaignImage metadataUri="  " title="Novel" />)
+    const img = screen.getByAltText('Novel')
+    expect(img.getAttribute('src')?.startsWith('data:image/svg+xml')).toBe(true)
   })
 
-  it('hides the image when it fails to load', async () => {
+  it('shows the placeholder fallback when the image fails to load', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ image: 'https://example.com/cover.jpg' }) }))
     render(<CampaignImage metadataUri="ipfs://QmYwAPJzv9CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG" title="Novel" />)
     const img = await screen.findByAltText('Novel')
     fireEvent.error(img)
-    expect(screen.queryByAltText('Novel')).not.toBeInTheDocument()
+    expect(screen.getByAltText('Novel').getAttribute('src')?.startsWith('data:image/svg+xml')).toBe(true)
   })
 })
