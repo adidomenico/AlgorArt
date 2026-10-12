@@ -9,6 +9,9 @@ export default defineConfig({
     fileParallelism: false,
     coverage: {
       provider: 'v8',
+      // App modules only: the listen entry (like the frontend's main) and the
+      // manually-exercised ops scripts in scripts/ are not counted.
+      include: ['src/app.ts', 'src/auth.ts', 'src/db.ts', 'src/uploads.ts'],
       thresholds: {
         lines: 100,
         branches: 100,

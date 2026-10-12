@@ -18,6 +18,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "db:migrate": "node -r dotenv/config ./node_modules/node-pg-migrate/bin/node-pg-migrate up",
+    "mint-token": "node scripts/mint-token.mjs",
+    "upload-image": "node scripts/upload-image.mjs",
     "check-types": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
