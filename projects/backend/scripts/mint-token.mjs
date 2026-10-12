@@ -1,7 +1,7 @@
 // Mint a throwaway session token for manual API testing (no wallet needed).
 //
 // Usage (from projects/backend):
-//   export $(node scripts/mint-token.mjs)
+//   export $(node --env-file=.env scripts/mint-token.mjs)
 //   curl http://localhost:3001/me -H "Authorization: Bearer $TOKEN"
 import algosdk from 'algosdk'
 import { createHash } from 'node:crypto'

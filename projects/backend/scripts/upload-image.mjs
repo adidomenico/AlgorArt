@@ -20,7 +20,7 @@ const token = process.env.TOKEN
 const [file] = process.argv.slice(2)
 
 if (!token) {
-  console.error('TOKEN is not set: run `export $(node scripts/mint-token.mjs)` first.')
+  console.error('TOKEN is not set: run `export $(node --env-file=.env scripts/mint-token.mjs)` first.')
   process.exit(1)
 }
 if (!file) {

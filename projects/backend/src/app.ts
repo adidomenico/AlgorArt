@@ -1,7 +1,7 @@
 import algosdk from 'algosdk'
 import Fastify from 'fastify'
 import { authenticate, createChallenge, verifyChallenge } from './auth.js'
-import { PinningError, pinImage } from './uploads.js'
+import { PinningError, pinImage, pinJson } from './uploads.js'
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
@@ -82,6 +82,39 @@ export function buildApp() {
         await reply.send({ cid: await pinImage(request.body, request.headers['content-type']) })
       } catch (error) {
         request.log.error({ err: error }, 'upload failed')
+        if (error instanceof PinningError) {
+          await reply.code(502).send({ error: 'pinning failed' })
+        } else {
+          await reply.code(500).send({ error: 'upload failed' })
+        }
+      }
+    },
+  )
+
+  // Authenticated: pinning spends the platform's Pinata quota.
+  app.post<{ Body: { name: unknown; description: unknown; image: unknown; category: unknown } }>(
+    '/uploads/metadata',
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const { name, description, image, category } = request.body
+      if (
+        typeof name !== 'string' ||
+        name === '' ||
+        typeof image !== 'string' ||
+        image === '' ||
+        (description !== undefined && typeof description !== 'string') ||
+        (category !== undefined && typeof category !== 'string')
+      ) {
+        await reply.code(400).send({ error: 'a name and image are required' })
+        return
+      }
+      const metadata: Record<string, string> = { name, image }
+      if (description !== undefined && description !== '') metadata.description = description
+      if (category !== undefined && category !== '') metadata.category = category
+      try {
+        await reply.send({ cid: await pinJson(metadata) })
+      } catch (error) {
+        request.log.error({ err: error }, 'metadata upload failed')
         if (error instanceof PinningError) {
           await reply.code(502).send({ error: 'pinning failed' })
         } else {
