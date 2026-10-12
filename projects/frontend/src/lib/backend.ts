@@ -124,7 +124,7 @@ export async function uploadCover({ baseUrl, address, chainId, sign, file }: Cov
 
   let upload: Response
   try {
-    upload = await fetch(`${baseUrl}/uploads`, {
+    upload = await fetch(`${baseUrl}/uploads?filename=${encodeURIComponent(file.name)}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': file.type },
       body: file,

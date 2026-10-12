@@ -49,6 +49,7 @@ describe('uploadCover', () => {
     await expect(uploadCover(uploadInput())).resolves.toBe('ipfs://QmCover')
     const calls = fetchMock.mock.calls as unknown[][]
     expect(calls[0]?.[0]).toBe('http://backend/auth/challenge')
+    expect(calls[2]?.[0]).toBe('http://backend/uploads?filename=cover.png')
     const verifyInit = calls[1]?.[1] as { body?: unknown } | undefined
     expect(verifyInit?.body).toContain('\\"nonce\\":\\"abc123\\"')
     expect(verifyInit?.body).toContain('\\"chain_id\\":\\"algorand:testnet\\"')
@@ -100,6 +101,19 @@ describe('uploadCover', () => {
     const calls = fetchMock.mock.calls as unknown[][]
     const verifyInit = calls[1]?.[1] as { body?: unknown } | undefined
     expect(verifyInit?.body).toContain('\\"chain_id\\":\\"algorand:localnet\\"')
+  })
+
+  it('encodes special characters in the filename', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
+      .mockResolvedValueOnce(okJson({ token: 'session' }))
+      .mockResolvedValueOnce(okJson({ cid: 'QmCover' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await uploadCover(uploadInput({ file: new File(['bytes'], 'Kyogre art (1).png', { type: 'image/png' }) }))
+    const calls = fetchMock.mock.calls as unknown[][]
+    expect(calls[2]?.[0]).toBe('http://backend/uploads?filename=Kyogre%20art%20(1).png')
   })
 
   it('sends the wallet signature as base64', async () => {
