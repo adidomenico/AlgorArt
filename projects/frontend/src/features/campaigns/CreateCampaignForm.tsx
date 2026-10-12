@@ -134,27 +134,31 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
           className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
         />
       </label>
-      <label className="mb-3 block text-sm text-muted">
-        Cover image (optional)
-        <input
-          type="file"
-          accept="image/*"
-          onChange={(e) => {
-            // Change events always carry a FileList (possibly empty) - the cast only satisfies the nullable DOM type.
-            const files = e.target.files as FileList
-            setImageFile(files[0] ?? null)
-          }}
-          className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
-        />
-      </label>
-      <button
-        type="button"
-        className="mb-3 cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
-        disabled={imageFile === null || uploading}
-        onClick={() => void handleUpload()}
-      >
-        {uploading ? 'Uploading…' : 'Upload cover'}
-      </button>
+      {activeWallet?.canSignData === true && (
+        <>
+          <label className="mb-3 block text-sm text-muted">
+            Cover image (optional)
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                // Change events always carry a FileList (possibly empty) - the cast only satisfies the nullable DOM type.
+                const files = e.target.files as FileList
+                setImageFile(files[0] ?? null)
+              }}
+              className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
+            />
+          </label>
+          <button
+            type="button"
+            className="mb-3 cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={imageFile === null || uploading}
+            onClick={() => void handleUpload()}
+          >
+            {uploading ? 'Uploading…' : 'Upload cover'}
+          </button>
+        </>
+      )}
       <label className="mb-3 block text-sm text-muted">
         Goal (ALGO)
         <input

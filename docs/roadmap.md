@@ -74,7 +74,10 @@ one commit each - CI wiring comes last:
 - [x] **Wallet-signature auth** - sign-in challenge (`POST /auth/challenge`, 5-minute TTL) + JWT verify (`POST /auth/verify`, HS256, 7-day tokens) + authenticated `GET /me`; no passwords, per
       [`design.md`](design.md); tests included.
 - [x] **`POST /uploads`** - authenticated server-side Pinata pinning, returns the CID.
-- [x] **Create-form upload** - cover picker pins through `POST /uploads` (wallet `signData` sign-in) and fills the metadata URI; manual paste stays as fallback.
+- [x] **Create-form upload** - cover picker pins through `POST /uploads` (wallet `signData` sign-in) and fills the metadata URI; manual paste stays as fallback. Gated on the wallet's signing capability: Pera on use-wallet v4 has none, so Pera creators paste (see below).
+- [ ] **use-wallet v5 + ARC-60 sign-in** - unlocks Pera cover uploads (v5 adds Pera `signData`, but signs ARC-60 structures, so verification moves off `MX||message`). Lands in two commits, in order:
+  1. [x] Frontend v5 upgrade (adapter packages, factory config, storage key, type renames). Uploads fail closed until step 2 lands.
+  2. [ ] ARC-60 verification end-to-end (backend verifies `sha256(data)||sha256(authenticatorData)` + domain binding; frontend sends the ARC-60 payload), then a real Pera trial on TestNet.
 - [ ] **Profiles + settings CRUD** - display name/avatar/bio keyed by address, notification prefs; frontend profile section reads them.
 - [ ] **CI matrix** - add the backend lane to `build-and-test` (after all slices land).
 

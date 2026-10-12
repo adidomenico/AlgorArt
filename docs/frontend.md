@@ -120,11 +120,13 @@ points straight at an image file) in the card and detail views, falling back
 to a placeholder on any failure so cards keep a consistent height; the detail
 view also shows `description` and `category`. A blob
 with none of the four fields is treated as absent, so seed URIs render
-the placeholder instead of erroring. The create form offers a cover picker that
+the placeholder instead of erroring. The create form shows a cover picker that
 pins through the backend's `POST /uploads` (wallet `signData` sign-in, needs
-`VITE_BACKEND_URL`) and fills the metadata URI; manual paste stays as
-fallback, and wallets that reject signing surface the wallet's message
-instead. Descriptions
+`VITE_BACKEND_URL`) wherever the wallet reports message-signing support;
+other wallets only get the manual metadata-URI paste field, which stays as
+fallback everywhere. Pera on use-wallet v4 has no `signData`, so Pera
+creators paste today - Pera uploads unblock with a use-wallet v5 + ARC-60
+verification slice. Descriptions
 evolve through the creator updates feed (roadmap), not by editing the blob -
 the pledge-time content stays frozen and always viewable.
 

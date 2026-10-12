@@ -1,29 +1,30 @@
-import type { SupportedWallet } from '@txnlab/use-wallet-react'
-import { WalletId, WalletManager, WalletProvider } from '@txnlab/use-wallet-react'
+import type { WalletAdapterConfig } from '@txnlab/use-wallet'
+import { defly } from '@txnlab/use-wallet-defly'
+import { exodus } from '@txnlab/use-wallet-exodus'
+import { kmd } from '@txnlab/use-wallet-kmd'
+import { pera } from '@txnlab/use-wallet-pera'
+import { WalletManager, WalletProvider } from '@txnlab/use-wallet-react'
 import { SnackbarProvider } from 'notistack'
 import Home from './Home'
 import { getAlgodConfigFromViteEnvironment, getKmdConfigFromViteEnvironment } from './utils/network/getAlgoClientConfigs'
 
-let supportedWallets: SupportedWallet[]
+let supportedWallets: WalletAdapterConfig[]
 if (import.meta.env.VITE_ALGOD_NETWORK === 'localnet') {
   const kmdConfig = getKmdConfigFromViteEnvironment()
   supportedWallets = [
-    {
-      id: WalletId.KMD,
-      options: {
-        baseServer: kmdConfig.server,
-        token: typeof kmdConfig.token === 'string' ? kmdConfig.token : JSON.stringify(kmdConfig.token),
-        port: String(kmdConfig.port),
-        wallet: kmdConfig.wallet,
-        promptForPassword: () => Promise.resolve(kmdConfig.password),
-      },
-    },
+    kmd({
+      baseServer: kmdConfig.server,
+      token: typeof kmdConfig.token === 'string' ? kmdConfig.token : JSON.stringify(kmdConfig.token),
+      port: String(kmdConfig.port),
+      wallet: kmdConfig.wallet,
+      promptForPassword: () => Promise.resolve(kmdConfig.password),
+    }),
   ]
 } else {
   supportedWallets = [
-    { id: WalletId.DEFLY },
-    { id: WalletId.PERA },
-    { id: WalletId.EXODUS },
+    defly(),
+    pera(),
+    exodus(),
     // If you are interested in WalletConnect v2 provider
     // refer to https://github.com/TxnLab/use-wallet for detailed integration instructions
   ]
@@ -50,9 +51,6 @@ function getWalletManager(): WalletManager {
             token: typeof algodConfig.token === 'string' ? algodConfig.token : JSON.stringify(algodConfig.token),
           },
         },
-      },
-      options: {
-        resetNetwork: true,
       },
     })
   }

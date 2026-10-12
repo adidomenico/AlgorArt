@@ -1,12 +1,7 @@
-import { SessionError } from '@txnlab/use-wallet'
 import { describe, expect, it } from 'vitest'
 import { classifyError, errorMessage, isSessionError, isStaleProofError } from './errors'
 
 describe('classifyError', () => {
-  it('detects typed session errors without message matching', () => {
-    expect(classifyError(new SessionError('No session found!'))).toBe('session')
-  })
-
   it('detects dead wallet sessions', () => {
     expect(classifyError(new Error('PeraWalletConnect was not initialized correctly.'))).toBe('session')
     expect(classifyError(new Error('Wallet session expired'))).toBe('session')

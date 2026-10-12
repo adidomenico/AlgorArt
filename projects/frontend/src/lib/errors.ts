@@ -3,16 +3,12 @@
  * metadata) keep swallowing with a comment; everything the user triggers goes through here so failures get a
  * category, a log line, and a message instead of silence.
  *
- * Detection is typed where the layers allow it, message matching where they don't (verified against the installed
- * sources - see the patterns below):
- * - `SessionError` (use-wallet): typed, covers the WalletConnect session path.
+ * Detection is message matching (verified against the installed sources - see the patterns below):
  * - Contract asserts (`campaign/contract.algo.ts`, `claimsvault/contract.algo.ts`): plain strings, but ours and
  *   stable - covered by contract tests when they change.
- * - Pera/Defly/Exodus SDK failures: plain `Error`s with vendor vocabulary (`@perawallet/connect` dist); matched
- *   here, `unknown` fallback stays sane when vendors reword.
+ * - Pera/Defly/Exodus failures: plain `Error`s with vendor vocabulary (adapter packages bundle the vendor SDKs);
+ *   matched here, `unknown` fallback stays sane when vendors reword.
  */
-
-import { SessionError } from '@txnlab/use-wallet'
 
 export type ErrorKind = 'session' | 'stale-proof' | 'rejected' | 'unknown'
 
@@ -29,9 +25,6 @@ const REJECTION_PATTERN = /\breject|\bdenied|dismissed|cancelled by user|\bcance
  * @returns The category driving retry, messaging, and recovery decisions.
  */
 export function classifyError(error: unknown): ErrorKind {
-  // Typed first: the composer rethrows the original object, so use-wallet's own
-  // error classes survive intact. Message matching below is the fallback.
-  if (error instanceof SessionError) return 'session'
   if (!(error instanceof Error)) return 'unknown'
   if (REJECTION_PATTERN.test(error.message)) return 'rejected'
   if (SESSION_PATTERN.test(error.message)) return 'session'

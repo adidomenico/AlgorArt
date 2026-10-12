@@ -1,5 +1,7 @@
+import { WALLET_ID as EXODUS_WALLET_ID } from '@txnlab/use-wallet-exodus'
+import { WALLET_ID as KMD_WALLET_ID } from '@txnlab/use-wallet-kmd'
 import type { Wallet } from '@txnlab/use-wallet-react'
-import { useWallet, WalletId } from '@txnlab/use-wallet-react'
+import { useWallet } from '@txnlab/use-wallet-react'
 import { useState } from 'react'
 import Account from './Account'
 
@@ -15,11 +17,12 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
   const { wallets, activeAddress } = useWallet()
   const [connectError, setConnectError] = useState<string | null>(null)
 
-  const isKmd = (wallet: Wallet) => wallet.id === WalletId.KMD
+  const isKmd = (wallet: Wallet) => wallet.id === KMD_WALLET_ID
   // Only Exodus is extension-gated (window.algorand); Pera/Defly also support mobile flows, so their failures
   // surface through the connect error below instead of a pre-check.
   const isAvailable = (wallet: Wallet) =>
-    wallet.id !== WalletId.EXODUS || (typeof window !== 'undefined' && (window as unknown as { algorand?: unknown }).algorand !== undefined)
+    wallet.id !== EXODUS_WALLET_ID ||
+    (typeof window !== 'undefined' && (window as unknown as { algorand?: unknown }).algorand !== undefined)
 
   const unavailableHint = 'Exodus browser extension not detected - install it to use Exodus'
 
@@ -56,7 +59,7 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
                       await wallet.connect()
                     } catch {
                       setConnectError(
-                        wallet.id === WalletId.EXODUS
+                        wallet.id === EXODUS_WALLET_ID
                           ? `Could not connect with ${wallet.metadata.name}. Install the Exodus extension to use it.`
                           : `Could not connect with ${wallet.metadata.name}. Is it installed and unlocked?`,
                       )
@@ -90,7 +93,7 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
                     // Required for logout/cleanup of inactive providers
                     // For instance, when you login to localnet wallet and switch network
                     // to testnet/mainnet or vice verse.
-                    localStorage.removeItem('@txnlab/use-wallet:v3')
+                    localStorage.removeItem('@txnlab/use-wallet:v5')
                     window.location.reload()
                   }
                 })()

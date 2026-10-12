@@ -13,7 +13,6 @@ const useWalletMock = vi.fn()
 
 vi.mock('@txnlab/use-wallet-react', () => ({
   useWallet: () => useWalletMock(),
-  WalletId: { KMD: 'kmd', PERA: 'pera', DEFLY: 'defly', EXODUS: 'exodus' },
 }))
 
 vi.mock('./Account', () => ({
@@ -72,7 +71,7 @@ describe('ConnectWallet', () => {
     render(<ConnectWallet openModal onHide={() => {}} onShow={() => {}} />)
 
     await user.click(screen.getByText('Logout'))
-    expect(removeItemSpy).toHaveBeenCalledWith('@txnlab/use-wallet:v3')
+    expect(removeItemSpy).toHaveBeenCalledWith('@txnlab/use-wallet:v5')
     expect(reloadSpy).toHaveBeenCalled()
   })
 

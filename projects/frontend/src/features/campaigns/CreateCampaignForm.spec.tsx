@@ -39,7 +39,7 @@ describe('CreateCampaignForm', () => {
     signDataMock.mockResolvedValue({ signature: new Uint8Array([7, 8]) })
     useWalletMock.mockReturnValue({
       activeAddress: 'ADDRESS',
-      activeWallet: { disconnect: disconnectMock },
+      activeWallet: { disconnect: disconnectMock, canSignData: true },
       signData: (...args: unknown[]) => signDataMock(...args),
       transactionSigner: {},
     })
@@ -251,5 +251,19 @@ describe('CreateCampaignForm', () => {
     Object.defineProperty(picker, 'files', { value: [], configurable: true })
     fireEvent.change(picker)
     expect(button).toBeDisabled()
+  })
+
+  it('hides the upload controls when the wallet cannot sign', async () => {
+    useWalletMock.mockReturnValue({
+      activeAddress: 'ADDRESS',
+      activeWallet: { disconnect: disconnectMock, canSignData: false },
+      signData: signDataMock,
+      transactionSigner: {},
+    })
+    render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
+
+    expect(screen.queryByLabelText(/Cover image/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Upload cover' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/Metadata URI/)).toBeInTheDocument()
   })
 })
