@@ -128,43 +128,46 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
           className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
         />
       </label>
-      <label className="mb-3 block text-sm text-muted">
-        Metadata URI (optional)
-        <input
-          type="text"
-          placeholder="ipfs://…"
-          value={metadataUri}
-          onChange={(e) => {
-            setMetadataUri(e.target.value)
-          }}
-          className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
-        />
-      </label>
       {activeWallet?.canSignData === true && (
-        <>
-          <label className="mb-3 block text-sm text-muted">
-            Cover image (optional)
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => {
-                // Change events always carry a FileList (possibly empty) - the cast only satisfies the nullable DOM type.
-                const files = e.target.files as FileList
-                setImageFile(files[0] ?? null)
-              }}
-              className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
-            />
+        <div className="mb-3 flex items-center gap-2">
+          <label
+            htmlFor="cover-file"
+            className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark"
+          >
+            Choose cover
           </label>
+          <input
+            id="cover-file"
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              // Change events always carry a FileList (possibly empty) - the cast only satisfies the nullable DOM type.
+              const files = e.target.files as FileList
+              setImageFile(files[0] ?? null)
+            }}
+            className="hidden"
+          />
+          <span className="min-w-0 flex-1 truncate text-sm text-muted">{imageFile?.name ?? 'No file chosen'}</span>
           <button
             type="button"
-            className="mb-3 cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
+            className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
             disabled={imageFile === null || uploading}
             onClick={() => void handleUpload()}
           >
             {uploading ? 'Uploading…' : 'Upload cover'}
           </button>
-        </>
+        </div>
       )}
+      <label className="mb-3 block text-sm text-muted">
+        Metadata URI (from the cover upload)
+        <input
+          type="text"
+          placeholder="ipfs://…"
+          value={metadataUri}
+          readOnly
+          className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
+        />
+      </label>
       <label className="mb-3 block text-sm text-muted">
         Goal (ALGO)
         <input

@@ -55,13 +55,24 @@ describe('CreateCampaignForm', () => {
   })
 
   it('creates a campaign and calls onCreated with the new app id', async () => {
+    vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ nonce: 'abc123' }) })
+        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ token: 'session' }) })
+        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ cid: 'QmCover' }) }),
+    )
     createCampaignMock.mockResolvedValue({ appId: 99n, appAddress: 'ESCROW' })
     const onCreated = vi.fn()
     const user = userEvent.setup()
     render(<CreateCampaignForm onCreated={onCreated} onCancel={() => {}} />)
 
     await user.type(screen.getByLabelText(/Title/), 'My first novel')
-    await user.type(screen.getByLabelText(/Metadata URI/), 'ipfs://QmExample')
+    await user.upload(screen.getByLabelText(/Choose cover/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: 'Upload cover' }))
+    expect(await screen.findByDisplayValue('ipfs://QmCover')).toBeInTheDocument()
     await user.type(screen.getByPlaceholderText('e.g. 100'), '10')
     await user.clear(screen.getByLabelText(/Duration/))
     await user.type(screen.getByLabelText(/Duration/), '7')
@@ -70,7 +81,7 @@ describe('CreateCampaignForm', () => {
     expect(createCampaignMock).toHaveBeenCalledWith(
       { address: 'ADDRESS', signer: {} },
       'My first novel',
-      'ipfs://QmExample',
+      'ipfs://QmCover',
       expect.anything(),
       expect.anything(),
     )
@@ -99,12 +110,22 @@ describe('CreateCampaignForm', () => {
     expect(await screen.findByText(/Title must be 128 bytes or fewer/)).toBeInTheDocument()
   })
 
-  it('shows an error for a metadata uri longer than 128 bytes', async () => {
+  it('shows an error when the uploaded URI is longer than 128 bytes', async () => {
+    vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ nonce: 'abc123' }) })
+        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ token: 'session' }) })
+        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ cid: `Q${'x'.repeat(200)}` }) }),
+    )
     const user = userEvent.setup()
     render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
 
     await user.type(screen.getByLabelText(/Title/), 'My first novel')
-    await user.type(screen.getByLabelText(/Metadata URI/), 'x'.repeat(129))
+    await user.upload(screen.getByLabelText(/Choose cover/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: 'Upload cover' }))
     await user.type(screen.getByPlaceholderText('e.g. 100'), '10')
     await user.click(screen.getByRole('button', { name: 'Create' }))
 
@@ -197,7 +218,7 @@ describe('CreateCampaignForm', () => {
     const user = userEvent.setup()
     render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
 
-    await user.upload(screen.getByLabelText(/Cover image/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
+    await user.upload(screen.getByLabelText(/Choose cover/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
     await user.click(screen.getByRole('button', { name: 'Upload cover' }))
 
     expect(await screen.findByDisplayValue('ipfs://QmCover')).toBeInTheDocument()
@@ -216,7 +237,7 @@ describe('CreateCampaignForm', () => {
     const user = userEvent.setup()
     render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
 
-    await user.upload(screen.getByLabelText(/Cover image/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
+    await user.upload(screen.getByLabelText(/Choose cover/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
     await user.click(screen.getByRole('button', { name: 'Upload cover' }))
 
     expect(await screen.findByText(/Could not start the upload/)).toBeInTheDocument()
@@ -230,7 +251,7 @@ describe('CreateCampaignForm', () => {
     const user = userEvent.setup()
     render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
 
-    await user.upload(screen.getByLabelText(/Cover image/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
+    await user.upload(screen.getByLabelText(/Choose cover/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
     await user.click(screen.getByRole('button', { name: 'Upload cover' }))
 
     expect(await screen.findByText(/rejected in wallet/)).toBeInTheDocument()
@@ -242,7 +263,7 @@ describe('CreateCampaignForm', () => {
     const user = userEvent.setup()
     render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
 
-    await user.upload(screen.getByLabelText(/Cover image/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
+    await user.upload(screen.getByLabelText(/Choose cover/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
     await user.click(screen.getByRole('button', { name: 'Upload cover' }))
 
     expect(await screen.findByText(/VITE_BACKEND_URL/)).toBeInTheDocument()
@@ -251,15 +272,18 @@ describe('CreateCampaignForm', () => {
   it('keeps the upload button disabled without a file', async () => {
     const user = userEvent.setup()
     render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
-    const picker = screen.getByLabelText(/Cover image/)
+    const picker = screen.getByLabelText(/Choose cover/)
     const button = screen.getByRole('button', { name: 'Upload cover' })
 
     expect(button).toBeDisabled()
+    expect(screen.getByText('No file chosen')).toBeInTheDocument()
     await user.upload(picker, new File(['bytes'], 'cover.png', { type: 'image/png' }))
     expect(button).toBeEnabled()
+    expect(screen.getByText('cover.png')).toBeInTheDocument()
     Object.defineProperty(picker, 'files', { value: [], configurable: true })
     fireEvent.change(picker)
     expect(button).toBeDisabled()
+    expect(screen.getByText('No file chosen')).toBeInTheDocument()
   })
 
   it('hides the upload controls when the wallet cannot sign', () => {
@@ -271,7 +295,7 @@ describe('CreateCampaignForm', () => {
     })
     render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
 
-    expect(screen.queryByLabelText(/Cover image/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Choose cover/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Upload cover' })).not.toBeInTheDocument()
     expect(screen.getByLabelText(/Metadata URI/)).toBeInTheDocument()
   })

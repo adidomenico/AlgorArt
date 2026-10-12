@@ -25,6 +25,21 @@ each open item links to the doc with the details. Design context is in
 ## Frontend UX
 
 - [ ] Backer banner on failed campaigns ("You're owed X ALGO - Refund my pledge").
+- [ ] **Gate creating behind connection** - disconnected visitors see a "connect wallet to
+       create a campaign" prompt instead of a dead form with a disabled button.
+- [ ] **Single-click create** - fold sign-in + cover pin into the Create button: one SIWA
+       popup, silent upload over HTTP, then the existing atomic create group (already one
+       popup). Two wallet interactions total, zero orphan uploads on the happy path; the
+       7-day session means returning creators only see the create popup. Unpin-on-create-failure
+       stays a later cleanup item.
+- [ ] **Cover upload button + readonly URI** - file picker plus an explicit Upload button;
+       the metadata URI renders as readonly text (kept for debugging), not an editable field.
+- [ ] **Upload filenames** - pin uploads under their real names (Pinata display name; the CID
+       is content-addressed either way). Once creating folds into one click, name the file
+       after the campaign title instead.
+- [ ] **Creator display names via NFDs** - resolve NFDomains (`name.algo`) for creator/backer
+       display on cards and detail, with truncated-address fallback for unnamed accounts
+       (names are opt-in and cost ALGO; resolution is a free off-chain read).
 - [x] Fee disclaimers beside every money-moving button (see [`frontend.md`](frontend.md) fee table).
 - [x] "Cancel pledge" action on open campaigns.
 - [x] "Delete campaign" action for creators on settled campaigns.
@@ -74,11 +89,12 @@ one commit each - CI wiring comes last:
 - [x] **Wallet-signature auth** - sign-in challenge (`POST /auth/challenge`, 5-minute TTL) + JWT verify (`POST /auth/verify`, HS256, 7-day tokens) + authenticated `GET /me`; no passwords, per
       [`design.md`](design.md); tests included.
 - [x] **`POST /uploads`** - authenticated server-side Pinata pinning, returns the CID.
-- [x] **Create-form upload** - cover picker pins through `POST /uploads` (wallet `signData` sign-in) and fills the metadata URI; manual paste stays as fallback. Gated on the wallet's signing capability: Pera on use-wallet v4 has none, so Pera creators paste (see below).
+- [x] **Create-form upload** - cover picker pins through `POST /uploads` (wallet `signData` sign-in) into a readonly metadata-URI display, upload button first. Gated on the wallet's signing capability.
+- [x] **Cover upload button + readonly URI** - the metadata URI renders as readonly debug text, not an editable field.
 - [ ] **use-wallet v5 + ARC-60 sign-in** - unlocks Pera cover uploads (v5 adds Pera `signData`, but signs ARC-60 structures, so verification moves off `MX||message`). Lands in two commits, in order:
   1. [x] Frontend v5 upgrade (adapter packages, factory config, storage key, type renames). Uploads fail closed until step 2 lands.
   2. [x] ARC-60 verification end-to-end (backend verifies `sha256(data)||sha256(authenticatorData)` + domain binding; frontend sends the ARC-60 payload). Pera trial on TestNet still open - see below.
-- [ ] **Pera upload trial** - cover picker → Upload with Pera on TestNet; either the URI fills in or the failure message drives the next iteration.
+- [x] **Pera upload trial** - cover picker → Upload with Pera on TestNet passed; the URI fills in.
 - [ ] **Profiles + settings CRUD** - display name/avatar/bio keyed by address, notification prefs; frontend profile section reads them.
 - [ ] **CI matrix** - add the backend lane to `build-and-test` (after all slices land).
 
