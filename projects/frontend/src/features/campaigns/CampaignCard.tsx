@@ -18,6 +18,10 @@ const badgeBg: Record<CampaignViewModel['status'], string> = {
 
 const CampaignCard = ({ campaign, nowSeconds, onSelect }: CampaignCardProps) => {
   const percent = campaign.goalMicroAlgos > 0n ? Number((campaign.raisedMicroAlgos * 100n) / campaign.goalMicroAlgos) : 0
+  const pledgeLine =
+    campaign.myPledgeMicroAlgos !== undefined && campaign.myPledgeMicroAlgos > 0n
+      ? `Your pledge: ${formatAlgo(campaign.myPledgeMicroAlgos)} ALGO`
+      : null
 
   return (
     <button
@@ -63,9 +67,7 @@ const CampaignCard = ({ campaign, nowSeconds, onSelect }: CampaignCardProps) => 
         </div>
       </dl>
 
-      {campaign.myPledgeMicroAlgos !== undefined && campaign.myPledgeMicroAlgos > 0n && (
-        <p className="mb-0 mt-3 text-sm font-semibold text-teal-dark">Your pledge: {formatAlgo(campaign.myPledgeMicroAlgos)} ALGO</p>
-      )}
+      <p className={`mb-0 mt-3 text-sm font-semibold text-teal-dark${pledgeLine === null ? ' invisible' : ''}`}>{pledgeLine ?? ' '}</p>
     </button>
   )
 }

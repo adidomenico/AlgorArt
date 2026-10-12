@@ -35,9 +35,12 @@ describe('CampaignCard', () => {
     expect(onSelect).toHaveBeenCalledWith(42n)
   })
 
-  it('hides the pledge line when the viewer has not pledged', () => {
-    render(<CampaignCard campaign={{ ...campaign, myPledgeMicroAlgos: undefined }} nowSeconds={9_999_999_999n} onSelect={() => {}} />)
+  it('reserves the pledge slot when the viewer has not pledged', () => {
+    const { container } = render(
+      <CampaignCard campaign={{ ...campaign, myPledgeMicroAlgos: undefined }} nowSeconds={9_999_999_999n} onSelect={() => {}} />,
+    )
     expect(screen.queryByText(/Your pledge/)).not.toBeInTheDocument()
+    expect(container.querySelector('p')).toHaveClass('invisible')
   })
 
   it('caps the progress bar at 100% when overfunded', () => {
