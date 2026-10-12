@@ -60,6 +60,7 @@ export function buildApp() {
       try {
         await reply.send({ cid: await pinImage(request.body, request.headers['content-type']) })
       } catch (error) {
+        request.log.error({ err: error }, 'upload failed')
         if (error instanceof PinningError) {
           await reply.code(502).send({ error: 'pinning failed' })
         } else {
