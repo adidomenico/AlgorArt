@@ -60,7 +60,7 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
                     try {
                       const accounts = await wallet.connect()
                       const [account] = accounts
-                      if (account !== undefined) {
+                      if (account !== undefined && account.address !== '') {
                         // Pre-warm the backend session so later uploads skip their sign-in popup.
                         // Silent: anything failing here falls back to signing on demand.
                         void ensureSession({

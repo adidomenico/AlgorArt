@@ -71,6 +71,19 @@ describe('ConnectWallet', () => {
     expect(screen.queryByText(/Could not connect/)).not.toBeInTheDocument()
   })
 
+  it('skips pre-warming without an account address', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    useWalletMock.mockReturnValue({ wallets, activeAddress: null })
+    wallets[0]?.connect.mockResolvedValueOnce([{ address: '' }])
+    const user = userEvent.setup()
+    render(<ConnectWallet openModal onHide={() => {}} onShow={() => {}} />)
+
+    await user.click(screen.getByText('Pera Wallet'))
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.queryByText(/Could not connect/)).not.toBeInTheDocument()
+  })
+
   it('pre-warms the backend session on connect', async () => {
     const signData = vi.fn().mockResolvedValue({ signature: new Uint8Array([1]), authenticatorData: new Uint8Array([2]) })
     useWalletMock.mockReturnValue({ wallets, activeAddress: null, signData })
