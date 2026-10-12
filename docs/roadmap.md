@@ -93,7 +93,7 @@ one commit each - CI wiring comes last:
   2. [x] ARC-60 verification end-to-end (backend verifies `sha256(data)||sha256(authenticatorData)` + domain binding; frontend sends the ARC-60 payload). Pera trial on TestNet still open - see below.
 - [x] **Pera upload trial** - cover picker → Upload with Pera on TestNet passed; the URI fills in.
 - [x] **Profiles + settings CRUD** - `GET /profiles?address=` (public) plus authenticated `PUT /profiles` (display name/avatar/bio/email, partial updates, null clears) and `GET`/`PUT /settings` (notification prefs, theme, defaults served when unsaved); frontend profile section reads them.
-- [ ] **CI matrix** - add the backend lane to `build-and-test` (after all slices land).
+- [x] **CI matrix** - backend lane in `build-and-test` (own job with a Postgres service; landed early, ahead of the remaining slices).
 
 - [ ] **Minimal catalog backend** - API + DB storing one row per campaign (app id, creator, title, metadata URI, goal, deadline, status, outcome, raised, backer count), serving browse/detail pages for ended campaigns.
 - [ ] **Chain watcher** - observes the indexer and finalizes campaign records (created/pledged/claimed/refunded/deleted) into the catalog.

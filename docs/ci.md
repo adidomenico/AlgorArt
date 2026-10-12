@@ -17,7 +17,9 @@ the reasoning behind the split.
   needs Docker. Keeping those in separate jobs (not separate workflows) keeps
   feedback fast and failures attributable to the right lane.
 - **Parallel lanes per project.** `contracts` and `frontend` are independent
-  npm projects; the per-project jobs run them side by side via a matrix.
+  npm projects; the per-project jobs run them side by side via a matrix. The
+  backend runs as its own job (it needs a Postgres service, so it doesn't fit
+  the pure-Node matrix).
 - **CI calls the per-project npm scripts directly** (`npm run lint`, …), not
   `algokit project run`. The algokit wrapper is a local convenience and runs
   projects sequentially.
@@ -32,6 +34,7 @@ flowchart TD
     build["build<br/>(compile contracts, link clients, Vite bundle)"]
     lint["lint-format-type-check<br/>(matrix: contracts, frontend)"]
     unit["unit-test<br/>(matrix: contracts, frontend)"]
+    backend["backend<br/>(lint, format, types, tests + Postgres)"]
     integration["integration-test<br/>(localnet)"]
 
     build -->|"frontend clients artifact"| lint
@@ -46,12 +49,15 @@ flowchart TD
 | `build` | ✅ | ✅ | - | - |
 | `lint-format-type-check` | ✅ | - | - | frontend clients |
 | `unit-test` | ✅ | - | - | frontend clients |
+| `backend` | ✅ | - | ✅ (Postgres service) | - |
 | `integration-test` | ✅ | ✅ | ✅ (algod + indexer) | contracts artifacts |
 | `markdown-lint` (own workflow) | ✅ | - | - | - |
 
 Key point: **lint/format/type-check, unit-test, and markdown are pure Node**.
 `eslint`, `prettier`, `tsc`, `vitest`, and `markdownlint-cli2` need no Docker
-or AlgoKit install; they only download the `build` job's artifacts.
+or AlgoKit install; they only download the `build` job's artifacts. The
+backend lane is the exception: its suite runs against a throwaway Postgres
+service (migrations first, like local development).
 
 ## Why the frontend needs the build's output
 
@@ -65,7 +71,7 @@ download them.
 
 ## Workflow: build-and-test
 
-Implemented at `.github/workflows/build-and-test.yml`. Four jobs, with
+Implemented at `.github/workflows/build-and-test.yml`. Five jobs, with
 `build` as the upstream dependency:
 
 - **`build`** - installs Node + AlgoKit, compiles the contracts
@@ -79,6 +85,9 @@ Implemented at `.github/workflows/build-and-test.yml`. Four jobs, with
   cancel the other lane.
 - **`unit-test`** - matrix over `[contracts, frontend]`. The frontend lane
   downloads `frontend-clients`, then each lane runs `npm run test:coverage`.
+- **`backend`** - standalone (needs nothing from `build`): starts a Postgres
+  service, runs migrations, then lint, format, type-check, and
+  `npm run test:coverage` - the same sequence as local development.
 - **`integration-test`** - downloads `contracts-artifacts`, starts LocalNet,
   and runs the compiled TEAL against a live algod.
 
@@ -122,8 +131,8 @@ the runner and caches:
   `integration-test` jobs (not cached). The install is fast relative to the
   Docker container startup that dominates the integration job.
 
-The only Docker in CI is the **prebuilt** algod/indexer sandbox images, pulled
-only by the `integration-test` job. If runner install time ever justifies a custom
+The only Docker in CI is **prebuilt** images: the Postgres service (backend
+job) and the algod/indexer sandbox (integration job, pulled only there). If runner install time ever justifies a custom
 CI image, publish it once to GHCR and rebuild only when its `Dockerfile` changes.
 
 ## Artifacts - sharing build output between jobs
