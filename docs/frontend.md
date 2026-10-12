@@ -120,20 +120,12 @@ points straight at an image file) in the card and detail views, falling back
 to a placeholder on any failure so cards keep a consistent height; the detail
 view also shows `description` and `category`. A blob
 with none of the four fields is treated as absent, so seed URIs render
-the placeholder instead of erroring. The create form shows a cover picker that
-pins through the backend's `POST /uploads` (ARC-60 wallet `signData` sign-in:
-the client canonifies a SIWA request carrying the backend nonce, the wallet
-signs `sha256(data)||sha256(authenticatorData)`, and the backend verifies the
-signature plus the domain binding; needs `VITE_BACKEND_URL`) wherever the
-wallet reports message-signing support; other wallets see no upload controls at all.
-The session JWT is cached in the app and
-shared by both uploads (one wallet popup per 7-day session, pre-warmed silently at
-connect time with on-demand signing as fallback); a 401 clears it with a retry
-message. Below the picker, a
-description box plus a category dropdown feed an Upload metadata button that pins
-`{name, description, image, category}` through `POST /uploads/metadata` (name is the
-campaign title), replacing the display with the metadata URI the create call stores.
-Descriptions
+the placeholder instead of erroring. Creating a campaign pins the cover and the
+metadata blob inside the Create button: one shared backend session (ARC-60 wallet
+`signData` sign-in over canonified SIWA, pre-warmed at connect, cached per week),
+then the atomic create group. Campaigns without a cover skip pinning entirely.
+Needs `VITE_BACKEND_URL`; wallets without message signing still create imageless
+campaigns. Descriptions
 evolve through the creator updates feed (roadmap), not by editing the blob -
 the pledge-time content stays frozen and always viewable.
 

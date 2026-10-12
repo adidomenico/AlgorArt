@@ -19,13 +19,9 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
   const { activeAddress, activeWallet, signData, transactionSigner } = useWallet()
   const { activeNetworkConfig } = useNetwork()
   const [title, setTitle] = useState('')
-  const [metadataUri, setMetadataUri] = useState('')
   const [imageFile, setImageFile] = useState<File | null>(null)
-  const [imageUri, setImageUri] = useState('')
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState('')
-  const [uploading, setUploading] = useState(false)
-  const [uploadingMeta, setUploadingMeta] = useState(false)
   const [goal, setGoal] = useState('')
   const [days, setDays] = useState('30')
   const [busy, setBusy] = useState(false)
@@ -35,57 +31,6 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
   const MAX_BYTES = 128
 
   const canSubmit = title.trim() !== '' && goal.trim() !== '' && !busy && Boolean(activeAddress && transactionSigner)
-
-  const handleUpload = async () => {
-    const file = imageFile
-    // Defensive: the button is disabled without a file or a signer, so this is unreachable in the UI.
-    /* v8 ignore next */
-    if (file === null || !activeAddress || !activeWallet) return
-
-    setUploading(true)
-    setMessage(null)
-    try {
-      const uri = await uploadCover({
-        baseUrl: backendUrl(),
-        address: activeAddress,
-        chainId: activeNetworkConfig.caipChainId,
-        sign: adaptSignData(signData),
-        file,
-      })
-      setImageUri(uri)
-      setMetadataUri('')
-    } catch (error) {
-      setMessage((error as Error).message)
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  const handleUploadMeta = async () => {
-    // Defensive: the button is disabled without a title or cover, so this is unreachable in the UI.
-    /* v8 ignore next */
-    if (title.trim() === '' || imageUri === '' || !activeAddress || !activeWallet) return
-
-    setUploadingMeta(true)
-    setMessage(null)
-    try {
-      const uri = await uploadMetadata({
-        baseUrl: backendUrl(),
-        address: activeAddress,
-        chainId: activeNetworkConfig.caipChainId,
-        sign: adaptSignData(signData),
-        name: title.trim(),
-        description: description.trim(),
-        image: imageUri,
-        category,
-      })
-      setMetadataUri(uri)
-    } catch (error) {
-      setMessage((error as Error).message)
-    } finally {
-      setUploadingMeta(false)
-    }
-  }
 
   const handleSubmit = async () => {
     // Defensive: the submit button is disabled while disconnected, so this is unreachable in the UI.
@@ -99,10 +44,6 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
         setMessage('Title must be 128 bytes or fewer.')
         return
       }
-      if (new TextEncoder().encode(metadataUri).length > MAX_BYTES) {
-        setMessage('Metadata URI must be 128 bytes or fewer.')
-        return
-      }
       const goalMicroAlgos = parseAlgoToMicroAlgos(goal)
       if (goalMicroAlgos <= 0n) {
         setMessage('Goal must be greater than zero.')
@@ -111,6 +52,34 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
       const daysNumber = Number(days)
       if (!Number.isFinite(daysNumber) || daysNumber <= 0) {
         setMessage('Duration must be a positive number of days.')
+        return
+      }
+
+      let metadataUri = ''
+      if (imageFile !== null) {
+        try {
+          const sign = adaptSignData(signData)
+          const baseUrl = backendUrl()
+          const address = activeAddress
+          const chainId = activeNetworkConfig.caipChainId
+          const coverUri = await uploadCover({ baseUrl, address, chainId, sign, file: imageFile })
+          metadataUri = await uploadMetadata({
+            baseUrl,
+            address,
+            chainId,
+            sign,
+            name: title.trim(),
+            description: description.trim(),
+            image: coverUri,
+            category,
+          })
+        } catch (error) {
+          setMessage((error as Error).message)
+          return
+        }
+      }
+      if (new TextEncoder().encode(metadataUri).length > MAX_BYTES) {
+        setMessage('Metadata URI must be 128 bytes or fewer.')
         return
       }
       const deadlineSeconds = (await fetchChainTimestamp()) + BigInt(Math.floor(daysNumber)) * 86_400n
@@ -156,36 +125,26 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
           className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
         />
       </label>
-      {activeWallet?.canSignData === true && (
-        <div className="mb-3 flex items-center gap-2">
-          <label
-            htmlFor="cover-file"
-            className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark"
-          >
-            Choose cover
-          </label>
-          <input
-            id="cover-file"
-            type="file"
-            accept="image/*"
-            onChange={(e) => {
-              // Change events always carry a FileList (possibly empty) - the cast only satisfies the nullable DOM type.
-              const files = e.target.files as FileList
-              setImageFile(files[0] ?? null)
-            }}
-            className="hidden"
-          />
-          <span className="min-w-0 flex-1 truncate text-sm text-muted">{imageFile?.name ?? 'No file chosen'}</span>
-          <button
-            type="button"
-            className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={imageFile === null || uploading}
-            onClick={() => void handleUpload()}
-          >
-            {uploading ? 'Uploading…' : 'Upload cover'}
-          </button>
-        </div>
-      )}
+      <div className="mb-3 flex items-center gap-2">
+        <label
+          htmlFor="cover-file"
+          className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark"
+        >
+          Choose cover
+        </label>
+        <input
+          id="cover-file"
+          type="file"
+          accept="image/*"
+          onChange={(e) => {
+            // Change events always carry a FileList (possibly empty) - the cast only satisfies the nullable DOM type.
+            const files = e.target.files as FileList
+            setImageFile(files[0] ?? null)
+          }}
+          className="hidden"
+        />
+        <span className="min-w-0 flex-1 truncate text-sm text-muted">{imageFile?.name ?? 'No file chosen'}</span>
+      </div>
       <label className="mb-3 block text-sm text-muted">
         Description (optional)
         <textarea
@@ -215,16 +174,6 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
           ))}
         </select>
       </label>
-      {activeWallet?.canSignData === true && (
-        <button
-          type="button"
-          className="mb-3 cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={title.trim() === '' || imageUri === '' || uploadingMeta}
-          onClick={() => void handleUploadMeta()}
-        >
-          {uploadingMeta ? 'Uploading…' : 'Upload metadata'}
-        </button>
-      )}
       <label className="mb-3 block text-sm text-muted">
         Goal (ALGO)
         <input

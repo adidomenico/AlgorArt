@@ -27,13 +27,9 @@ each open item links to the doc with the details. Design context is in
 - [ ] Backer banner on failed campaigns ("You're owed X ALGO - Refund my pledge").
 - [x] **Gate creating behind connection** - disconnected visitors see a "connect wallet to
        create a campaign" prompt and a disabled New campaign button instead of a dead form.
-- [ ] **Single-click create** - fold sign-in + cover pin into the Create button: one SIWA
-       popup, silent upload over HTTP, then the existing atomic create group (already one
-       popup). Two wallet interactions total, zero orphan uploads on the happy path; the
-       7-day session means returning creators only see the create popup. Unpin-on-create-failure
-       stays a later cleanup item.
-- [ ] **Cover upload button + readonly URI** - file picker plus an explicit Upload button;
-       the metadata URI renders as readonly text (kept for debugging), not an editable field.
+- [x] **Single-click create** - the Create button pins the cover, pins the metadata blob,
+       and creates the campaign in one flow sharing a single session (one SIWA popup per
+       7 days, pre-warmed at connect); campaigns without a cover skip pinning entirely.
 - [x] **Upload filenames** - cover pins keep the original file name (sanitized); metadata
        blobs are named after the campaign title. (CIDs are content-addressed either way, so
        names are display-only in Pinata.)
