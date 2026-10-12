@@ -1,12 +1,31 @@
+import 'dotenv/config'
 import { Client } from 'pg'
 
-const TEST_DATABASE_URL = 'postgresql://algorart:algorart@localhost:5432/algorart_test'
+/**
+ * Swap the database path segment of a Postgres URL, preserving credentials, host, port, and query string.
+ *
+ * @param url Full Postgres connection URL.
+ * @param db Database name to point at.
+ * @returns The rewritten URL.
+ */
+function withDatabase(url: string, db: string): string {
+  const parsed = new URL(url)
+  parsed.pathname = `/${db}`
+  return parsed.toString()
+}
 
 /**
  * Prepare the throwaway test database: create it, point the app at it, and migrate.
  */
 export async function setup(): Promise<void> {
-  const admin = new Client({ connectionString: 'postgresql://algorart:algorart@localhost:5432/postgres' })
+  const appUrl = process.env.DATABASE_URL
+  if (!appUrl) {
+    throw new Error('DATABASE_URL is not set (copy .env.template to .env)')
+  }
+  // Pin the SIWA domain binding: tests assert against these values, never the developer's deployment config.
+  process.env.APP_DOMAIN = 'localhost'
+  process.env.APP_URI = 'http://localhost:5173'
+  const admin = new Client({ connectionString: withDatabase(appUrl, 'postgres') })
   await admin.connect()
   try {
     await admin.query('CREATE DATABASE algorart_test')
@@ -15,11 +34,12 @@ export async function setup(): Promise<void> {
   } finally {
     await admin.end()
   }
-  process.env.DATABASE_URL = TEST_DATABASE_URL
+  const testUrl = withDatabase(appUrl, 'algorart_test')
+  process.env.DATABASE_URL = testUrl
   process.env.SESSION_SECRET ??= 'test-secret'
   const { runner } = await import('node-pg-migrate')
   await runner({
-    databaseUrl: TEST_DATABASE_URL,
+    databaseUrl: testUrl,
     dir: 'migrations',
     direction: 'up',
     schema: 'public',

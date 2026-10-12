@@ -71,11 +71,19 @@ export function base64ToBytes(base64: string): Uint8Array {
 }
 
 function appDomain(): string {
-  return process.env.APP_DOMAIN ?? 'localhost'
+  const domain = process.env.APP_DOMAIN
+  if (!domain) {
+    throw new Error('APP_DOMAIN is not set (see .env.template)')
+  }
+  return domain
 }
 
 function appUri(): string {
-  return process.env.APP_URI ?? 'http://localhost:5173'
+  const uri = process.env.APP_URI
+  if (!uri) {
+    throw new Error('APP_URI is not set (see .env.template)')
+  }
+  return uri
 }
 
 function sessionSecret(): Uint8Array {

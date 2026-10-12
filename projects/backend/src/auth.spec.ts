@@ -54,6 +54,7 @@ function arc60Sign(data: string, sk: Uint8Array, domain = 'localhost'): { authen
 
 describe('wallet-signature auth', () => {
   afterEach(async () => {
+    vi.unstubAllEnvs()
     await pool().query('DELETE FROM auth_nonces')
   })
 
@@ -259,6 +260,41 @@ describe('wallet-signature auth', () => {
       .sign(new TextEncoder().encode(process.env.SESSION_SECRET ?? 'test-secret'))
     const me = await app.inject({ method: 'GET', url: '/me', headers: { authorization: `Bearer ${token}` } })
     expect(me.statusCode).toBe(401)
+  })
+
+  it('fails without domain config', async () => {
+    const app = buildApp()
+    const { address, sk } = keypair()
+    const challenge = await createChallenge(address)
+    const data = siwaData(challenge.nonce, address)
+    const { authenticatorData, signature } = arc60Sign(data, sk)
+    vi.stubEnv('APP_DOMAIN', undefined)
+    vi.stubEnv('APP_URI', undefined)
+
+    const verified = await app.inject({
+      method: 'POST',
+      url: '/auth/verify',
+      payload: { address, data, authenticatorData, signature },
+    })
+
+    expect(verified.statusCode).toBe(400)
+  })
+
+  it('fails without the URI config', async () => {
+    const app = buildApp()
+    const { address, sk } = keypair()
+    const challenge = await createChallenge(address)
+    const data = siwaData(challenge.nonce, address)
+    const { authenticatorData, signature } = arc60Sign(data, sk)
+    vi.stubEnv('APP_URI', undefined)
+
+    const verified = await app.inject({
+      method: 'POST',
+      url: '/auth/verify',
+      payload: { address, data, authenticatorData, signature },
+    })
+
+    expect(verified.statusCode).toBe(400)
   })
 
   it('fails pool creation without DATABASE_URL', async () => {
