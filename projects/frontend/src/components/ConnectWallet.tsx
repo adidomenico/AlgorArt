@@ -1,15 +1,27 @@
 import type { Wallet } from '@txnlab/use-wallet-react'
 import { useWallet, WalletId } from '@txnlab/use-wallet-react'
+import { useState } from 'react'
 import Account from './Account'
 
 interface ConnectWalletInterface {
   openModal: boolean
+  /** Hide the menu when a provider flow starts (their popup takes over). */
+  onHide: () => void
+  /** Show the menu again when connecting fails, so the error is visible. */
+  onShow: () => void
 }
 
-const ConnectWallet = ({ openModal }: ConnectWalletInterface) => {
+const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) => {
   const { wallets, activeAddress } = useWallet()
+  const [connectError, setConnectError] = useState<string | null>(null)
 
   const isKmd = (wallet: Wallet) => wallet.id === WalletId.KMD
+  // Only Exodus is extension-gated (window.algorand); Pera/Defly also support mobile flows, so their failures
+  // surface through the connect error below instead of a pre-check.
+  const isAvailable = (wallet: Wallet) =>
+    wallet.id !== WalletId.EXODUS || (typeof window !== 'undefined' && (window as unknown as { algorand?: unknown }).algorand !== undefined)
+
+  const unavailableHint = 'Exodus browser extension not detected - install it to use Exodus'
 
   return (
     <dialog
@@ -35,8 +47,22 @@ const ConnectWallet = ({ openModal }: ConnectWalletInterface) => {
                 data-test-id={`${wallet.id}-connect`}
                 className="m-2 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
                 key={`provider-${wallet.id}`}
+                title={!isAvailable(wallet) ? unavailableHint : undefined}
                 onClick={() => {
-                  void wallet.connect()
+                  void (async () => {
+                    setConnectError(null)
+                    onHide()
+                    try {
+                      await wallet.connect()
+                    } catch {
+                      setConnectError(
+                        wallet.id === WalletId.EXODUS
+                          ? `Could not connect with ${wallet.metadata.name}. Install the Exodus extension to use it.`
+                          : `Could not connect with ${wallet.metadata.name}. Is it installed and unlocked?`,
+                      )
+                      onShow()
+                    }
+                  })()
                 }}
               >
                 {!isKmd(wallet) && (
@@ -46,6 +72,8 @@ const ConnectWallet = ({ openModal }: ConnectWalletInterface) => {
               </button>
             ))}
         </div>
+
+        {connectError && <p className="mb-0 mt-3 text-sm text-badge-failed">{connectError}</p>}
 
         <div className="mt-4 grid gap-2">
           {activeAddress && (

@@ -56,6 +56,9 @@ playwright-report/
 # Local seed state (created by scripts/seed-demo.ts, consumed by unseed-demo.ts)
 projects/contracts/scripts/.seed-state.json
 
+# Demo upload payloads (local working files, never committed)
+demo-metadata/
+
 # Tool caches
 .npm
 .eslintcache

@@ -1,6 +1,6 @@
 import algosdk from 'algosdk'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchMyPledge, fetchRegisteredCampaignIds, getCampaign, listCampaigns } from './campaign'
+import { clearCachedCampaigns, fetchMyPledge, fetchRegisteredCampaignIds, getCachedCampaigns, getCampaign, listCampaigns } from './campaign'
 
 const indexerMock = vi.hoisted(() => ({
   lookupApplications: vi.fn(),
@@ -10,8 +10,12 @@ const indexerMock = vi.hoisted(() => ({
 
 const fetchMyLeavesMock = vi.hoisted(() => vi.fn())
 
+const fetchChainTimestampMock = vi.fn()
+fetchChainTimestampMock.mockResolvedValue(1_000n)
+
 vi.mock('./algorand', () => ({
   indexer: indexerMock,
+  fetchChainTimestamp: (...args: unknown[]) => fetchChainTimestampMock(...args),
 }))
 
 vi.mock('./claimtree', () => ({
@@ -99,6 +103,25 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+describe('cached base list', () => {
+  it('stores the listed campaigns for instant paint', async () => {
+    indexerMock.searchForApplicationBoxes.mockImplementation(() => boxSearchBuilder(() => [{ name: registrationBoxName(42n) }]))
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp({ id: 42n }) }))
+
+    await listCampaigns()
+    expect(getCachedCampaigns()?.campaigns.map((c) => c.id)).toEqual([42n])
+  })
+
+  it('clears the cached list', async () => {
+    indexerMock.searchForApplicationBoxes.mockImplementation(() => boxSearchBuilder(() => [{ name: registrationBoxName(42n) }]))
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp({ id: 42n }) }))
+
+    await listCampaigns()
+    clearCachedCampaigns()
+    expect(getCachedCampaigns()).toBeUndefined()
+  })
+})
+
 describe('fetchMyPledge', () => {
   it('sums the viewer’s live leaves', async () => {
     fetchMyLeavesMock.mockResolvedValue([
@@ -127,6 +150,19 @@ describe('fetchRegisteredCampaignIds', () => {
     const ids = await fetchRegisteredCampaignIds(1001n)
     expect([...ids]).toEqual([7n, 1_234_567_890n])
   })
+
+  it('follows box search pages', async () => {
+    const pages = [{ boxes: [{ name: registrationBoxName(7n) }], nextToken: 't' }, { boxes: [{ name: registrationBoxName(8n) }] }]
+    indexerMock.searchForApplicationBoxes.mockImplementation(() => ({
+      limit: () => ({
+        nextToken: () => ({
+          do: () => Promise.resolve(pages.shift() ?? { boxes: [] }),
+        }),
+        do: () => Promise.resolve(pages.shift() ?? { boxes: [] }),
+      }),
+    }))
+    expect([...(await fetchRegisteredCampaignIds(1001n))]).toEqual([7n, 8n])
+  })
 })
 
 describe('listCampaigns', () => {
@@ -134,7 +170,7 @@ describe('listCampaigns', () => {
     indexerMock.searchForApplicationBoxes.mockImplementation(() => boxSearchBuilder(() => [{ name: registrationBoxName(42n) }]))
     indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp({ id: 42n }) }))
 
-    const campaigns = await listCampaigns(1_000n)
+    const { campaigns } = await listCampaigns()
     expect(campaigns.map((c) => c.id)).toEqual([42n])
     expect(indexerMock.searchForApplications).not.toHaveBeenCalled()
   })
@@ -151,7 +187,7 @@ describe('listCampaigns', () => {
     indexerMock.searchForApplicationBoxes.mockImplementation(() => boxSearchBuilder(() => [{ name: registrationBoxName(44n) }]))
     indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: deleted }))
 
-    expect(await listCampaigns(1_000n)).toEqual([])
+    expect((await listCampaigns()).campaigns).toEqual([])
   })
 
   it('falls back to the full scan without a factory', async () => {
@@ -168,9 +204,47 @@ describe('listCampaigns', () => {
       })
       indexerMock.searchForApplications.mockImplementation(() => searchBuilder(() => [official, unrelated]))
 
-      const campaigns = await listCampaigns(1_000n)
+      const { campaigns } = await listCampaigns()
       expect(campaigns.map((c) => c.id)).toEqual([42n])
       expect(indexerMock.searchForApplicationBoxes).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('follows application scan pages without a factory', async () => {
+    vi.stubEnv('VITE_FACTORY_APP_ID', '')
+    try {
+      const pages = [{ applications: [campaignApp({ id: 42n })], nextToken: 't' }, { applications: [campaignApp({ id: 43n })] }]
+      indexerMock.searchForApplications.mockImplementation(() => ({
+        limit: () => ({
+          nextToken: () => ({
+            do: () => Promise.resolve(pages.shift() ?? { applications: [] }),
+          }),
+          do: () => Promise.resolve(pages.shift() ?? { applications: [] }),
+        }),
+      }))
+
+      const { campaigns } = await listCampaigns()
+      expect(campaigns.map((c) => c.id)).toEqual([42n, 43n])
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('returns undefined for a missing application', async () => {
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({}))
+    expect(await getCampaign(44n, 3_000n)).toBeUndefined()
+  })
+
+  it('includes viewer pledges in the full scan without a factory', async () => {
+    vi.stubEnv('VITE_FACTORY_APP_ID', '')
+    try {
+      indexerMock.searchForApplications.mockImplementation(() => searchBuilder(() => [campaignApp({ id: 42n })]))
+      fetchMyLeavesMock.mockResolvedValue([{ position: 0, amount: 250_000n, txidHex: 'aa' }])
+
+      const { campaigns } = await listCampaigns('ADDRESS')
+      expect(campaigns[0]?.myPledgeMicroAlgos).toBe(250_000n)
     } finally {
       vi.unstubAllEnvs()
     }

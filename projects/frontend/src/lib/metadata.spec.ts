@@ -3,7 +3,7 @@ import { fetchCampaignMetadata, looksResolvable, parseCampaignMetadata, resolveI
 
 describe('resolveIpfsUri', () => {
   it('maps ipfs:// URIs onto the gateway', () => {
-    expect(resolveIpfsUri('ipfs://QmExample/image.png')).toBe('https://gateway.pinata.cloud/ipfs/QmExample/image.png')
+    expect(resolveIpfsUri('ipfs://QmExample/image.png')).toBe('https://green-cooperative-koi-991.mypinata.cloud/ipfs/QmExample/image.png')
   })
 
   it('passes https URLs through and trims whitespace', () => {
@@ -72,7 +72,9 @@ describe('fetchCampaignMetadata', () => {
       image: 'ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi',
       category: undefined,
     })
-    expect(fetchMock).toHaveBeenCalledWith('https://gateway.pinata.cloud/ipfs/QmYwAPJzv9CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://green-cooperative-koi-991.mypinata.cloud/ipfs/QmYwAPJzv9CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG',
+    )
   })
 
   it('returns null without fetching on blank URIs', async () => {
@@ -96,7 +98,7 @@ describe('resolveImageSrc', () => {
       resolveImageSrc('ipfs://QmYwAPJzv9CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG', {
         image: 'ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi',
       }),
-    ).toBe('https://gateway.pinata.cloud/ipfs/bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi')
+    ).toBe('https://green-cooperative-koi-991.mypinata.cloud/ipfs/bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi')
   })
 
   it('falls back to the URI itself for direct image links', () => {

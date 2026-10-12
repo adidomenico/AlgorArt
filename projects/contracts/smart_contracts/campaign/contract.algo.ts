@@ -16,22 +16,22 @@ import {
 } from '@algorandfoundation/algorand-typescript'
 
 /**
- * Campaign — a non-custodial crowdfunding campaign with a frontier-Merkle receipt tree (see
+ * Campaign - a non-custodial crowdfunding campaign with a frontier-Merkle receipt tree (see
  * docs/claim-tree-protocol.md for the full design and security analysis).
  *
  * One stateful application per campaign. Backers' pledged ALGO goes to the **ClaimsVault** (the pooled refund
- * escrow); the campaign app itself holds no funds at all — not even a creator deposit — so creation costs the creator
+ * escrow); the campaign app itself holds no funds at all - not even a creator deposit - so creation costs the creator
  * only the global-schema sponsorship floor on their own account (~0.24 ALGO, recovered at `delete()`).
  *
  * A backer's receipt is their pledge leaf in the campaign's incremental tree: `leaf = H(0x01 ‖ backer ‖ amount ‖
  * paymentTxId)`, committed at pledge time from the in-group payment (never caller-supplied). The contract stores only
  * the single 32-byte root plus the position count N; callers supply frontiers/paths that the contract authenticates
  * against the stored root. Cancellations and refunds null the leaf in place, and the vault pays out on the campaign's
- * inner instruction — the tree itself is the anti-double-refund state, with no ASA, no boxes, and no per-backer
+ * inner instruction - the tree itself is the anti-double-refund state, with no ASA, no boxes, and no per-backer
  * storage on the campaign.
  *
  * Because no backer funds ever sit in the campaign escrow, the creator can finalize (and delete) the campaign in O(1)
- * on **both** paths — after a successful claim, or after a failure, even when backers never act — while the vault
+ * on **both** paths - after a successful claim, or after a failure, even when backers never act - while the vault
  * keeps paying failed-campaign refunds after the campaign is gone.
  */
 
@@ -51,17 +51,17 @@ const LEAF_DOMAIN = Bytes.fromHex('01')
 const ZERO_ROOT = Bytes.fromHex('0000000000000000000000000000000000000000000000000000000000000000')
 
 // ARC-4 method selectors for the ClaimsVault methods this contract invokes as inner app calls (computed from the
-// emitted ARC-56 signatures — see smart_contracts/claimsvault/contract.algo.ts; kept in sync by the integration tests).
+// emitted ARC-56 signatures - see smart_contracts/claimsvault/contract.algo.ts; kept in sync by the integration tests).
 const VAULT_PAY_BACK_SELECTOR = Bytes.fromHex('b0e0eedf') // payBack(uint64,address,uint64)void
 const VAULT_PAY_CLAIM_SELECTOR = Bytes.fromHex('f8c4e0cb') // payClaim(uint64)void
 const VAULT_SETTLE_SELECTOR = Bytes.fromHex('09200848') // settle(uint64,byte[],uint64)void
 const VAULT_NOTIFY_DELETE_SELECTOR = Bytes.fromHex('87060e1d') // notifyDelete(uint64)void
 
 export class Campaign extends Contract {
-  /** Address of the creator — the only account allowed to claim and delete. */
+  /** Address of the creator - the only account allowed to claim and delete. */
   creator = GlobalState<Account>()
 
-  /** The ClaimsVault app — the pooled refund escrow that holds pledges and pays refunds/claims. */
+  /** The ClaimsVault app - the pooled refund escrow that holds pledges and pays refunds/claims. */
   vault = GlobalState<Application>()
 
   /** Campaign title, e.g. "My first novel". */
@@ -127,7 +127,7 @@ export class Campaign extends Contract {
    * The caller submits this app call in a group with a payment from their own account **to the vault** (the pooled
    * refund escrow), followed by the vault's `credit` call in the same group (which records the inflow). The caller
    * supplies the frontier (peaks ascending, 32 bytes each); the contract authenticates it with `fold` against the
-   * stored root, derives the leaf from the in-group payment (`sender ‖ amount ‖ txnId` — never caller-supplied), runs
+   * stored root, derives the leaf from the in-group payment (`sender ‖ amount ‖ txnId` - never caller-supplied), runs
    * the merge cascade, and stores the new root. N == 0 takes the empty-frontier branch.
    *
    * @param payment Payment from the caller to the vault.
@@ -170,7 +170,7 @@ export class Campaign extends Contract {
    *
    * The caller proves their leaf (rebuilt from caller + proof, never trusted) against the stored root; the contract
    * nulls it, decrements `raised`, and instructs the vault to pay the caller back. A second cancellation of the same
-   * position — or a proof built against any older root — reconstructs a non-stored root and is rejected.
+   * position - or a proof built against any older root - reconstructs a non-stored root and is rejected.
    *
    * @param k Leaf position to null.
    * @param amount Pledged amount committed by the leaf.
@@ -189,7 +189,7 @@ export class Campaign extends Contract {
    * Return a backer's pledge after a failed campaign.
    *
    * Only after the deadline, when the goal was not reached. Same proof mechanics as `cancelPledge`; the first refund
-   * flips an Open campaign to Failed. Keeps working as long as the campaign app exists, with no creator involvement —
+   * flips an Open campaign to Failed. Keeps working as long as the campaign app exists, with no creator involvement -
    * and after `settleOpen`/deletion, backers use the vault's `refund` directly with the same proofs.
    *
    * @param k Leaf position to null.
@@ -214,7 +214,7 @@ export class Campaign extends Contract {
    * Release the campaign funds to the creator.
    *
    * Only the creator may call, only once the deadline has passed and only if the goal was reached. The campaign sets
-   * its status to Claimed and asks the vault (via an inner app call) to pay the creator — the vault derives the payout
+   * its status to Claimed and asks the vault (via an inner app call) to pay the creator - the vault derives the payout
    * (`paidIn − paidOut`, exactly the live pledge total). No backer action is needed after success.
    */
   @abimethod()
@@ -241,14 +241,14 @@ export class Campaign extends Contract {
    * Creator only. The escrow never holds backer funds, so deletion is O(1) on **every** path, even when backers never
    * act:
    *
-   * - **Claimed** — the vault releases the campaign's box (`notifyDelete`: requires Claimed with inflows fully paid
+   * - **Claimed** - the vault releases the campaign's box (`notifyDelete`: requires Claimed with inflows fully paid
    *   out), recovering its minimum balance to the pool.
-   * - **Failed** (or failed in fact: Open with the deadline passed and the goal not reached) — the vault records the
+   * - **Failed** (or failed in fact: Open with the deadline passed and the goal not reached) - the vault records the
    *   failed settlement with the final root/N (`settle`), after which backers keep refunding **directly from the
    *   vault** until the window closes; `finalize` later recovers the box.
-   * - **Pristine** (Open with `raised == 0`) — `settle` runs unconditionally and no-ops when no box exists; if a
+   * - **Pristine** (Open with `raised == 0`) - `settle` runs unconditionally and no-ops when no box exists; if a
    *   stray no-pledge inflow created one, it settles to Failed so `finalize` can recover it instead of stranding it.
-   * - **Open with N > 0 but `raised == 0`** (everything cancelled) — settled like a failure; nothing is owed.
+   * - **Open with N > 0 but `raised == 0`** (everything cancelled) - settled like a failure; nothing is owed.
    */
   @abimethod({ allowActions: 'DeleteApplication' })
   delete(): void {
@@ -304,7 +304,7 @@ export class Campaign extends Contract {
    * Verify a caller's leaf proof against the stored root, null the leaf, decrement `raised`, and pay the caller back
    * via the vault. Shared by `cancelPledge` and `refund` (their guards differ; the spend mechanics are identical).
    *
-   * A second spend of the same position — or a proof built against any older root — reconstructs a non-stored root
+   * A second spend of the same position - or a proof built against any older root - reconstructs a non-stored root
    * and is rejected, so no leaf can ever pay twice.
    *
    * @param k Leaf position to null.
@@ -347,7 +347,7 @@ export class Campaign extends Contract {
 
   /**
    * ARC-4-encode a byte string for raw inner app args: uint16 big-endian length prefix + bytes. (Static types like
-   * `address` need no prefix; dynamic `byte[]` does — the callee's ABI router strips it.)
+   * `address` need no prefix; dynamic `byte[]` does - the callee's ABI router strips it.)
    *
    * @param value The bytes to encode.
    * @returns The length-prefixed encoding.
@@ -357,7 +357,7 @@ export class Campaign extends Contract {
   }
 
   /**
-   * Hash two child nodes into their parent (SHA-512/256 — the AVM `sha512_256` opcode, *not* `sha256`).
+   * Hash two child nodes into their parent (SHA-512/256 - the AVM `sha512_256` opcode, *not* `sha256`).
    *
    * @param left Left child.
    * @param right Right child.
@@ -368,7 +368,7 @@ export class Campaign extends Contract {
   }
 
   /**
-   * Test the lowest bit (the PuyaTs arithmetic operators cover `+ - *` and comparisons only — shifts and bitwise
+   * Test the lowest bit (the PuyaTs arithmetic operators cover `+ - *` and comparisons only - shifts and bitwise
    * operators fall back to JS `number` semantics, so this helper uses `op.shr`/`op.shl` instead of `& 1`).
    *
    * @param n The value to test.
@@ -395,7 +395,7 @@ export class Campaign extends Contract {
         count = count + Uint64(1)
       }
     }
-    /* v8 ignore next — reachable only for N = 2^64 − 1 (no early exit in 64 iterations); defensive cap. */
+    /* v8 ignore next - reachable only for N = 2^64 − 1 (no early exit in 64 iterations); defensive cap. */
     return count
   }
 
@@ -414,7 +414,7 @@ export class Campaign extends Contract {
         return t
       }
     }
-    /* v8 ignore next — reachable only for N = 2^64 − 1 (all bits set); defensive cap. */
+    /* v8 ignore next - reachable only for N = 2^64 − 1 (all bits set); defensive cap. */
     return t
   }
 
@@ -440,7 +440,7 @@ export class Campaign extends Contract {
         return r
       }
     }
-    /* v8 ignore next — reachable only for trees of depth 64 (no missing level); defensive cap. */
+    /* v8 ignore next - reachable only for trees of depth 64 (no missing level); defensive cap. */
     return r
   }
 

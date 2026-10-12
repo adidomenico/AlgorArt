@@ -1,7 +1,9 @@
 import { useWallet } from '@txnlab/use-wallet-react'
 import { useState } from 'react'
+import { classifyError, errorMessage } from '../../lib/errors'
 import { parseAlgoToMicroAlgos } from '../../lib/format'
-import { pledge } from '../../lib/transaction'
+import { logError } from '../../lib/log'
+import { disconnectQuietly, pledge } from '../../lib/transaction'
 
 interface PledgeFormProps {
   appId: bigint
@@ -10,7 +12,7 @@ interface PledgeFormProps {
 }
 
 const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
-  const { activeAddress, transactionSigner } = useWallet()
+  const { activeAddress, activeWallet, transactionSigner } = useWallet()
   const [amount, setAmount] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -18,6 +20,8 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
   const canSubmit = amount.trim() !== '' && !busy && Boolean(activeAddress && transactionSigner)
 
   const handleSubmit = async () => {
+    // Defensive: the submit button is disabled while disconnected, so this is unreachable in the UI.
+    /* v8 ignore next */
     if (!activeAddress) return
 
     setBusy(true)
@@ -28,8 +32,19 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
       setAmount('')
       setMessage('Pledge sent!')
       onPledged()
-    } catch {
-      setMessage('Failed to pledge. Please try again.')
+    } catch (error) {
+      logError('pledge', error)
+      const kind = classifyError(error)
+      if (kind === 'session') {
+        if (activeWallet) {
+          void disconnectQuietly(activeWallet)
+          setMessage('Wallet session expired. Connect your wallet again to continue.')
+        } else {
+          setMessage('Wallet session expired. Disconnect and reconnect your wallet, then try again.')
+        }
+      } else {
+        setMessage(errorMessage(kind, 'pledge'))
+      }
     } finally {
       setBusy(false)
     }
@@ -56,7 +71,8 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
       >
         {busy ? 'Sending…' : 'Pledge'}
       </button>
-      <p className="text-sm text-muted">Network fee ≈0.004 ALGO. Refunds stay open after failure — no opt-ins needed.</p>
+      {!activeAddress && <p className="mb-3 text-sm text-muted">Connect your wallet to pledge.</p>}
+      <p className="text-sm text-muted">Network fee ≈0.004 ALGO. Refunds stay open after failure - no opt-ins needed.</p>
       {message && <p className="mb-0 mt-3 text-sm text-muted">{message}</p>}
     </div>
   )

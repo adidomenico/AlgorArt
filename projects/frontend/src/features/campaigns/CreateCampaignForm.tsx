@@ -1,8 +1,10 @@
 import { useWallet } from '@txnlab/use-wallet-react'
 import { useState } from 'react'
 import { fetchChainTimestamp } from '../../lib/algorand'
+import { classifyError, errorMessage } from '../../lib/errors'
 import { parseAlgoToMicroAlgos } from '../../lib/format'
-import { createCampaign } from '../../lib/transaction'
+import { logError } from '../../lib/log'
+import { createCampaign, disconnectQuietly } from '../../lib/transaction'
 
 interface CreateCampaignFormProps {
   /** Called with the new app id after a successful create. */
@@ -11,7 +13,7 @@ interface CreateCampaignFormProps {
 }
 
 const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) => {
-  const { activeAddress, transactionSigner } = useWallet()
+  const { activeAddress, activeWallet, transactionSigner } = useWallet()
   const [title, setTitle] = useState('')
   const [metadataUri, setMetadataUri] = useState('')
   const [goal, setGoal] = useState('')
@@ -25,6 +27,8 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
   const canSubmit = title.trim() !== '' && goal.trim() !== '' && !busy && Boolean(activeAddress && transactionSigner)
 
   const handleSubmit = async () => {
+    // Defensive: the submit button is disabled while disconnected, so this is unreachable in the UI.
+    /* v8 ignore next */
     if (!activeAddress) return
 
     setBusy(true)
@@ -58,8 +62,19 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
         deadlineSeconds,
       )
       onCreated(appId)
-    } catch {
-      setMessage('Failed to create campaign. Please try again.')
+    } catch (error) {
+      logError('create', error)
+      const kind = classifyError(error)
+      if (kind === 'session') {
+        if (activeWallet) {
+          void disconnectQuietly(activeWallet)
+          setMessage('Wallet session expired. Connect your wallet again to continue.')
+        } else {
+          setMessage('Wallet session expired. Disconnect and reconnect your wallet, then try again.')
+        }
+      } else {
+        setMessage(errorMessage(kind, 'create'))
+      }
     } finally {
       setBusy(false)
     }

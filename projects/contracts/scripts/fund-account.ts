@@ -3,7 +3,7 @@ import { AlgorandClient, microAlgos } from '@algorandfoundation/algokit-utils'
 /**
  * Fund any address on LocalNet from the dispenser (test accounts start at 0 ALGO).
  *
- * LocalNet only — never run against TestNet/MainNet.
+ * LocalNet only - never run against TestNet/MainNet.
  *
  * Usage: `ADDRESS=<addr> [ALGO=<amount>] npx ts-node --transpile-only scripts/fund-account.ts`
  */

@@ -18,6 +18,10 @@ import path from 'node:path'
  *
  * Created campaigns are recorded in `.seed-state.json` (gitignored) for `unseed-demo.ts`.
  *
+ * Metadata URIs default to `ipfs://seed/<creator>` placeholders. Override per campaign (in table order,
+ * comma-separated) with `SEED_METADATA_URIS`, e.g. real pins from `demo-metadata/cids.json`:
+ * `SEED_METADATA_URIS=ipfs://bafkreiAAA,ipfs://bafkreiBBB npm run seed`.
+ *
  * Usage: `FACTORY_APP_ID=<id> VAULT_APP_ID=<id> npm run seed`
  */
 
@@ -40,17 +44,17 @@ interface SeedCampaign {
 
 /** Campaigns to create: creator wallet, goal (ALGO), days until deadline, backer pledge (ALGO) or 0. */
 const CAMPAIGNS_LOCALNET: ReadonlyArray<SeedCampaign> = [
-  { creator: 'alice', goalAlgo: 10, days: 14, pledgeAlgo: 4 },
-  { creator: 'bob', goalAlgo: 25, days: 21, pledgeAlgo: 0 },
-  { creator: 'carol', goalAlgo: 50, days: 30, pledgeAlgo: 18 },
-  { creator: 'dave', goalAlgo: 5, days: 7, pledgeAlgo: 0 },
+  { creator: 'alice', goalAlgo: 10, days: 1, pledgeAlgo: 4 },
+  { creator: 'bob', goalAlgo: 25, days: 1, pledgeAlgo: 0 },
+  { creator: 'carol', goalAlgo: 50, days: 1, pledgeAlgo: 18 },
+  { creator: 'dave', goalAlgo: 5, days: 1, pledgeAlgo: 0 },
 ]
 
 // Faucet-friendly amounts for shared networks (one backer needs ~1.6 ALGO total; two creators need ~0.7 ALGO
 // each for the creation MBR + registration deposit + fees).
 const CAMPAIGNS_TESTNET: ReadonlyArray<SeedCampaign> = [
-  { creator: 'alice', goalAlgo: 2, days: 14, pledgeAlgo: 0.5 },
-  { creator: 'carol', goalAlgo: 5, days: 30, pledgeAlgo: 1 },
+  { creator: 'alice', goalAlgo: 2, days: 1, pledgeAlgo: 0.5 },
+  { creator: 'carol', goalAlgo: 5, days: 1, pledgeAlgo: 1 },
 ]
 
 function appIdBytes(appId: bigint): Buffer {
@@ -82,7 +86,11 @@ void (async () => {
   const backer = await algorand.account.fromEnvironment('backer_a', (100).algo())
 
   const seeded: { appId: string; creator: string }[] = []
-  for (const c of campaigns) {
+  const metadataUris =
+    process.env.SEED_METADATA_URIS !== undefined && process.env.SEED_METADATA_URIS !== '' ? process.env.SEED_METADATA_URIS.split(',') : []
+  for (const [index, c] of campaigns.entries()) {
+    const override = metadataUris[index]
+    const metadataUri = override !== undefined && override !== '' ? override : `ipfs://seed/${c.creator}`
     const creator = await algorand.account.fromEnvironment(c.creator, (100).algo())
 
     const campaignFactory = new AppFactory({ appSpec: spec, algorand, defaultSender: creator.addr })
@@ -92,13 +100,7 @@ void (async () => {
 
     const { result } = await campaignFactory.send.create({
       method: 'create(uint64,byte[],byte[],uint64,uint64)void',
-      args: [
-        vaultId,
-        new TextEncoder().encode(`${c.creator}'s campaign`),
-        new TextEncoder().encode(`ipfs://seed/${c.creator}`),
-        goal,
-        deadline,
-      ],
+      args: [vaultId, new TextEncoder().encode(`${c.creator}'s campaign`), new TextEncoder().encode(metadataUri), goal, deadline],
       sender: creator.addr,
       appReferences: [vaultId],
     })
@@ -119,7 +121,7 @@ void (async () => {
       appReferences: [result.appId],
     })
 
-    let pledged = '—'
+    let pledged = '-'
     if (c.pledgeAlgo > 0) {
       // Pledge through the real group [pay, campaign.pledge, vault.credit]. Each campaign gets a single pledge, so
       // the frontier is always empty (N == 0 takes the empty-frontier branch).

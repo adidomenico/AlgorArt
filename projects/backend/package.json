@@ -1,0 +1,54 @@
+{
+  "name": "backend",
+  "version": "0.0.1",
+  "author": {
+    "name": "Alessio Di Domenico",
+    "email": "alessio.661@hotmail.it"
+  },
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0",
+    "npm": ">=9.0"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "db:migrate": "node -r dotenv/config ./node_modules/node-pg-migrate/bin/node-pg-migrate up",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --check .",
+    "format:fix": "prettier --write ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
+    "@vitest/coverage-v8": "^5.0.3",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-jsdoc": "^64.3.3",
+    "globals": "^17.11.0",
+    "prettier": "^3.9.6",
+    "prettier-plugin-jsdoc": "^1.8.1",
+    "prettier-plugin-organize-imports": "^4.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.1.6",
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "algosdk": "^3.8.0",
+    "dotenv": "^18.0.6",
+    "fastify": "^5.0.0",
+    "jose": "^6.2.12",
+    "node-pg-migrate": "^9.0.0",
+    "pg": "^8.23.1",
+    "tweetnacl": "^1.0.3"
+  }
+}

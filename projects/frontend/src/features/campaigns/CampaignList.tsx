@@ -1,8 +1,7 @@
 import { useWallet } from '@txnlab/use-wallet-react'
 import { useEffect, useState } from 'react'
-import { fetchChainTimestamp } from '../../lib/algorand'
 import type { CampaignViewModel } from '../../lib/campaign'
-import { listCampaigns } from '../../lib/campaign'
+import { fetchMyPledge, getCachedCampaigns, listCampaigns } from '../../lib/campaign'
 import CampaignCard from './CampaignCard'
 
 interface CampaignListProps {
@@ -22,14 +21,36 @@ const CampaignList = ({ onSelectCampaign }: CampaignListProps) => {
     setLoading(true)
     setError(null)
 
-    fetchChainTimestamp()
-      .then((now) => {
-        if (cancelled) return null
-        setNowSeconds(now)
-        return listCampaigns(now, activeAddress ?? undefined)
-      })
+    // Fast pass without the viewer: cards render from global state alone (~0.2s for the whole list).
+    // Pledge totals need a full history replay each, so they stream in afterwards without blocking.
+    // A cached base list paints instantly with no spinner; the refresh below replaces it either way.
+    const cached = getCachedCampaigns()
+    if (cached) {
+      setNowSeconds(cached.nowSeconds)
+      setCampaigns(cached.campaigns)
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
+    listCampaigns()
       .then((result) => {
-        if (!cancelled && result) setCampaigns(result)
+        if (!cancelled) {
+          setNowSeconds(result.nowSeconds)
+          setCampaigns(result.campaigns)
+          if (activeAddress) {
+            const viewer = activeAddress
+            void Promise.all(
+              result.campaigns.map(async (campaign) => {
+                const total = await fetchMyPledge(campaign.id, viewer).catch(() => undefined)
+                if (!cancelled && total !== undefined) {
+                  setCampaigns((previous) =>
+                    previous.map((existing) => (existing.id === campaign.id ? { ...existing, myPledgeMicroAlgos: total } : existing)),
+                  )
+                }
+              }),
+            )
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) setError('Failed to load campaigns. Is the indexer reachable?')
@@ -43,7 +64,7 @@ const CampaignList = ({ onSelectCampaign }: CampaignListProps) => {
     }
   }, [activeAddress])
 
-  if (loading || nowSeconds === null) {
+  if (loading) {
     return (
       <div>
         <p className="text-muted">Loading campaigns…</p>
@@ -55,6 +76,16 @@ const CampaignList = ({ onSelectCampaign }: CampaignListProps) => {
     return (
       <div>
         <p className="text-badge-failed">{error}</p>
+      </div>
+    )
+  }
+
+  // A finished load with no error always sets the timestamp: reaching here with null means a logic bug.
+  /* v8 ignore next */
+  if (nowSeconds === null) {
+    return (
+      <div>
+        <p className="text-muted">Loading campaigns…</p>
       </div>
     )
   }

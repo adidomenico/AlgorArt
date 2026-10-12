@@ -1,14 +1,14 @@
 import type algosdk from 'algosdk'
 import { encodeAddress, getApplicationAddress } from 'algosdk'
-import { indexer } from './algorand'
+import { fetchChainTimestamp, indexer } from './algorand'
 import { fetchMyLeaves } from './claimtree'
 
 /**
- * Read model: maps indexer responses into a `CampaignViewModel` the UI can render. The contract is the source of truth — everything here is
+ * Read model: maps indexer responses into a `CampaignViewModel` the UI can render. The contract is the source of truth - everything here is
  * derived from the same public state the contract reads and writes.
  *
  * A backer's pledge is reconstructed from history, not read as a balance: their live leaves in the campaign's
- * frontier-Merkle tree (see `./claimtree`), summed. Which campaigns are official is decided by the Factory registry —
+ * frontier-Merkle tree (see `./claimtree`), summed. Which campaigns are official is decided by the Factory registry -
  * the list view only shows campaigns registered with the configured Factory app.
  *
  * See docs/campaign.md and docs/frontend.md for the on-chain model:
@@ -21,7 +21,7 @@ import { fetchMyLeaves } from './claimtree'
 export type CampaignStatus = 'open' | 'funded' | 'failed' | 'claimed'
 
 export interface CampaignViewModel {
-  /** Application id — the campaign's unique identifier. */
+  /** Application id - the campaign's unique identifier. */
   id: bigint
   /** Campaign creator address. */
   creator: string
@@ -62,7 +62,13 @@ export function vaultAppId(): bigint {
 }
 
 function envAppId(key: string): bigint {
-  const raw = import.meta.env[key] as string | undefined
+  const env: Record<string, string | undefined> = {
+    // Browser-only builds have no process object; vitest always runs under node.
+    /* v8 ignore next */
+    ...(typeof process === 'undefined' ? {} : process.env),
+    ...import.meta.env,
+  }
+  const raw = env[key]
   if (raw === undefined || raw === '') return 0n
   const id = BigInt(raw)
   return id > 0n ? id : 0n
@@ -75,7 +81,7 @@ const STATUS_UINT_TO_LABEL = {
 } as const
 
 /**
- * Derive the display status. `funded` and `failed` are recomputed from deadline/raised/goal — exactly the rule the contract evaluates —
+ * Derive the display status. `funded` and `failed` are recomputed from deadline/raised/goal - exactly the rule the contract evaluates -
  * because neither is materialised into global state until someone acts. The stored `status` uint only ever holds `0` (Open), `1` (Failed,
  * after a refund) or `2` (Claimed), and is authoritative for `failed`/`claimed` once set.
  *
@@ -205,7 +211,7 @@ export function toCampaignViewModel(
 
 /**
  * Fetch the connected wallet's live pledge total for a campaign: the sum of their unspent leaves. Rebuilt from
- * history (see `./claimtree`) — there is no balance to read.
+ * history (see `./claimtree`) - there is no balance to read.
  *
  * @param appId Campaign application id.
  * @param address Viewer's Algorand address.
@@ -245,6 +251,8 @@ export async function fetchRegisteredCampaignIds(factoryId: bigint): Promise<Set
       if (name.length !== 9 || name[0] !== 0x72) continue
       let id = 0n
       for (let i = 1; i <= 8; i++) {
+        // The length check above guarantees all eight bytes exist; the fallback satisfies noUncheckedIndexedAccess.
+        /* v8 ignore next */
         id = (id << 8n) | BigInt(name[i] ?? 0)
       }
       registered.add(id)
@@ -254,50 +262,82 @@ export async function fetchRegisteredCampaignIds(factoryId: bigint): Promise<Set
   return registered
 }
 
+/** Last good base list (pledge-free view models), for instant paint across navigations. */
+let cachedList: { campaigns: CampaignViewModel[]; nowSeconds: bigint } | undefined
+
 /**
- * List all campaigns. With a Factory configured, look each registered id up directly — the unfiltered application
+ * Read the cached base list, if a previous load stored one.
+ *
+ * @returns Cached campaigns and timestamp, or undefined on first load.
+ */
+export function getCachedCampaigns(): { campaigns: CampaignViewModel[]; nowSeconds: bigint } | undefined {
+  return cachedList
+}
+
+/**
+ * Store a fresh base list for instant paint on later mounts.
+ *
+ * @param result Fresh campaigns and timestamp.
+ * @param result.campaigns Campaign view models.
+ * @param result.nowSeconds Chain timestamp.
+ */
+export function setCachedCampaigns(result: { campaigns: CampaignViewModel[]; nowSeconds: bigint }): void {
+  cachedList = result
+}
+
+/**
+ * Drop the cached base list (tests and explicit refreshes).
+ */
+export function clearCachedCampaigns(): void {
+  cachedList = undefined
+}
+
+/**
+ * List all campaigns. With a Factory configured, look each registered id up directly - the unfiltered application
  * scan below works on sandbox-sized chains but never finishes on TestNet-scale chains (tens of thousands of apps,
  * each response carrying full approval programs).
  *
- * @param nowSeconds Current UNIX timestamp (seconds).
  * @param viewerAddress Connected wallet address, if any.
- * @returns All official campaigns found in the indexer.
+ * @returns The campaigns with the chain timestamp used to derive them.
  */
-export async function listCampaigns(nowSeconds: bigint, viewerAddress?: string): Promise<CampaignViewModel[]> {
+export async function listCampaigns(viewerAddress?: string): Promise<{ campaigns: CampaignViewModel[]; nowSeconds: bigint }> {
   const factoryId = factoryAppId()
-  if (factoryId > 0n) {
-    const registered = await fetchRegisteredCampaignIds(factoryId)
+  if (factoryId <= 0n) {
+    // No factory: fall back to scanning indexed applications for our global-state keys. There is no app-name filter
+    // on the indexer, so presence of the known keys is the discriminator (docs/frontend.md). Only viable on small
+    // chains.
+    const now = await fetchChainTimestamp()
+    const applications: algosdk.indexerModels.Application[] = []
+    let nextToken: string | undefined
+    do {
+      let query = indexer.searchForApplications().limit(100)
+      if (nextToken !== undefined) query = query.nextToken(nextToken)
+      const response = await query.do()
+      applications.push(...response.applications)
+      nextToken = response.nextToken
+    } while (nextToken !== undefined)
+
     const campaigns: CampaignViewModel[] = []
-    for (const id of registered) {
-      const campaign = await getCampaign(id, nowSeconds, viewerAddress)
-      // Deleted campaigns resolve to a stub for the detail page; the list shows live ones only.
-      if (campaign !== undefined && campaign.deleted !== true) campaigns.push(campaign)
+    for (const app of applications) {
+      if (!isCampaignApp(app)) continue
+      let myPledge: bigint | undefined
+      if (viewerAddress) {
+        myPledge = await fetchMyPledge(app.id, viewerAddress)
+      }
+      campaigns.push(toCampaignViewModel(app, now, myPledge))
     }
-    return campaigns
+    const result = { campaigns, nowSeconds: now }
+    setCachedCampaigns(result)
+    return result
   }
 
-  // No factory: fall back to scanning indexed applications for our global-state keys. There is no app-name filter on
-  // the indexer, so presence of the known keys is the discriminator (docs/frontend.md). Only viable on small chains.
-  const applications: algosdk.indexerModels.Application[] = []
-  let nextToken: string | undefined
-  do {
-    let query = indexer.searchForApplications().limit(100)
-    if (nextToken !== undefined) query = query.nextToken(nextToken)
-    const response = await query.do()
-    applications.push(...response.applications)
-    nextToken = response.nextToken
-  } while (nextToken !== undefined)
-
-  const campaigns: CampaignViewModel[] = []
-  for (const app of applications) {
-    if (!isCampaignApp(app)) continue
-    let myPledge: bigint | undefined
-    if (viewerAddress) {
-      myPledge = await fetchMyPledge(app.id, viewerAddress)
-    }
-    campaigns.push(toCampaignViewModel(app, nowSeconds, myPledge))
-  }
-  return campaigns
+  // Timestamp and registry are independent: fetch together so first paint waits on one round-trip, not two.
+  const [now, registered] = await Promise.all([fetchChainTimestamp(), fetchRegisteredCampaignIds(factoryId)])
+  const settled = await Promise.all([...registered].map((id) => getCampaign(id, now, viewerAddress)))
+  const campaigns = settled.filter((campaign): campaign is CampaignViewModel => campaign !== undefined && campaign.deleted !== true)
+  const result = { campaigns, nowSeconds: now }
+  setCachedCampaigns(result)
+  return result
 }
 
 /**
@@ -309,7 +349,7 @@ export async function listCampaigns(nowSeconds: bigint, viewerAddress?: string):
  * @returns The campaign, or undefined if not found or not a campaign app.
  */
 export async function getCampaign(appId: bigint, nowSeconds: bigint, viewerAddress?: string): Promise<CampaignViewModel | undefined> {
-  // Deleted apps are excluded by default — include them so the detail page can render the deleted state
+  // Deleted apps are excluded by default - include them so the detail page can render the deleted state
   // (backers refund from the vault after deletion).
   const response = await indexer.lookupApplications(appId).includeAll(true).do()
   const app = response.application

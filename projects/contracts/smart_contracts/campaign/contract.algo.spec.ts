@@ -14,7 +14,7 @@ import { Campaign } from './contract.algo'
  *
  * Every tree operation runs differentially: expected roots come from the Python reference oracle (`../oracle.py`),
  * driven with the mock payments' real `txnId`s. The vault inner calls (`payBack`/`payClaim`/`settle`/`notifyDelete`)
- * target the stub vault app and succeed as no-ops offline — their real routing and effects run on LocalNet in
+ * target the stub vault app and succeed as no-ops offline - their real routing and effects run on LocalNet in
  * `contract.integration.test.ts`.
  */
 
@@ -49,7 +49,7 @@ describe('Campaign', () => {
    * @returns Lowercase hex.
    */
   function accountHex(account: Account): string {
-    // Puya `bytes` is string-branded statically but Uint8Array at runtime (per the testing lib docs) — hence the bridge.
+    // Puya `bytes` is string-branded statically but Uint8Array at runtime (per the testing lib docs) - hence the bridge.
     return Buffer.from(toExternalValue(account.bytes as unknown as bytes)).toString('hex')
   }
 

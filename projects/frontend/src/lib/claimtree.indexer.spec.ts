@@ -1,6 +1,6 @@
 import { encodeAddress } from 'algosdk'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchMyLeaves, fetchPledges, fetchSpends, loadTree } from './claimtree'
+import { clearTreeCache, fetchMyLeaves, fetchPledges, fetchSpends, loadTree } from './claimtree'
 
 const indexerMock = vi.hoisted(() => ({
   searchForTransactions: vi.fn(),
@@ -123,6 +123,7 @@ function blockMock(blocks: Map<bigint, unknown[]>) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  clearTreeCache()
 })
 
 describe('fetchPledges', () => {
@@ -176,7 +177,7 @@ describe('fetchPledges', () => {
       blockMock(
         new Map([
           // Scan skips (examined backwards from callA): id-less full match, zero amount, wrong receiver, app call
-          // without payment fields, wrong sender — then the real payment. (On-chain groups are contiguous; the
+          // without payment fields, wrong sender - then the real payment. (On-chain groups are contiguous; the
           // interleaving here only exercises the skip branches.)
           [100n, [payA, decoySender, decoyApp, decoyReceiver, decoyZero, decoyNoId, callA, payB, callB]],
           [101n, [payC, callC]],
@@ -214,6 +215,40 @@ describe('fetchPledges', () => {
     await expect(fetchPledges(CAMPAIGN, VAULT)).rejects.toThrow(/no paired payment/)
   })
 
+  it('throws for id-less calls missing from their round block', async () => {
+    const noId = (sender: string) => ({
+      sender,
+      confirmedRound: 100n,
+      applicationTransaction: { applicationArgs: [selectorBytes(SELECTOR.pledge)] },
+    })
+    indexerMock.searchForTransactions.mockImplementation(searchMock(new Map([[CAMPAIGN, [[noId(BACKER_A), noId(BACKER_B)]]]])))
+    indexerMock.lookupBlock.mockImplementation(blockMock(new Map([[100n, []]])))
+
+    await expect(fetchPledges(CAMPAIGN, VAULT)).rejects.toThrow(/not found in its round block/)
+  })
+
+  it('sorts later rounds arriving first back into chain order', async () => {
+    const payB = payment('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB', BACKER_B, VAULT, 1_000_000n)
+    const callB = pledgeCall('NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN', BACKER_B, 102n)
+    const payA = payment('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', BACKER_A, VAULT, 3_000_000n)
+    const callA = pledgeCall('MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM', BACKER_A, 100n)
+    indexerMock.searchForTransactions.mockImplementation(searchMock(new Map([[CAMPAIGN, [[callB], [callA]]]])))
+    indexerMock.lookupBlock.mockImplementation(
+      blockMock(
+        new Map([
+          [102n, [payB, callB]],
+          [100n, [payA, callA]],
+        ]),
+      ),
+    )
+
+    const pledges = await fetchPledges(CAMPAIGN, VAULT)
+    expect(pledges.map((p) => [p.backer, p.round])).toEqual([
+      [BACKER_A, 100n],
+      [BACKER_B, 102n],
+    ])
+  })
+
   it('throws when a call has no id to locate with', async () => {
     const callA = pledgeCall('MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM', BACKER_A, 100n)
     const payA = payment('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', BACKER_A, VAULT, 3_000_000n)
@@ -237,6 +272,51 @@ describe('fetchPledges', () => {
     }))
 
     await expect(fetchPledges(CAMPAIGN, VAULT)).rejects.toThrow(/not found in its round block/)
+  })
+})
+
+describe('tree cache', () => {
+  const payA = payment('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', BACKER_A, VAULT, 3_000_000n)
+  const callA = pledgeCall('MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM', BACKER_A, 100n)
+
+  function mockSuccessfulReplay(): void {
+    indexerMock.searchForTransactions.mockImplementation(searchMock(new Map([[CAMPAIGN, [[callA]]]])))
+    indexerMock.lookupBlock.mockImplementation(blockMock(new Map([[100n, [payA, callA]]])))
+  }
+
+  it('reuses downloads across repeat reads', async () => {
+    mockSuccessfulReplay()
+
+    await fetchPledges(CAMPAIGN, VAULT)
+    await fetchPledges(CAMPAIGN, VAULT)
+    expect(indexerMock.searchForTransactions).toHaveBeenCalledTimes(1)
+    expect(indexerMock.lookupBlock).toHaveBeenCalledTimes(1)
+  })
+
+  it('refetches after clearTreeCache', async () => {
+    mockSuccessfulReplay()
+
+    await fetchPledges(CAMPAIGN, VAULT)
+    clearTreeCache()
+    await fetchPledges(CAMPAIGN, VAULT)
+    expect(indexerMock.searchForTransactions).toHaveBeenCalledTimes(2)
+    expect(indexerMock.lookupBlock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not cache failures', async () => {
+    mockSuccessfulReplay()
+    indexerMock.searchForTransactions.mockImplementationOnce(() => ({
+      applicationID: () => ({
+        limit: () => ({
+          do: () => Promise.reject(new Error('offline')),
+        }),
+      }),
+    }))
+
+    await expect(fetchPledges(CAMPAIGN, VAULT)).rejects.toThrow('offline')
+    const pledges = await fetchPledges(CAMPAIGN, VAULT)
+    expect(pledges).toHaveLength(1)
+    expect(indexerMock.searchForTransactions).toHaveBeenCalledTimes(2)
   })
 })
 

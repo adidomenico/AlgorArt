@@ -6,13 +6,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 /**
- * Deploys the platform's `Factory` application — the canonical campaign registry.
+ * Deploys the platform's `Factory` application - the canonical campaign registry.
  *
  * The deployer is the Factory owner (the only account allowed to configure the official approval hash). The Factory's application account
  * is funded with 1 ALGO (the platform storage reserve: the account base plus headroom for registration deposits), and the official hash is
  * set to the SHA-256 of the compiled `Campaign` approval program so `register()` can tell official campaigns apart from copies.
  *
- * @returns The deployed Factory's app id — configure it as `VITE_FACTORY_APP_ID` in the frontend.
+ * @returns The deployed Factory's app id - configure it as `VITE_FACTORY_APP_ID` in the frontend.
  */
 export async function deploy() {
   const algorand = AlgorandClient.fromEnvironment()
