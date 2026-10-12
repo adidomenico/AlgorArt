@@ -11,6 +11,14 @@ vi.mock('@txnlab/use-wallet-react', () => ({
   useNetwork: () => useNetworkMock(),
 }))
 
+const defaultProps = {
+  onNavigateHome: () => {},
+  onNavigateProfile: () => {},
+  onNavigatePledges: () => {},
+  onNavigateProjects: () => {},
+  onNavigateSettings: () => {},
+}
+
 describe('Nav', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -19,14 +27,14 @@ describe('Nav', () => {
   })
 
   it('renders the brand and connect button when disconnected', () => {
-    render(<Nav onNavigateHome={() => {}} />)
+    render(<Nav {...defaultProps} />)
     expect(screen.getByText('AlgorArt')).toBeInTheDocument()
     expect(screen.getByText('Connect wallet')).toBeInTheDocument()
   })
 
   it('renders the ellipsed address and account button when connected', () => {
     useWalletMock.mockReturnValue({ activeAddress: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789' })
-    render(<Nav onNavigateHome={() => {}} />)
+    render(<Nav {...defaultProps} />)
     expect(screen.getByText('ABCDEF...456789')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Account' })).toBeInTheDocument()
   })
@@ -34,14 +42,14 @@ describe('Nav', () => {
   it('calls onNavigateHome when the brand is clicked', async () => {
     const onNavigateHome = vi.fn()
     const user = userEvent.setup()
-    render(<Nav onNavigateHome={onNavigateHome} />)
+    render(<Nav {...defaultProps} onNavigateHome={onNavigateHome} />)
     await user.click(screen.getByText('AlgorArt'))
     expect(onNavigateHome).toHaveBeenCalled()
   })
 
   it('opens the wallet modal when the connect button is clicked', async () => {
     const user = userEvent.setup()
-    render(<Nav onNavigateHome={() => {}} />)
+    render(<Nav {...defaultProps} />)
     await user.click(screen.getByText('Connect wallet'))
     expect(screen.getByText('Select wallet provider')).toBeInTheDocument()
   })
@@ -53,7 +61,7 @@ describe('Nav', () => {
       wallets: [{ id: 'pera', metadata: { name: 'Pera Wallet', icon: '' }, connect, isActive: false }],
     })
     const user = userEvent.setup()
-    render(<Nav onNavigateHome={() => {}} />)
+    render(<Nav {...defaultProps} />)
     await user.click(screen.getByText('Connect wallet'))
     await user.click(screen.getByText('Pera Wallet'))
     const dialog = document.getElementById('connect_wallet_modal')
@@ -64,12 +72,12 @@ describe('Nav', () => {
   it('keeps the menu open when disconnecting while it is open', async () => {
     useWalletMock.mockReturnValue({ activeAddress: 'CONNECTED', wallets: [] })
     const user = userEvent.setup()
-    const { rerender } = render(<Nav onNavigateHome={() => {}} />)
+    const { rerender } = render(<Nav {...defaultProps} />)
     await user.click(screen.getByRole('button', { name: 'Account' }))
     const dialog = document.getElementById('connect_wallet_modal')
     expect(dialog).not.toHaveClass('hidden')
     useWalletMock.mockReturnValue({ activeAddress: null, wallets: [] })
-    rerender(<Nav onNavigateHome={() => {}} />)
+    rerender(<Nav {...defaultProps} />)
     expect(dialog).not.toHaveClass('hidden')
   })
 
@@ -80,7 +88,7 @@ describe('Nav', () => {
       wallets: [{ id: 'pera', metadata: { name: 'Pera Wallet', icon: '' }, connect, isActive: false }],
     })
     const user = userEvent.setup()
-    render(<Nav onNavigateHome={() => {}} />)
+    render(<Nav {...defaultProps} />)
     await user.click(screen.getByText('Connect wallet'))
     const dialog = document.getElementById('connect_wallet_modal')
     expect(dialog).not.toHaveClass('hidden')
@@ -91,19 +99,19 @@ describe('Nav', () => {
   it('closes the wallet banner after a successful connect', async () => {
     useWalletMock.mockReturnValue({ activeAddress: null, wallets: [] })
     const user = userEvent.setup()
-    const { rerender } = render(<Nav onNavigateHome={() => {}} />)
+    const { rerender } = render(<Nav {...defaultProps} />)
     await user.click(screen.getByText('Connect wallet'))
     const dialog = document.getElementById('connect_wallet_modal')
     expect(dialog).not.toHaveClass('hidden')
     useWalletMock.mockReturnValue({ activeAddress: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', wallets: [] })
-    rerender(<Nav onNavigateHome={() => {}} />)
+    rerender(<Nav {...defaultProps} />)
     expect(dialog).toHaveClass('hidden')
   })
 
   it('toggles the wallet banner when the connect button is clicked twice', async () => {
     useWalletMock.mockReturnValue({ activeAddress: null, wallets: [] })
     const user = userEvent.setup()
-    render(<Nav onNavigateHome={() => {}} />)
+    render(<Nav {...defaultProps} />)
     await user.click(screen.getByText('Connect wallet'))
     const dialog = document.getElementById('connect_wallet_modal')
     expect(dialog).not.toHaveClass('hidden')
@@ -116,7 +124,7 @@ describe('Nav', () => {
     const user = userEvent.setup()
     render(
       <>
-        <Nav onNavigateHome={() => {}} />
+        <Nav {...defaultProps} />
         <main>page content</main>
       </>,
     )

@@ -5,12 +5,24 @@ import { ellipseAddress } from '../../utils/ellipseAddress'
 
 interface NavProps {
   onNavigateHome: () => void
+  onNavigateProfile: () => void
+  onNavigatePledges: () => void
+  onNavigateProjects: () => void
+  onNavigateSettings: () => void
 }
 
-const Nav = ({ onNavigateHome }: NavProps) => {
+const Nav = ({
+  onNavigateHome,
+  onNavigateProfile,
+  onNavigatePledges,
+  onNavigateProjects,
+  onNavigateSettings,
+}: NavProps) => {
   const { activeAddress } = useWallet()
   const [walletOpen, setWalletOpen] = useState(false)
-  const navRef = useRef<HTMLElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const navRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const prevActiveAddress = useRef(activeAddress)
 
   // Close the banner on a fresh connect; reopening it while connected shows the account view.
@@ -33,6 +45,18 @@ const Nav = ({ onNavigateHome }: NavProps) => {
     }
   }, [walletOpen])
 
+  // Hamburger menu: any pointer-down outside the menu closes it.
+  useEffect(() => {
+    if (!menuOpen) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [menuOpen])
+
   return (
     <nav ref={navRef} className="flex items-center justify-between border-b border-line bg-card px-6 py-3">
       <button type="button" className="cursor-pointer border-0 bg-transparent text-xl font-bold text-teal-dark" onClick={onNavigateHome}>
@@ -41,6 +65,63 @@ const Nav = ({ onNavigateHome }: NavProps) => {
 
       <div className="flex items-center gap-3">
         {activeAddress && <span className="text-sm text-muted">{ellipseAddress(activeAddress)}</span>}
+
+        {activeAddress && (
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark"
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              Menu
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 mt-2 w-48 bg-card border border-line rounded-md shadow-lg py-1 z-10">
+                <button
+                  type="button"
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-muted/50"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onNavigateProfile()
+                  }}
+                >
+                  Profile
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-muted/50"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onNavigatePledges()
+                  }}
+                >
+                  My Pledges
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-muted/50"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onNavigateProjects()
+                  }}
+                >
+                  My Projects
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-muted/50"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    onNavigateSettings()
+                  }}
+                >
+                  Settings
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         <button
           type="button"
           className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
