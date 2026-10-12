@@ -1,11 +1,13 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ScopeType } from '@txnlab/use-wallet'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CreateCampaignForm from './CreateCampaignForm'
 
 const createCampaignMock = vi.fn()
 const fetchChainTimestampMock = vi.fn()
 const logErrorMock = vi.fn()
+const signDataMock = vi.fn()
 
 vi.mock('../../lib/log', () => ({
   logError: (...args: unknown[]) => logErrorMock(...args),
@@ -34,8 +36,19 @@ describe('CreateCampaignForm', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     disconnectMock.mockResolvedValue(undefined)
-    useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', activeWallet: { disconnect: disconnectMock }, transactionSigner: {} })
+    signDataMock.mockResolvedValue({ signature: new Uint8Array([7, 8]) })
+    useWalletMock.mockReturnValue({
+      activeAddress: 'ADDRESS',
+      activeWallet: { disconnect: disconnectMock, canSignData: true },
+      signData: (...args: unknown[]) => signDataMock(...args),
+      transactionSigner: {},
+    })
     fetchChainTimestampMock.mockResolvedValue(1_000_000_000n)
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
   })
 
   it('creates a campaign and calls onCreated with the new app id', async () => {
@@ -166,5 +179,80 @@ describe('CreateCampaignForm', () => {
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(onCancel).toHaveBeenCalled()
+  })
+
+  it('uploads a cover image and fills the metadata URI', async () => {
+    vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ message: 'challenge' }) })
+        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ token: 'session' }) })
+        .mockResolvedValueOnce({ status: 200, json: () => Promise.resolve({ cid: 'QmCover' }) }),
+    )
+    const user = userEvent.setup()
+    render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
+
+    await user.upload(screen.getByLabelText(/Cover image/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: 'Upload cover' }))
+
+    expect(await screen.findByDisplayValue('ipfs://QmCover')).toBeInTheDocument()
+    expect(signDataMock).toHaveBeenCalledWith('challenge', { encoding: 'utf8', scope: ScopeType.AUTH })
+  })
+
+  it('shows a message when the upload fails', async () => {
+    vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 400, json: () => Promise.resolve({}) }))
+    const user = userEvent.setup()
+    render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
+
+    await user.upload(screen.getByLabelText(/Cover image/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: 'Upload cover' }))
+
+    expect(await screen.findByText(/Could not start the upload/)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('ipfs://…')).toHaveValue('')
+  })
+
+  it('shows a message when the wallet cannot sign', async () => {
+    vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
+    useWalletMock.mockReturnValue({
+      activeAddress: 'ADDRESS',
+      activeWallet: { disconnect: disconnectMock, canSignData: false },
+      signData: signDataMock,
+      transactionSigner: {},
+    })
+    const user = userEvent.setup()
+    render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
+
+    await user.upload(screen.getByLabelText(/Cover image/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: 'Upload cover' }))
+
+    expect(await screen.findByText(/cannot sign messages/)).toBeInTheDocument()
+    expect(signDataMock).not.toHaveBeenCalled()
+  })
+
+  it('shows a message when the backend is not configured', async () => {
+    const user = userEvent.setup()
+    render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
+
+    await user.upload(screen.getByLabelText(/Cover image/), new File(['bytes'], 'cover.png', { type: 'image/png' }))
+    await user.click(screen.getByRole('button', { name: 'Upload cover' }))
+
+    expect(await screen.findByText(/VITE_BACKEND_URL/)).toBeInTheDocument()
+  })
+
+  it('keeps the upload button disabled without a file', async () => {
+    const user = userEvent.setup()
+    render(<CreateCampaignForm onCreated={() => {}} onCancel={() => {}} />)
+    const picker = screen.getByLabelText(/Cover image/)
+    const button = screen.getByRole('button', { name: 'Upload cover' })
+
+    expect(button).toBeDisabled()
+    await user.upload(picker, new File(['bytes'], 'cover.png', { type: 'image/png' }))
+    expect(button).toBeEnabled()
+    Object.defineProperty(picker, 'files', { value: [], configurable: true })
+    fireEvent.change(picker)
+    expect(button).toBeDisabled()
   })
 })

@@ -120,8 +120,11 @@ points straight at an image file) in the card and detail views, falling back
 to a placeholder on any failure so cards keep a consistent height; the detail
 view also shows `description` and `category`. A blob
 with none of the four fields is treated as absent, so seed URIs render
-the placeholder instead of erroring. Upload/pinning is out of scope - creators paste a
-URI today; server-side pinning rides with the catalog backend. Descriptions
+the placeholder instead of erroring. The create form offers a cover picker that
+pins through the backend's `POST /uploads` (wallet `signData` sign-in, needs
+`VITE_BACKEND_URL`) and fills the metadata URI; manual paste stays as
+fallback, and KMD/LocalNet wallets without message signing only get the
+paste field. Descriptions
 evolve through the creator updates feed (roadmap), not by editing the blob -
 the pledge-time content stays frozen and always viewable.
 

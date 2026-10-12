@@ -1,6 +1,8 @@
+import { ScopeType } from '@txnlab/use-wallet'
 import { useWallet } from '@txnlab/use-wallet-react'
 import { useState } from 'react'
 import { fetchChainTimestamp } from '../../lib/algorand'
+import { backendUrl, uploadCover } from '../../lib/backend'
 import { classifyError, errorMessage } from '../../lib/errors'
 import { parseAlgoToMicroAlgos } from '../../lib/format'
 import { logError } from '../../lib/log'
@@ -13,9 +15,11 @@ interface CreateCampaignFormProps {
 }
 
 const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) => {
-  const { activeAddress, activeWallet, transactionSigner } = useWallet()
+  const { activeAddress, activeWallet, signData, transactionSigner } = useWallet()
   const [title, setTitle] = useState('')
   const [metadataUri, setMetadataUri] = useState('')
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
   const [goal, setGoal] = useState('')
   const [days, setDays] = useState('30')
   const [busy, setBusy] = useState(false)
@@ -25,6 +29,30 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
   const MAX_BYTES = 128
 
   const canSubmit = title.trim() !== '' && goal.trim() !== '' && !busy && Boolean(activeAddress && transactionSigner)
+
+  const handleUpload = async () => {
+    const file = imageFile
+    // Defensive: the button is disabled without a file or a signer, so this is unreachable in the UI.
+    /* v8 ignore next */
+    if (file === null || !activeAddress || !activeWallet) return
+
+    setUploading(true)
+    setMessage(null)
+    try {
+      const uri = await uploadCover({
+        baseUrl: backendUrl(),
+        address: activeAddress,
+        canSign: activeWallet.canSignData,
+        sign: (message) => signData(message, { encoding: 'utf8', scope: ScopeType.AUTH }).then((result) => result.signature),
+        file,
+      })
+      setMetadataUri(uri)
+    } catch (error) {
+      setMessage((error as Error).message)
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const handleSubmit = async () => {
     // Defensive: the submit button is disabled while disconnected, so this is unreachable in the UI.
@@ -107,6 +135,27 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
           className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
         />
       </label>
+      <label className="mb-3 block text-sm text-muted">
+        Cover image (optional)
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(e) => {
+            // Change events always carry a FileList (possibly empty) - the cast only satisfies the nullable DOM type.
+            const files = e.target.files as FileList
+            setImageFile(files[0] ?? null)
+          }}
+          className="mb-3 w-full rounded-md border border-line px-3 py-2 focus:border-teal focus:outline-none"
+        />
+      </label>
+      <button
+        type="button"
+        className="mb-3 cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
+        disabled={imageFile === null || uploading}
+        onClick={() => void handleUpload()}
+      >
+        {uploading ? 'Uploading…' : 'Upload cover'}
+      </button>
       <label className="mb-3 block text-sm text-muted">
         Goal (ALGO)
         <input
