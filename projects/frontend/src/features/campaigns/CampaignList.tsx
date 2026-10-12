@@ -1,7 +1,7 @@
 import { useWallet } from '@txnlab/use-wallet-react'
 import { useEffect, useState } from 'react'
 import type { CampaignViewModel } from '../../lib/campaign'
-import { fetchMyPledge, listCampaigns } from '../../lib/campaign'
+import { fetchMyPledge, getCachedCampaigns, listCampaigns } from '../../lib/campaign'
 import CampaignCard from './CampaignCard'
 
 interface CampaignListProps {
@@ -23,6 +23,15 @@ const CampaignList = ({ onSelectCampaign }: CampaignListProps) => {
 
     // Fast pass without the viewer: cards render from global state alone (~0.2s for the whole list).
     // Pledge totals need a full history replay each, so they stream in afterwards without blocking.
+    // A cached base list paints instantly with no spinner; the refresh below replaces it either way.
+    const cached = getCachedCampaigns()
+    if (cached) {
+      setNowSeconds(cached.nowSeconds)
+      setCampaigns(cached.campaigns)
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
     listCampaigns()
       .then((result) => {
         if (!cancelled) {

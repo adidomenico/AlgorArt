@@ -1,6 +1,8 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { CampaignStatus, CampaignViewModel } from '../../lib/campaign'
+import { clearCachedCampaigns, setCachedCampaigns } from '../../lib/campaign'
 import CampaignDetail from './CampaignDetail'
 
 const getCampaignMock = vi.fn()
@@ -61,7 +63,7 @@ vi.mock('./PledgeForm', () => ({
 const nowSeconds = BigInt(Math.floor(Date.now() / 1000))
 
 function viewModel(
-  status: string,
+  status: CampaignStatus,
   overrides: {
     creator?: string
     title?: string
@@ -70,7 +72,7 @@ function viewModel(
     goalMicroAlgos?: bigint
     raisedMicroAlgos?: bigint
   } = {},
-) {
+): CampaignViewModel {
   return {
     id: 42n,
     creator: overrides.creator ?? 'CREATOR',
@@ -87,6 +89,7 @@ function viewModel(
 describe('CampaignDetail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    clearCachedCampaigns()
     disconnectMock.mockResolvedValue(undefined)
     useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', activeWallet: { disconnect: disconnectMock }, transactionSigner: {} })
     fetchChainTimestampMock.mockResolvedValue(1_000_000_000n)
@@ -99,6 +102,30 @@ describe('CampaignDetail', () => {
     getCampaignMock.mockReturnValue(new Promise(() => {}))
     render(<CampaignDetail appId={42n} onBack={() => {}} />)
     expect(screen.getByText('Loading campaign…')).toBeInTheDocument()
+  })
+
+  it('paints a cached campaign instantly without loading', async () => {
+    setCachedCampaigns({ campaigns: [viewModel('open')], nowSeconds: 1_000_000_000n })
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    expect(screen.getByText('Campaign #42')).toBeInTheDocument()
+    expect(screen.queryByText(/Loading campaign/)).not.toBeInTheDocument()
+  })
+
+  it('loads normally when the cache misses the campaign', async () => {
+    setCachedCampaigns({ campaigns: [viewModel('open')], nowSeconds: 1_000_000_000n })
+    let resolveLoad: ((value: CampaignViewModel) => void) | undefined
+    getCampaignMock.mockReturnValue(
+      new Promise<CampaignViewModel>((resolve) => {
+        resolveLoad = resolve
+      }),
+    )
+    render(<CampaignDetail appId={43n} onBack={() => {}} />)
+
+    expect(screen.getByText(/Loading campaign/)).toBeInTheDocument()
+    if (resolveLoad === undefined) throw new Error('campaign was not requested')
+    resolveLoad(viewModel('open'))
+    expect(await screen.findByText('Campaign #42')).toBeInTheDocument()
   })
 
   it('renders the campaign once loaded', async () => {

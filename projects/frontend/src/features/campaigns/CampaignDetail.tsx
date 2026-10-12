@@ -2,7 +2,7 @@ import { useWallet } from '@txnlab/use-wallet-react'
 import { useCallback, useEffect, useState } from 'react'
 import { fetchChainTimestamp } from '../../lib/algorand'
 import type { CampaignViewModel } from '../../lib/campaign'
-import { getCampaign } from '../../lib/campaign'
+import { getCachedCampaigns, getCampaign } from '../../lib/campaign'
 import { classifyError, errorMessage } from '../../lib/errors'
 import { formatAlgo, formatCountdown, formatDeadline } from '../../lib/format'
 import { logError } from '../../lib/log'
@@ -115,9 +115,24 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
 
   const noRefresh = useCallback(() => Promise.resolve(), [])
 
+  // Window banner reload (background only): readWindow never throws, so no error branch.
+  const refreshWindow = useCallback(async () => {
+    setWindowInfo(await readWindow())
+  }, [readWindow])
+
   useEffect(() => {
-    void loadAll()
-  }, [loadAll])
+    const cached = getCachedCampaigns()
+    const prefill = cached?.campaigns.find((c) => c.id === appId)
+    if (cached && prefill) {
+      // Instant paint from the list's data, then background refresh (no spinner).
+      setCampaign(prefill)
+      setNowSeconds(cached.nowSeconds)
+      setLoading(false)
+      void Promise.all([refreshSpend(), refreshWindow()])
+    } else {
+      void loadAll()
+    }
+  }, [appId, loadAll, refreshSpend, refreshWindow])
 
   const metadata = useCampaignMetadata(campaign?.metadataUri ?? '')
 

@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CampaignViewModel } from '../../lib/campaign'
+import { clearCachedCampaigns, setCachedCampaigns } from '../../lib/campaign'
 import CampaignList from './CampaignList'
 
 // Capture the resolver so we can control when the promise settles, letting us
@@ -16,6 +17,7 @@ vi.mock('@txnlab/use-wallet-react', () => ({
 
 const useWalletMock = vi.fn()
 beforeEach(() => {
+  clearCachedCampaigns()
   useWalletMock.mockReturnValue({ activeAddress: null })
 })
 
@@ -76,6 +78,22 @@ describe('CampaignList', () => {
     render(<CampaignList onSelectCampaign={() => {}} />)
 
     expect(await screen.findByText(/Failed to load campaigns/)).toBeInTheDocument()
+  })
+
+  it('paints cached campaigns instantly without loading', async () => {
+    setCachedCampaigns({ campaigns, nowSeconds: 1_000_000_000n })
+    let resolveRefresh: ((value: { campaigns: CampaignViewModel[]; nowSeconds: bigint }) => void) | undefined
+    listCampaignsMock.mockReturnValue(
+      new Promise<{ campaigns: CampaignViewModel[]; nowSeconds: bigint }>((resolve) => {
+        resolveRefresh = resolve
+      }),
+    )
+    render(<CampaignList onSelectCampaign={() => {}} />)
+    expect(screen.getByText('#1')).toBeInTheDocument()
+    expect(screen.queryByText(/Loading campaigns/)).not.toBeInTheDocument()
+
+    if (resolveRefresh === undefined) throw new Error('refresh was not requested')
+    resolveRefresh({ campaigns, nowSeconds: 2_000_000_000n })
   })
 
   it('renders cards fast, then streams pledge totals in', async () => {

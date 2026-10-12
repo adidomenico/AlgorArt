@@ -151,6 +151,10 @@ All reads use `algosdk.Indexer` configured from the same env as algod:
   and after success, so submissions and post-write reloads always refetch.
   Passive staleness (other users' pledges while you browse) resolves on the
   next write-triggered reload. Rejections are never cached.
+- **Instant paint** - the last good base list is cached (`getCachedCampaigns`
+  in `lib/campaign.ts`, pledge-free); list remounts and detail entries paint
+  it with no spinner, then refresh in the background. Pledge totals always
+  stream fresh per viewer.
 
 ## Writes (generated clients)
 

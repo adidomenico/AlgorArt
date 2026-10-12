@@ -1,6 +1,6 @@
 import algosdk from 'algosdk'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchMyPledge, fetchRegisteredCampaignIds, getCampaign, listCampaigns } from './campaign'
+import { clearCachedCampaigns, fetchMyPledge, fetchRegisteredCampaignIds, getCachedCampaigns, getCampaign, listCampaigns } from './campaign'
 
 const indexerMock = vi.hoisted(() => ({
   lookupApplications: vi.fn(),
@@ -101,6 +101,25 @@ function registrationBoxName(appId: bigint): Uint8Array {
 
 beforeEach(() => {
   vi.clearAllMocks()
+})
+
+describe('cached base list', () => {
+  it('stores the listed campaigns for instant paint', async () => {
+    indexerMock.searchForApplicationBoxes.mockImplementation(() => boxSearchBuilder(() => [{ name: registrationBoxName(42n) }]))
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp({ id: 42n }) }))
+
+    await listCampaigns()
+    expect(getCachedCampaigns()?.campaigns.map((c) => c.id)).toEqual([42n])
+  })
+
+  it('clears the cached list', async () => {
+    indexerMock.searchForApplicationBoxes.mockImplementation(() => boxSearchBuilder(() => [{ name: registrationBoxName(42n) }]))
+    indexerMock.lookupApplications.mockImplementation(() => lookupBuilder({ application: campaignApp({ id: 42n }) }))
+
+    await listCampaigns()
+    clearCachedCampaigns()
+    expect(getCachedCampaigns()).toBeUndefined()
+  })
 })
 
 describe('fetchMyPledge', () => {

@@ -262,6 +262,34 @@ export async function fetchRegisteredCampaignIds(factoryId: bigint): Promise<Set
   return registered
 }
 
+/** Last good base list (pledge-free view models), for instant paint across navigations. */
+let cachedList: { campaigns: CampaignViewModel[]; nowSeconds: bigint } | undefined
+
+/**
+ * Read the cached base list, if a previous load stored one.
+ *
+ * @returns Cached campaigns and timestamp, or undefined on first load.
+ */
+export function getCachedCampaigns(): { campaigns: CampaignViewModel[]; nowSeconds: bigint } | undefined {
+  return cachedList
+}
+
+/**
+ * Store a fresh base list for instant paint on later mounts.
+ *
+ * @param result Fresh campaigns and timestamp.
+ */
+export function setCachedCampaigns(result: { campaigns: CampaignViewModel[]; nowSeconds: bigint }): void {
+  cachedList = result
+}
+
+/**
+ * Drop the cached base list (tests and explicit refreshes).
+ */
+export function clearCachedCampaigns(): void {
+  cachedList = undefined
+}
+
 /**
  * List all campaigns. With a Factory configured, look each registered id up directly - the unfiltered application
  * scan below works on sandbox-sized chains but never finishes on TestNet-scale chains (tens of thousands of apps,
@@ -296,14 +324,18 @@ export async function listCampaigns(viewerAddress?: string): Promise<{ campaigns
       }
       campaigns.push(toCampaignViewModel(app, now, myPledge))
     }
-    return { campaigns, nowSeconds: now }
+    const result = { campaigns, nowSeconds: now }
+    setCachedCampaigns(result)
+    return result
   }
 
   // Timestamp and registry are independent: fetch together so first paint waits on one round-trip, not two.
   const [now, registered] = await Promise.all([fetchChainTimestamp(), fetchRegisteredCampaignIds(factoryId)])
   const settled = await Promise.all([...registered].map((id) => getCampaign(id, now, viewerAddress)))
   const campaigns = settled.filter((campaign): campaign is CampaignViewModel => campaign !== undefined && campaign.deleted !== true)
-  return { campaigns, nowSeconds: now }
+  const result = { campaigns, nowSeconds: now }
+  setCachedCampaigns(result)
+  return result
 }
 
 /**
