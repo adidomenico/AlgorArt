@@ -278,6 +278,8 @@ export function getCachedCampaigns(): { campaigns: CampaignViewModel[]; nowSecon
  * Store a fresh base list for instant paint on later mounts.
  *
  * @param result Fresh campaigns and timestamp.
+ * @param result.campaigns Campaign view models.
+ * @param result.nowSeconds Chain timestamp.
  */
 export function setCachedCampaigns(result: { campaigns: CampaignViewModel[]; nowSeconds: bigint }): void {
   cachedList = result

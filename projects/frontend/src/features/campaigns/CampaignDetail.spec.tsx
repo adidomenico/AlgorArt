@@ -104,7 +104,7 @@ describe('CampaignDetail', () => {
     expect(screen.getByText('Loading campaign…')).toBeInTheDocument()
   })
 
-  it('paints a cached campaign instantly without loading', async () => {
+  it('paints a cached campaign instantly without loading', () => {
     setCachedCampaigns({ campaigns: [viewModel('open')], nowSeconds: 1_000_000_000n })
     render(<CampaignDetail appId={42n} onBack={() => {}} />)
 

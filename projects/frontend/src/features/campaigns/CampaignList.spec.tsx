@@ -80,7 +80,7 @@ describe('CampaignList', () => {
     expect(await screen.findByText(/Failed to load campaigns/)).toBeInTheDocument()
   })
 
-  it('paints cached campaigns instantly without loading', async () => {
+  it('paints cached campaigns instantly without loading', () => {
     setCachedCampaigns({ campaigns, nowSeconds: 1_000_000_000n })
     let resolveRefresh: ((value: { campaigns: CampaignViewModel[]; nowSeconds: bigint }) => void) | undefined
     listCampaignsMock.mockReturnValue(
