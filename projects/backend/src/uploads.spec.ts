@@ -102,8 +102,9 @@ describe('POST /uploads', () => {
     await app.inject({ method: 'POST', url: '/uploads?filename=Kyogre.png', headers, payload: PNG_BYTES })
     await app.inject({ method: 'POST', url: '/uploads?filename=..%2F..%2Fevil.png', headers, payload: PNG_BYTES })
     await app.inject({ method: 'POST', url: '/uploads?filename=%2F%2F%2F', headers, payload: PNG_BYTES })
+    await app.inject({ method: 'POST', url: '/uploads?filename=Rayquaza%27s%20cover%0A.png', headers, payload: PNG_BYTES })
 
-    expect(names).toEqual(['Kyogre.png', 'evil.png', 'upload'])
+    expect(names).toEqual(['Kyogre.png', 'evil.png', 'upload', "Rayquaza's cover.png"])
   })
 
   it('rejects unauthenticated uploads', async () => {

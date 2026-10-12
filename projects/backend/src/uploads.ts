@@ -12,9 +12,12 @@ function pinataJwt(): string {
   return jwt
 }
 
+// eslint-disable-next-line no-control-regex -- intentional: strip control characters from display names
+const CONTROL_CHARS = /[\0-\x1F\x7F]/g
+
 /**
  * Sanitize a client-supplied display name. Display-only (Pinata dashboard): the worst case is an ugly name, never
- * a path - nothing is written to disk.
+ * a path - nothing is written to disk. Path segments and control characters go; spaces, quotes, and unicode stay.
  *
  * @param raw Raw `filename` query value.
  * @returns The trailing path segment, trimmed and capped, or `'upload'`.
@@ -23,6 +26,7 @@ export function safeFilename(raw: unknown): string {
   if (typeof raw !== 'string') return 'upload'
   const trimmed = raw
     .replace(/.*[\\/]/, '')
+    .replace(CONTROL_CHARS, '')
     .trim()
     .slice(0, 100)
   return trimmed === '' ? 'upload' : trimmed
