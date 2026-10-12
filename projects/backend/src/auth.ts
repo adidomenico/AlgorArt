@@ -1,6 +1,7 @@
 import algosdk from 'algosdk'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { SignJWT, jwtVerify } from 'jose'
+import { createHash } from 'node:crypto'
 import nacl from 'tweetnacl'
 import { pool } from './db.js'
 
@@ -35,8 +36,15 @@ function concatBytes(first: Uint8Array, second: Uint8Array): Uint8Array {
   return out
 }
 
-// Domain-separation prefix that signing prepends ("MX"), mirroring algosdk.
-const SIGN_BYTES_PREFIX = Uint8Array.from([77, 88])
+/**
+ * SHA-256 digest (ARC-60 signing input hashing).
+ *
+ * @param bytes Input bytes.
+ * @returns The 32-byte digest.
+ */
+function sha256(bytes: Uint8Array): Uint8Array {
+  return createHash('sha256').update(bytes).digest()
+}
 
 /**
  * Decode base64 to bytes (atob/btoa work in every runtime, unlike Node's Buffer).
@@ -96,14 +104,18 @@ export async function createChallenge(address: string): Promise<Challenge> {
 }
 
 /**
- * Verify a signed challenge and issue a session JWT. Nonces are single-use and expire after five minutes.
+ * Verify a wallet-signed challenge (ARC-60) and issue a session JWT. Nonces are single-use and expire after five
+ * minutes. The wallet signs `sha256(message) || sha256(authenticatorData)` where the authenticator data is the
+ * SHA-256 of this deployment's domain (see use-wallet's `createStdSignData`); rekeyed accounts are not supported,
+ * the signature must come from the address key itself.
  *
  * @param address Claimed Algorand address.
  * @param message The exact challenge message that was signed.
- * @param signature Base64 signature over the message bytes.
+ * @param authenticatorData Base64 ARC-60 authenticator data (SHA-256 of the domain).
+ * @param signature Base64 signature over the ARC-60 signing input.
  * @returns Session JWT (Bearer token, seven days).
  */
-export async function verifyChallenge(address: string, message: string, signature: string): Promise<string> {
+export async function verifyChallenge(address: string, message: string, authenticatorData: string, signature: string): Promise<string> {
   const lines = message.split('\n')
   const field = (prefix: string): string | undefined => {
     const line = lines.find((candidate) => candidate.startsWith(prefix))
@@ -123,8 +135,18 @@ export async function verifyChallenge(address: string, message: string, signatur
   if (found.rows[0] === undefined) {
     throw new Error('invalid or expired challenge')
   }
+  // ARC-60 binds the signature to the domain through the authenticator data's leading domain hash (extra trailing
+  // fields are allowed by the standard, so only the prefix is compared).
+  const authenticatorBytes = base64ToBytes(authenticatorData)
+  const domainHash = sha256(new TextEncoder().encode(appDomain()))
+  if (
+    authenticatorBytes.length < domainHash.length ||
+    !Buffer.from(authenticatorBytes.subarray(0, domainHash.length)).equals(Buffer.from(domainHash))
+  ) {
+    throw new Error('signature is not bound to this deployment')
+  }
   const valid = nacl.sign.detached.verify(
-    concatBytes(SIGN_BYTES_PREFIX, new TextEncoder().encode(message)),
+    concatBytes(sha256(new TextEncoder().encode(message)), sha256(base64ToBytes(authenticatorData))),
     base64ToBytes(signature),
     algosdk.decodeAddress(address).publicKey,
   )

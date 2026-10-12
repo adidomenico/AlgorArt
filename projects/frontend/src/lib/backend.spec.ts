@@ -6,7 +6,7 @@ function uploadInput(overrides: Partial<CoverUpload> = {}): CoverUpload {
   return {
     baseUrl: 'http://backend',
     address: 'ADDRESS',
-    sign: () => Promise.resolve(new Uint8Array([1, 2, 3])),
+    sign: () => Promise.resolve({ signature: new Uint8Array([1, 2, 3]), authenticatorData: new Uint8Array([4, 5, 6]) }),
     file: new File(['bytes'], 'cover.png', { type: 'image/png' }),
     ...overrides,
   }
@@ -50,13 +50,15 @@ describe('uploadCover', () => {
     expect(calls[0]?.[0]).toBe('http://backend/auth/challenge')
     const verifyInit = calls[1]?.[1] as { body?: unknown } | undefined
     expect(verifyInit?.body).toContain('"message":"challenge"')
+    // [4, 5, 6] in base64.
+    expect(verifyInit?.body).toContain('"authenticatorData":"BAUG"')
     const uploadInit = calls[2]?.[1] as { headers?: unknown; body?: unknown } | undefined
     expect(uploadInit?.headers).toEqual({ authorization: 'Bearer session', 'content-type': 'image/png' })
     expect(uploadInit?.body).toBeInstanceOf(File)
   })
 
   it('sends the wallet signature as base64', async () => {
-    const sign = () => Promise.resolve(Uint8Array.from([72, 69, 76, 76, 79]))
+    const sign = () => Promise.resolve({ signature: Uint8Array.from([72, 69, 76, 76, 79]), authenticatorData: new Uint8Array([4, 5, 6]) })
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(okJson({ message: 'challenge' }))

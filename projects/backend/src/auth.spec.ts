@@ -1,4 +1,6 @@
 import algosdk from 'algosdk'
+import { createHash } from 'node:crypto'
+import nacl from 'tweetnacl'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildApp } from './app.js'
 import { createChallenge } from './auth.js'
@@ -9,9 +11,25 @@ function keypair(): { address: string; sk: Uint8Array } {
   return { address: account.addr.toString(), sk: account.sk }
 }
 
-function sign(message: string, sk: Uint8Array): string {
-  const signature = algosdk.signBytes(new TextEncoder().encode(message), sk)
-  return btoa(String.fromCharCode(...signature))
+function bytesToBase64(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes))
+}
+
+/**
+ * ARC-60 test signature: ed25519 over sha256(message) || sha256(authenticatorData).
+ *
+ * @param message Challenge message that was signed.
+ * @param sk Signing secret key.
+ * @param domain Domain hashed into the authenticator data.
+ * @returns Base64 authenticator data and signature.
+ */
+function arc60Sign(message: string, sk: Uint8Array, domain = 'localhost'): { authenticatorData: string; signature: string } {
+  const authenticatorData = createHash('sha256').update(domain).digest()
+  const toSign = new Uint8Array([
+    ...createHash('sha256').update(message).digest(),
+    ...createHash('sha256').update(authenticatorData).digest(),
+  ])
+  return { authenticatorData: bytesToBase64(authenticatorData), signature: bytesToBase64(nacl.sign.detached(toSign, sk)) }
 }
 
 describe('wallet-signature auth', () => {
@@ -26,8 +44,9 @@ describe('wallet-signature auth', () => {
     const challenge = await app.inject({ method: 'POST', url: '/auth/challenge', payload: { address } })
     expect(challenge.statusCode).toBe(200)
     const { message } = challenge.json<{ message: string }>()
+    const { authenticatorData, signature } = arc60Sign(message, sk)
 
-    const verified = await app.inject({ method: 'POST', url: '/auth/verify', payload: { address, message, signature: sign(message, sk) } })
+    const verified = await app.inject({ method: 'POST', url: '/auth/verify', payload: { address, message, authenticatorData, signature } })
     expect(verified.statusCode).toBe(200)
     const { token } = verified.json<{ token: string }>()
     expect(typeof token).toBe('string')
@@ -43,10 +62,50 @@ describe('wallet-signature auth', () => {
     const attacker = keypair()
 
     const challenge = await createChallenge(victim.address)
+    const { authenticatorData, signature } = arc60Sign(challenge.message, attacker.sk)
     const verified = await app.inject({
       method: 'POST',
       url: '/auth/verify',
-      payload: { address: victim.address, message: challenge.message, signature: sign(challenge.message, attacker.sk) },
+      payload: { address: victim.address, message: challenge.message, authenticatorData, signature },
+    })
+    expect(verified.statusCode).toBe(400)
+  })
+
+  it('rejects signatures bound to another domain', async () => {
+    const app = buildApp()
+    const { address, sk } = keypair()
+    const challenge = await createChallenge(address)
+    const { authenticatorData, signature } = arc60Sign(challenge.message, sk, 'evil.example')
+    const verified = await app.inject({
+      method: 'POST',
+      url: '/auth/verify',
+      payload: { address, message: challenge.message, authenticatorData, signature },
+    })
+    expect(verified.statusCode).toBe(400)
+  })
+
+  it('rejects short authenticator data', async () => {
+    const app = buildApp()
+    const { address, sk } = keypair()
+    const challenge = await createChallenge(address)
+    const { signature } = arc60Sign(challenge.message, sk)
+    const verified = await app.inject({
+      method: 'POST',
+      url: '/auth/verify',
+      payload: { address, message: challenge.message, authenticatorData: 'e30=', signature },
+    })
+    expect(verified.statusCode).toBe(400)
+  })
+
+  it('rejects tampered messages', async () => {
+    const app = buildApp()
+    const { address, sk } = keypair()
+    const challenge = await createChallenge(address)
+    const { authenticatorData, signature } = arc60Sign(challenge.message, sk)
+    const verified = await app.inject({
+      method: 'POST',
+      url: '/auth/verify',
+      payload: { address, message: `${challenge.message} `, authenticatorData, signature },
     })
     expect(verified.statusCode).toBe(400)
   })
@@ -56,10 +115,11 @@ describe('wallet-signature auth', () => {
     const { address, sk } = keypair()
     const challenge = await createChallenge(address)
     const forged = challenge.message.replace(/^Domain: .*$/m, 'Domain: evil.example')
+    const { authenticatorData, signature } = arc60Sign(forged, sk)
     const verified = await app.inject({
       method: 'POST',
       url: '/auth/verify',
-      payload: { address, message: forged, signature: sign(forged, sk) },
+      payload: { address, message: forged, authenticatorData, signature },
     })
     expect(verified.statusCode).toBe(400)
   })
@@ -68,11 +128,19 @@ describe('wallet-signature auth', () => {
     const app = buildApp()
     const { address, sk } = keypair()
     const challenge = await createChallenge(address)
-    const signature = sign(challenge.message, sk)
+    const { authenticatorData, signature } = arc60Sign(challenge.message, sk)
 
-    const first = await app.inject({ method: 'POST', url: '/auth/verify', payload: { address, message: challenge.message, signature } })
+    const first = await app.inject({
+      method: 'POST',
+      url: '/auth/verify',
+      payload: { address, message: challenge.message, authenticatorData, signature },
+    })
     expect(first.statusCode).toBe(200)
-    const second = await app.inject({ method: 'POST', url: '/auth/verify', payload: { address, message: challenge.message, signature } })
+    const second = await app.inject({
+      method: 'POST',
+      url: '/auth/verify',
+      payload: { address, message: challenge.message, authenticatorData, signature },
+    })
     expect(second.statusCode).toBe(400)
   })
 
@@ -97,7 +165,12 @@ describe('wallet-signature auth', () => {
     const garbage = await app.inject({
       method: 'POST',
       url: '/auth/verify',
-      payload: { address: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ', message: 'garbage', signature: 'e30=' },
+      payload: {
+        address: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ',
+        message: 'garbage',
+        authenticatorData: 'e30=',
+        signature: 'e30=',
+      },
     })
     expect(garbage.statusCode).toBe(400)
   })
@@ -106,13 +179,13 @@ describe('wallet-signature auth', () => {
     const app = buildApp()
     const { address, sk } = keypair()
     const challenge = await createChallenge(address)
-    const signature = sign(challenge.message, sk)
+    const { authenticatorData, signature } = arc60Sign(challenge.message, sk)
     vi.stubEnv('SESSION_SECRET', '')
     try {
       const verified = await app.inject({
         method: 'POST',
         url: '/auth/verify',
-        payload: { address, message: challenge.message, signature },
+        payload: { address, message: challenge.message, authenticatorData, signature },
       })
       expect(verified.statusCode).toBe(400)
     } finally {

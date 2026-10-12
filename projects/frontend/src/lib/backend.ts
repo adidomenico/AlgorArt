@@ -24,12 +24,16 @@ export function backendUrl(): string {
 export interface CoverUpload {
   baseUrl: string
   address: string
-  sign: (message: string) => Promise<Uint8Array>
+  sign: (message: string) => Promise<{ signature: Uint8Array; authenticatorData: Uint8Array }>
   file: File
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes))
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -72,7 +76,7 @@ function pinnedCid(json: unknown): string {
 }
 
 /**
- * Pin a cover image through the backend: sign-in challenge, wallet signature, session verify, then upload.
+ * Pin a cover image through the backend: sign-in challenge, ARC-60 wallet signature, session verify, then upload.
  *
  * Signing support is probed by attempting it: wallets without message signing
  * reject, and the rejection propagates to the caller as the user-facing message.
@@ -80,7 +84,7 @@ function pinnedCid(json: unknown): string {
  * @param upload Upload inputs.
  * @param upload.baseUrl Backend base URL.
  * @param upload.address Signer address for the challenge.
- * @param upload.sign Wallet message signer, returning the raw signature bytes.
+ * @param upload.sign Wallet message signer, returning the raw signature and authenticator bytes.
  * @param upload.file Image file to pin.
  * @returns The `ipfs://` URI to store as the campaign metadata URI.
  */
@@ -91,11 +95,12 @@ export async function uploadCover({ baseUrl, address, sign, file }: CoverUpload)
   if (challenge.status !== 200) throw new Error('Could not start the upload. Is the backend reachable?')
   const message = challengeMessage(challenge.json)
 
-  const signature = await sign(message)
+  const { signature, authenticatorData } = await sign(message)
   const verified = await postJson(`${baseUrl}/auth/verify`, {
     address,
     message,
-    signature: btoa(String.fromCharCode(...signature)),
+    authenticatorData: bytesToBase64(authenticatorData),
+    signature: bytesToBase64(signature),
   })
   if (verified.status !== 200) throw new Error('Sign-in failed. Try again.')
   const token = sessionToken(verified.json)

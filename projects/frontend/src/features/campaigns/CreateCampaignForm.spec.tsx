@@ -36,7 +36,7 @@ describe('CreateCampaignForm', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     disconnectMock.mockResolvedValue(undefined)
-    signDataMock.mockResolvedValue({ signature: new Uint8Array([7, 8]) })
+    signDataMock.mockResolvedValue({ signature: new Uint8Array([7, 8]), authenticatorData: new Uint8Array([9]) })
     useWalletMock.mockReturnValue({
       activeAddress: 'ADDRESS',
       activeWallet: { disconnect: disconnectMock, canSignData: true },
@@ -198,7 +198,7 @@ describe('CreateCampaignForm', () => {
     await user.click(screen.getByRole('button', { name: 'Upload cover' }))
 
     expect(await screen.findByDisplayValue('ipfs://QmCover')).toBeInTheDocument()
-    expect(signDataMock).toHaveBeenCalledWith('challenge', { encoding: 'utf8', scope: ScopeType.AUTH })
+    expect(signDataMock).toHaveBeenCalledWith(btoa('challenge'), { encoding: 'base64', scope: ScopeType.AUTH })
   })
 
   it('shows a message when the upload fails', async () => {

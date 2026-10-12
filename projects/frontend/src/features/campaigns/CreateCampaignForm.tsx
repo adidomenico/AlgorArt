@@ -42,7 +42,11 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
       const uri = await uploadCover({
         baseUrl: backendUrl(),
         address: activeAddress,
-        sign: (message) => signData(message, { encoding: 'utf8', scope: ScopeType.AUTH }).then((result) => result.signature),
+        sign: (message) =>
+          signData(btoa(message), { encoding: 'base64', scope: ScopeType.AUTH }).then((result) => ({
+            signature: result.signature,
+            authenticatorData: result.authenticatorData,
+          })),
         file,
       })
       setMetadataUri(uri)
