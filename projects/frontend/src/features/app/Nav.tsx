@@ -1,6 +1,8 @@
 import { useWallet } from '@txnlab/use-wallet-react'
 import { useEffect, useRef, useState } from 'react'
 import ConnectWallet from '../../components/ConnectWallet'
+import { ensureLiveSessionFor } from '../../lib/session'
+import { getWalletManager } from '../../lib/wallets'
 import { ellipseAddress } from '../../utils/ellipseAddress'
 
 interface NavProps {
@@ -12,12 +14,26 @@ interface NavProps {
 }
 
 const Nav = ({ onNavigateHome, onNavigateProfile, onNavigatePledges, onNavigateProjects, onNavigateSettings }: NavProps) => {
-  const { activeAddress } = useWallet()
+  const { activeAddress, activeWallet } = useWallet()
   const [walletOpen, setWalletOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const navRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const prevActiveAddress = useRef(activeAddress)
+
+  // Revalidate the wallet bridge when the tab becomes visible again: a silently dead bridge keeps
+  // activeAddress set, so without this the nav looks connected until the next failed send.
+  useEffect(() => {
+    const revalidate = () => {
+      if (document.visibilityState !== 'visible') return
+      // A dead bridge clears the store via onDisconnect - the nav flips on the next render.
+      void ensureLiveSessionFor(getWalletManager(), activeWallet).catch(() => undefined)
+    }
+    document.addEventListener('visibilitychange', revalidate)
+    return () => {
+      document.removeEventListener('visibilitychange', revalidate)
+    }
+  }, [activeWallet])
 
   // Close the banner on a fresh connect; reopening it while connected shows the account view.
   useEffect(() => {

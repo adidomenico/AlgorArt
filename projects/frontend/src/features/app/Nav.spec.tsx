@@ -1,14 +1,19 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Nav from './Nav'
 
 const useWalletMock = vi.fn()
 const useNetworkMock = vi.fn()
+const { getWalletManagerMock } = vi.hoisted(() => ({ getWalletManagerMock: vi.fn() }))
 
 vi.mock('@txnlab/use-wallet-react', () => ({
   useWallet: () => useWalletMock(),
   useNetwork: () => useNetworkMock(),
+}))
+
+vi.mock('../../lib/wallets', () => ({
+  getWalletManager: (...args: unknown[]) => getWalletManagerMock(...args),
 }))
 
 const defaultProps = {
@@ -19,11 +24,26 @@ const defaultProps = {
   onNavigateSettings: () => {},
 }
 
+const realVisibility = Object.getOwnPropertyDescriptor(document, 'visibilityState')
+
+function showTab() {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+}
+
+function hideTab() {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+}
+
 describe('Nav', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useWalletMock.mockReturnValue({ activeAddress: null, wallets: [] })
     useNetworkMock.mockReturnValue({ activeNetworkConfig: { caipChainId: 'algorand:testnet' } })
+    getWalletManagerMock.mockReturnValue({ getWallet: () => undefined })
+  })
+
+  afterEach(() => {
+    if (realVisibility) Object.defineProperty(document, 'visibilityState', realVisibility)
   })
 
   it('renders the brand and connect button when disconnected', () => {
@@ -184,5 +204,61 @@ describe('Nav', () => {
     expect(screen.getByRole('button', { name: 'Profile' })).toBeInTheDocument()
     await user.click(screen.getByText('page content'))
     expect(screen.queryByRole('button', { name: 'Profile' })).not.toBeInTheDocument()
+  })
+
+  it('revalidates the bridge when the tab becomes visible', async () => {
+    const resumeSession = vi.fn().mockResolvedValue(['ADDRESS'])
+    getWalletManagerMock.mockReturnValue({ getWallet: (key: unknown) => (key === 'defly' ? { resumeSession } : undefined) })
+    useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', activeWallet: { walletKey: 'defly' }, wallets: [] })
+    showTab()
+    render(<Nav {...defaultProps} />)
+
+    document.dispatchEvent(new Event('visibilitychange'))
+    await waitFor(() => {
+      expect(resumeSession).toHaveBeenCalledOnce()
+    })
+  })
+
+  it('skips revalidation while the tab is hidden', async () => {
+    const resumeSession = vi.fn().mockResolvedValue(['ADDRESS'])
+    getWalletManagerMock.mockReturnValue({ getWallet: () => ({ resumeSession }) })
+    useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', activeWallet: { walletKey: 'defly' }, wallets: [] })
+    hideTab()
+    render(<Nav {...defaultProps} />)
+
+    document.dispatchEvent(new Event('visibilitychange'))
+    await waitFor(() => {
+      expect(screen.getByText('AlgorArt')).toBeInTheDocument()
+    })
+    expect(resumeSession).not.toHaveBeenCalled()
+  })
+
+  it('stays silent when revalidation finds a dead bridge', async () => {
+    const resumeSession = vi.fn().mockRejectedValue(new Error('No accounts found!'))
+    getWalletManagerMock.mockReturnValue({ getWallet: () => ({ resumeSession }) })
+    useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', activeWallet: { walletKey: 'defly' }, wallets: [] })
+    showTab()
+    render(<Nav {...defaultProps} />)
+
+    document.dispatchEvent(new Event('visibilitychange'))
+    await waitFor(() => {
+      expect(resumeSession).toHaveBeenCalledOnce()
+    })
+    expect(screen.queryByText(/session expired/i)).not.toBeInTheDocument()
+  })
+
+  it('stops revalidating after unmount', async () => {
+    const resumeSession = vi.fn().mockResolvedValue(['ADDRESS'])
+    getWalletManagerMock.mockReturnValue({ getWallet: () => ({ resumeSession }) })
+    useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', activeWallet: { walletKey: 'defly' }, wallets: [] })
+    showTab()
+    const { unmount } = render(<Nav {...defaultProps} />)
+    unmount()
+
+    document.dispatchEvent(new Event('visibilitychange'))
+    await waitFor(() => {
+      expect(screen.queryByText('AlgorArt')).not.toBeInTheDocument()
+    })
+    expect(resumeSession).not.toHaveBeenCalled()
   })
 })

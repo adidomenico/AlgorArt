@@ -56,6 +56,12 @@ vi.mock('@txnlab/use-wallet-react', () => ({
   useWallet: () => useWalletMock(),
 }))
 
+const { getWalletManagerMock } = vi.hoisted(() => ({ getWalletManagerMock: vi.fn() }))
+
+vi.mock('../../lib/wallets', () => ({
+  getWalletManager: (...args: unknown[]) => getWalletManagerMock(...args),
+}))
+
 vi.mock('./PledgeForm', () => ({
   default: ({ onPledged }: { onPledged: () => void }) => <button onClick={onPledged}>PLEDGE_FORM</button>,
 }))
@@ -91,6 +97,7 @@ describe('CampaignDetail', () => {
     vi.clearAllMocks()
     clearCachedCampaigns()
     disconnectMock.mockResolvedValue(undefined)
+    getWalletManagerMock.mockReturnValue({ getWallet: () => undefined })
     useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', activeWallet: { disconnect: disconnectMock }, transactionSigner: {} })
     fetchChainTimestampMock.mockResolvedValue(1_000_000_000n)
     fetchMyLeavesMock.mockResolvedValue([])
@@ -383,6 +390,20 @@ describe('CampaignDetail', () => {
     await user.click(await screen.findByText('Claim funds'))
     expect(await screen.findByText(/Connect your wallet again/)).toBeInTheDocument()
     expect(disconnectMock).toHaveBeenCalledOnce()
+  })
+
+  it('fails fast without sending when the bridge is already dead', async () => {
+    getCampaignMock.mockResolvedValue(viewModel('funded', { creator: 'ADDRESS' }))
+    getWalletManagerMock.mockReturnValue({
+      getWallet: () => ({ resumeSession: () => Promise.reject(new Error('No accounts found!')) }),
+    })
+    claimMock.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await user.click(await screen.findByText('Claim funds'))
+    expect(await screen.findByText(/Connect your wallet again/)).toBeInTheDocument()
+    expect(claimMock).not.toHaveBeenCalled()
   })
 
   it('shows the refund window banner on settled campaigns', async () => {

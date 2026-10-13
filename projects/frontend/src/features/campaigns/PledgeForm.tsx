@@ -3,7 +3,9 @@ import { useState } from 'react'
 import { classifyError, errorMessage } from '../../lib/errors'
 import { parseAlgoToMicroAlgos } from '../../lib/format'
 import { logError } from '../../lib/log'
+import { ensureLiveSessionFor } from '../../lib/session'
 import { disconnectQuietly, pledge } from '../../lib/transaction'
+import { getWalletManager } from '../../lib/wallets'
 
 interface PledgeFormProps {
   appId: bigint
@@ -27,6 +29,7 @@ const PledgeForm = ({ appId, onPledged }: PledgeFormProps) => {
     setBusy(true)
     setMessage(null)
     try {
+      await ensureLiveSessionFor(getWalletManager(), activeWallet)
       const microAlgos = parseAlgoToMicroAlgos(amount)
       await pledge(appId, { address: activeAddress, signer: transactionSigner }, microAlgos)
       setAmount('')

@@ -5,7 +5,9 @@ import { adaptSignData, backendUrl, uploadCover, uploadMetadata } from '../../li
 import { classifyError, errorMessage } from '../../lib/errors'
 import { parseAlgoToMicroAlgos } from '../../lib/format'
 import { logError } from '../../lib/log'
+import { ensureLiveSessionFor } from '../../lib/session'
 import { createCampaign, disconnectQuietly } from '../../lib/transaction'
+import { getWalletManager } from '../../lib/wallets'
 
 interface CreateCampaignFormProps {
   /** Called with the new app id after a successful create. */
@@ -40,6 +42,7 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
     setBusy(true)
     setMessage(null)
     try {
+      await ensureLiveSessionFor(getWalletManager(), activeWallet)
       if (new TextEncoder().encode(title).length > MAX_BYTES) {
         setMessage('Title must be 128 bytes or fewer.')
         return

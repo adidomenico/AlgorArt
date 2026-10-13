@@ -6,6 +6,7 @@ import { getCachedCampaigns, getCampaign } from '../../lib/campaign'
 import { classifyError, errorMessage } from '../../lib/errors'
 import { formatAlgo, formatCountdown, formatDeadline } from '../../lib/format'
 import { logError } from '../../lib/log'
+import { ensureLiveSessionFor } from '../../lib/session'
 import type { BackerLeaf } from '../../lib/transaction'
 import {
   cancelPledge,
@@ -17,6 +18,7 @@ import {
   fetchVaultConfig,
   refund,
 } from '../../lib/transaction'
+import { getWalletManager } from '../../lib/wallets'
 import CampaignImage from './CampaignImage'
 import PledgeForm from './PledgeForm'
 import { useCampaignMetadata } from './useCampaignMetadata'
@@ -180,6 +182,9 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
     setBusyAction(key)
     setMessage(null)
     try {
+      // Fail fast on a dead bridge instead of sending into it: the throw below classifies as a
+      // dead session, so the handling underneath stays the single path for both cases.
+      await ensureLiveSessionFor(getWalletManager(), activeWallet)
       await action()
       setMessage(success)
       await refresh()
