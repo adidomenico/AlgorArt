@@ -17,6 +17,9 @@ export type FailedAction = 'pledge' | 'create' | 'transaction'
 const SESSION_PATTERN = /not initialized correctly|session expired|no session|has disconnected|disconnected|no signer found/i
 const STALE_PROOF_PATTERN = /stale or forged frontier|proof does not match root/i
 const REJECTION_PATTERN = /\breject|\bdenied|dismissed|cancelled by user|\bcancelled\b/i
+// Connect-flow dismissals (verified against the installed vendor bundles): closing the wallet popup
+// rejects `connect()` with one of these instead of connecting.
+const DISMISSAL_PATTERN = /closed by user|cancelled by user|modal_closed/i
 
 /**
  * Classify a failure from a wallet signing call or chain submission.
@@ -41,6 +44,17 @@ export function classifyError(error: unknown): ErrorKind {
  */
 export function isSessionError(error: unknown): boolean {
   return classifyError(error) === 'session'
+}
+
+/**
+ * Whether a connect-flow failure is just the user closing the wallet popup.
+ * A dismissal is not an error: callers reopen the menu quietly instead of printing a message.
+ *
+ * @param error The failure from a wallet `connect()` call.
+ * @returns True when no error message should be shown.
+ */
+export function isDismissalError(error: unknown): boolean {
+  return error instanceof Error && DISMISSAL_PATTERN.test(error.message)
 }
 
 /**

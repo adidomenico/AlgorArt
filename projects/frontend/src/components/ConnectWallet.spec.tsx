@@ -68,7 +68,7 @@ describe('ConnectWallet', () => {
 
     await user.click(screen.getByText('Pera Wallet'))
     expect(wallets[0]?.connect).toHaveBeenCalled()
-    expect(screen.queryByText(/Could not connect/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Couldn't connect/)).not.toBeInTheDocument()
   })
 
   it('skips pre-warming without an account address', async () => {
@@ -81,7 +81,7 @@ describe('ConnectWallet', () => {
 
     await user.click(screen.getByText('Pera Wallet'))
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(screen.queryByText(/Could not connect/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Couldn't connect/)).not.toBeInTheDocument()
   })
 
   it('pre-warms the backend session on connect', async () => {
@@ -101,7 +101,7 @@ describe('ConnectWallet', () => {
     await waitFor(() => {
       expect(signData).toHaveBeenCalled()
     })
-    expect(screen.queryByText(/Could not connect/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Couldn't connect/)).not.toBeInTheDocument()
   })
 
   it('renders the account view and logout when connected', () => {
@@ -162,9 +162,25 @@ describe('ConnectWallet', () => {
     render(<ConnectWallet openModal onHide={onHide} onShow={onShow} />)
 
     await user.click(screen.getByText('Defly Wallet'))
-    expect(await screen.findByText(/Could not connect with Defly Wallet/)).toBeInTheDocument()
+    expect(await screen.findByText(/Couldn't connect to Defly Wallet/)).toBeInTheDocument()
     expect(onHide).toHaveBeenCalled()
     expect(onShow).toHaveBeenCalled()
+  })
+
+  it('stays silent when the wallet popup is dismissed', async () => {
+    useWalletMock.mockReturnValue({ wallets, activeAddress: null })
+    const defly = wallets[1]
+    if (defly === undefined) throw new Error('defly wallet missing from mock')
+    defly.connect.mockRejectedValueOnce(new Error('Connect modal is closed by user'))
+    const onShow = vi.fn()
+    const user = userEvent.setup()
+    render(<ConnectWallet openModal onHide={() => {}} onShow={onShow} />)
+
+    await user.click(screen.getByText('Defly Wallet'))
+    await waitFor(() => {
+      expect(onShow).toHaveBeenCalled()
+    })
+    expect(screen.queryByText(/Couldn't connect/)).not.toBeInTheDocument()
   })
 
   it('shows the install message when the Exodus extension is missing', async () => {
@@ -176,7 +192,7 @@ describe('ConnectWallet', () => {
     render(<ConnectWallet openModal onHide={() => {}} onShow={() => {}} />)
 
     await user.click(screen.getByRole('button', { name: /Exodus/ }))
-    expect(await screen.findByText(/Install the Exodus extension to use it/)).toBeInTheDocument()
+    expect(await screen.findByText(/Install the Exodus browser extension, then try again/)).toBeInTheDocument()
   })
 
   it('hides the menu when a provider flow starts', async () => {

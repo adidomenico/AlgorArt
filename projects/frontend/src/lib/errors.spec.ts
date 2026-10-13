@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyError, errorMessage, isSessionError, isStaleProofError } from './errors'
+import { classifyError, errorMessage, isDismissalError, isSessionError, isStaleProofError } from './errors'
 
 describe('classifyError', () => {
   it('detects dead wallet sessions', () => {
@@ -28,6 +28,15 @@ describe('classifyError', () => {
 })
 
 describe('error predicates', () => {
+  it('isDismissalError matches closed wallet popups only', () => {
+    expect(isDismissalError(new Error('Connect modal is closed by user'))).toBe(true)
+    expect(isDismissalError(new Error('Connect is cancelled by user'))).toBe(true)
+    expect(isDismissalError(new Error('modal_closed'))).toBe(true)
+    expect(isDismissalError(new Error('Exodus is not available.'))).toBe(false)
+    expect(isDismissalError(new Error('no extension'))).toBe(false)
+    expect(isDismissalError(undefined)).toBe(false)
+  })
+
   it('isSessionError matches sessions only', () => {
     expect(isSessionError(new Error('Wallet session expired'))).toBe(true)
     expect(isSessionError(new Error('boom'))).toBe(false)

@@ -66,7 +66,7 @@ describe('Nav', () => {
     await user.click(screen.getByText('Pera Wallet'))
     const dialog = document.getElementById('connect_wallet_modal')
     expect(dialog).not.toHaveClass('hidden')
-    expect(await screen.findByText(/Could not connect with Pera Wallet/)).toBeInTheDocument()
+    expect(await screen.findByText(/Couldn't connect to Pera Wallet/)).toBeInTheDocument()
   })
 
   it('keeps the menu open when disconnecting while it is open', async () => {

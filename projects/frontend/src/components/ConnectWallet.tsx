@@ -4,6 +4,7 @@ import type { Wallet } from '@txnlab/use-wallet-react'
 import { useNetwork, useWallet } from '@txnlab/use-wallet-react'
 import { useState } from 'react'
 import { adaptSignData, backendUrl, ensureSession } from '../lib/backend'
+import { isDismissalError } from '../lib/errors'
 import Account from './Account'
 
 interface ConnectWalletInterface {
@@ -72,12 +73,15 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
                           action: 'sign-in',
                         }).catch(() => undefined)
                       }
-                    } catch {
-                      setConnectError(
-                        wallet.id === EXODUS_WALLET_ID
-                          ? `Could not connect with ${wallet.metadata.name}. Install the Exodus extension to use it.`
-                          : `Could not connect with ${wallet.metadata.name}. Is it installed and unlocked?`,
-                      )
+                    } catch (error) {
+                      // Closing the wallet popup is a dismissal, not a failure - reopen the menu quietly.
+                      if (!isDismissalError(error)) {
+                        setConnectError(
+                          wallet.id === EXODUS_WALLET_ID
+                            ? `Couldn't connect to ${wallet.metadata.name}. Install the Exodus browser extension, then try again.`
+                            : `Couldn't connect to ${wallet.metadata.name}. Check your wallet and try again.`,
+                        )
+                      }
                       onShow()
                     }
                   })()
