@@ -43,7 +43,11 @@ each open item links to the doc with the details. Design context is in
 - [ ] Handle the known UI edge cases (indexer lag, clock drift, wallet/network mismatch) - see [`frontend.md`](frontend.md).
 - [ ] **Defly first-connect fails** - the first connect attempt fails; the second succeeds. Reproduce, then fix or retry-in-place so one click is enough.
 - [ ] **Wallet × platform audit** - Defly fires a `defly-wc://` deep link with no registered handler on desktop browsers. Record the expected flow per wallet (Defly/Pera/Exodus) per platform (Brave/Chrome/Firefox desktop, iOS/Android): QR, extension, or app-switch; add availability hints and fallback messaging where a flow can't work. Defly also lacks `signData`, so cover uploads fail closed for Defly users - say so in the UI instead of a raw error. Feeds the TestNet smoke test below.
-- [ ] **Dead sessions look connected** - a dead bridge keeps the address + Account button in the nav; disconnect only happens after a failed action. Detect dead sessions proactively (provider disconnect events, revalidate on focus) and revert the nav to Connect wallet.
+- [ ] **Dead sessions look connected (confirmed)** - wallet-side disconnect refreshes the nav, but a silently dead bridge keeps the address + Account button (`isConnected`/`activeAddress` are store-derived, never bridge-derived). Fixed by the items below.
+- [ ] **Liveness revalidation** - recheck the bridge on tab focus and before money-moving actions; on failure run the dead-session path (disconnect + reconnect prompt).
+- [ ] **Nav reflects liveness** - drive the wallet button off a `connectionAlive` state fed by the revalidation, not `activeAddress` alone.
+- [ ] **Backend JWT hygiene** - `clearSession()` on disconnect/account-switch and key the cached token by address (today it outlives the wallet connection and is shared across accounts).
+- [ ] **Gate uploads on `canSignData`** - Defly lacks `signData`, so cover uploads fail at sign time; say so up front instead of a raw error.
 - [ ] **App chrome: navbar + footer** - navbar: logo left (home), search box center,
       hamburger menu right; footer: brand + `© <year> AlgorArt`, Contacts, Privacy
       Policy, non-custodial disclaimer. New `features/app/` components, Tailwind.
