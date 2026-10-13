@@ -39,7 +39,11 @@ each open item links to the doc with the details. Design context is in
 - [x] Fee disclaimers beside every money-moving button (see [`frontend.md`](frontend.md) fee table).
 - [x] "Cancel pledge" action on open campaigns.
 - [x] "Delete campaign" action for creators on settled campaigns.
+- [x] **Spend-action signers** - refund/cancel/claim register the wallet signer before sending (the generated client drops `defaultSigner` when `sender` is passed explicitly, so these threw "No signer found" on a fresh page session); that error now classifies as a dead session and spend buttons require a live signer.
 - [ ] Handle the known UI edge cases (indexer lag, clock drift, wallet/network mismatch) - see [`frontend.md`](frontend.md).
+- [ ] **Defly first-connect fails** - the first connect attempt fails; the second succeeds. Reproduce, then fix or retry-in-place so one click is enough.
+- [ ] **Wallet × platform audit** - Defly fires a `defly-wc://` deep link with no registered handler on desktop browsers. Record the expected flow per wallet (Defly/Pera/Exodus) per platform (Brave/Chrome/Firefox desktop, iOS/Android): QR, extension, or app-switch; add availability hints and fallback messaging where a flow can't work. Defly also lacks `signData`, so cover uploads fail closed for Defly users - say so in the UI instead of a raw error. Feeds the TestNet smoke test below.
+- [ ] **Dead sessions look connected** - a dead bridge keeps the address + Account button in the nav; disconnect only happens after a failed action. Detect dead sessions proactively (provider disconnect events, revalidate on focus) and revert the nav to Connect wallet.
 - [ ] **App chrome: navbar + footer** - navbar: logo left (home), search box center,
       hamburger menu right; footer: brand + `© <year> AlgorArt`, Contacts, Privacy
       Policy, non-custodial disclaimer. New `features/app/` components, Tailwind.
