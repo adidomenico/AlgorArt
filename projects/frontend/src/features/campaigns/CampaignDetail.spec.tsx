@@ -215,6 +215,16 @@ describe('CampaignDetail', () => {
     expect(await screen.findByText('Campaign #42')).toBeInTheDocument()
   })
 
+  it('hides spend actions when the wallet has no signer (dead session)', async () => {
+    useWalletMock.mockReturnValue({ activeAddress: 'ADDRESS', activeWallet: { disconnect: disconnectMock }, transactionSigner: undefined })
+    getCampaignMock.mockResolvedValue(viewModel('failed', { myPledgeMicroAlgos: 1_000_000n }))
+    fetchMyLeavesMock.mockResolvedValue([{ position: 0, amount: 1_000_000n, txidHex: 'aa' }])
+    render(<CampaignDetail appId={42n} onBack={() => {}} />)
+
+    await screen.findByText('Campaign #42')
+    expect(screen.queryByText('Refund my pledge')).not.toBeInTheDocument()
+  })
+
   it('hides the refund window banner when the box lookup fails', async () => {
     getCampaignMock.mockResolvedValue(viewModel('failed'))
     fetchVaultBoxMock.mockRejectedValue(new Error('offline'))

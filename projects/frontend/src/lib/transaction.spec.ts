@@ -275,6 +275,7 @@ describe('transaction helpers', () => {
   it('cancelPledge spends one leaf with a fresh path', async () => {
     await cancelPledge(9n, session, { position: 2, amount: 1_000_000n, txidHex: 'ab'.repeat(32) })
 
+    expect(setSignerMock).toHaveBeenCalledWith('ADDRESS', session.signer)
     expect(pathBlobMock).toHaveBeenCalledOnce()
     expect(sendCancelPledgeMock).toHaveBeenCalledOnce()
     const call = sendCancelPledgeMock.mock.calls[0]?.[0] as {
@@ -292,6 +293,7 @@ describe('transaction helpers', () => {
     campaignBoxValueMock.mockResolvedValue(new Uint8Array(65).fill(1))
     await refund(9n, session, { position: 0, amount: 1_000_000n, txidHex: 'ab'.repeat(32) })
 
+    expect(setSignerMock).toHaveBeenCalledWith('ADDRESS', session.signer)
     expect(sendRefundMock).toHaveBeenCalledOnce()
     expect(sendVaultRefundMock).not.toHaveBeenCalled()
   })
@@ -302,6 +304,7 @@ describe('transaction helpers', () => {
     campaignBoxValueMock.mockResolvedValue(box)
     await refund(9n, session, { position: 0, amount: 1_000_000n, txidHex: 'ab'.repeat(32) })
 
+    expect(setSignerMock).toHaveBeenCalledWith('ADDRESS', session.signer)
     expect(sendVaultRefundMock).toHaveBeenCalledOnce()
     expect(sendRefundMock).not.toHaveBeenCalled()
   })
@@ -316,6 +319,7 @@ describe('transaction helpers', () => {
   it('claim pays the vault-derived total', async () => {
     await claim(9n, session)
 
+    expect(setSignerMock).toHaveBeenCalledWith('ADDRESS', session.signer)
     expect(sendClaimMock).toHaveBeenCalledOnce()
     const call = sendClaimMock.mock.calls[0]?.[0] as { extraFee: unknown; boxReferences: unknown[] }
     expect(call.boxReferences).toHaveLength(1)

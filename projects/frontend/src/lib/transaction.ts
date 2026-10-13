@@ -329,6 +329,9 @@ export async function fetchMyLeaves(appId: bigint, address: string): Promise<Bac
  * @param leaf The leaf to spend (from `fetchMyLeaves`).
  */
 export async function cancelPledge(appId: bigint, session: WalletSession, leaf: BackerLeaf): Promise<void> {
+  // The AppClient drops defaultSigner when sender is passed explicitly (string vs Address identity check),
+  // so register globally like pledge/delete do - otherwise this always throws "No signer found".
+  algorand.account.setSigner(session.address, session.signer)
   const attempt = async (): Promise<bigint | undefined> => {
     await waitForIndexerCatchUp()
     const tree = await loadTree(appId, vaultAppId(), vaultAddress())
@@ -367,6 +370,8 @@ export async function cancelPledge(appId: bigint, session: WalletSession, leaf: 
  * @param leaf The leaf to spend (from `fetchMyLeaves`).
  */
 export async function refund(appId: bigint, session: WalletSession, leaf: BackerLeaf): Promise<void> {
+  // Same signer registration as cancelPledge (see above): without it both the campaign and vault paths fail.
+  algorand.account.setSigner(session.address, session.signer)
   const attempt = async (): Promise<bigint | undefined> => {
     await waitForIndexerCatchUp()
     const tree = await loadTree(appId, vaultAppId(), vaultAddress())
@@ -410,6 +415,8 @@ export async function refund(appId: bigint, session: WalletSession, leaf: Backer
  * @param session Wallet session holding the signer and address.
  */
 export async function claim(appId: bigint, session: WalletSession): Promise<void> {
+  // Same signer registration as pledge (see cancelPledge): without it the send always throws "No signer found".
+  algorand.account.setSigner(session.address, session.signer)
   const client = campaignClientFor(appId, session)
   const result = await client.send.claim({
     args: [],

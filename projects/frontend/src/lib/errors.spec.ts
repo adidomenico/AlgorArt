@@ -6,6 +6,7 @@ describe('classifyError', () => {
     expect(classifyError(new Error('PeraWalletConnect was not initialized correctly.'))).toBe('session')
     expect(classifyError(new Error('Wallet session expired'))).toBe('session')
     expect(classifyError(new Error('no session found'))).toBe('session')
+    expect(classifyError(new Error('No signer found for address SOMEADDRESS'))).toBe('session')
   })
 
   it('detects user rejections first', () => {

@@ -166,7 +166,7 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
   if (!campaign) return null
 
   const percent = campaign.goalMicroAlgos > 0n ? Number((campaign.raisedMicroAlgos * 100n) / campaign.goalMicroAlgos) : 0
-  const connected = Boolean(activeWallet && activeAddress)
+  const connected = Boolean(activeWallet && activeAddress && transactionSigner)
   const isCreator = connected && campaign.creator !== '' && activeAddress === campaign.creator
   const hasPledge = leaves.length > 0
   const canPledge = campaign.status === 'open' && connected && !isCreator
