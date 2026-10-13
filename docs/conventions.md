@@ -45,6 +45,15 @@ documents the rules and the reasoning behind them.
   cannot read `exports`-only packages. Import **ordering** is owned by
   `prettier-plugin-organize-imports` (enabled in the shared `.prettierrc.json`), not by
   an ESLint rule, so the formatter and linter never disagree.
+- **Tailwind classes are linted (frontend only).** `eslint-plugin-tailwindcss` runs on
+  `**/*.tsx` with `cssConfigPath` pointing at the v4 stylesheet
+  (`src/styles/App.css`), so custom `@theme` colors resolve instead of reading as
+  typos. Enabled rules: `classnames-order`, `no-contradicting-classname`,
+  `no-custom-classname`, `enforces-shorthand`, `no-unnecessary-arbitrary-value`
+  (all `error`, all autofixable via `npm run lint:fix`). Class **ordering** lives
+  here, not in Prettier - the official `prettier-plugin-tailwindcss` conflicts with
+  `organize-imports`/`jsdoc` (shared parser hooks) and reflows unrelated comments,
+  so it is deliberately not installed.
 - **JSDoc is required on public/exported declarations.** The jsdoc plugin runs the
   `flat/recommended-typescript-error` preset (all rules at `error` severity), with
   `require-jsdoc` and `require-returns` scoped via `publicOnly` so internal helpers are

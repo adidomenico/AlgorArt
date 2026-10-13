@@ -74,7 +74,7 @@ const Settings = ({ onBack }: SettingsProps) => {
 
   if (!activeAddress) {
     return (
-      <div className="max-w-md mx-auto text-center py-12">
+      <div className="mx-auto max-w-md py-12 text-center">
         <p className="text-muted">Connect your wallet to manage settings.</p>
         <button
           type="button"
@@ -88,7 +88,7 @@ const Settings = ({ onBack }: SettingsProps) => {
   }
 
   return (
-    <div className="max-w-md mx-auto space-y-6">
+    <div className="mx-auto max-w-md space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Settings</h1>
         <button type="button" className="cursor-pointer text-sm text-muted hover:text-ink" onClick={onBack}>
@@ -97,8 +97,8 @@ const Settings = ({ onBack }: SettingsProps) => {
       </div>
 
       <div className="space-y-6">
-        <fieldset className="space-y-4 border border-line rounded-lg p-4">
-          <legend className="text-sm font-medium text-muted px-2">Notifications</legend>
+        <fieldset className="space-y-4 rounded-lg border border-line p-4">
+          <legend className="px-2 text-sm font-medium text-muted">Notifications</legend>
           <div className="flex items-center justify-between">
             <div>
               <label htmlFor="notify-funded" className="block text-sm">
@@ -106,7 +106,7 @@ const Settings = ({ onBack }: SettingsProps) => {
               </label>
               <p className="text-xs text-muted">Email me when a campaign I backed reaches its goal.</p>
             </div>
-            <label className="cursor-pointer relative inline-flex items-center">
+            <label className="relative inline-flex cursor-pointer items-center">
               <input
                 id="notify-funded"
                 type="checkbox"
@@ -114,9 +114,9 @@ const Settings = ({ onBack }: SettingsProps) => {
                 onChange={(e) => {
                   setNotifyFunded(e.target.checked)
                 }}
-                className="sr-only peer"
+                className="peer sr-only"
               />
-              <div className="w-11 h-6 bg-muted/50 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-teal rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal"></div>
+              <div className="peer h-6 w-11 rounded-full bg-muted/50 peer-checked:bg-teal peer-focus:ring-2 peer-focus:ring-teal peer-focus:outline-none after:absolute after:top-[2px] after:left-[2px] after:size-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
             </label>
           </div>
           <div className="flex items-center justify-between">
@@ -126,7 +126,7 @@ const Settings = ({ onBack }: SettingsProps) => {
               </label>
               <p className="text-xs text-muted">Email me when a campaign I backed fails and I can refund.</p>
             </div>
-            <label className="cursor-pointer relative inline-flex items-center">
+            <label className="relative inline-flex cursor-pointer items-center">
               <input
                 id="notify-failed"
                 type="checkbox"
@@ -134,20 +134,20 @@ const Settings = ({ onBack }: SettingsProps) => {
                 onChange={(e) => {
                   setNotifyFailed(e.target.checked)
                 }}
-                className="sr-only peer"
+                className="peer sr-only"
               />
-              <div className="w-11 h-6 bg-muted/50 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-teal rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal"></div>
+              <div className="peer h-6 w-11 rounded-full bg-muted/50 peer-checked:bg-teal peer-focus:ring-2 peer-focus:ring-teal peer-focus:outline-none after:absolute after:top-[2px] after:left-[2px] after:size-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
             </label>
           </div>
         </fieldset>
 
-        <fieldset className="space-y-4 border border-line rounded-lg p-4">
-          <legend className="text-sm font-medium text-muted px-2">Appearance</legend>
+        <fieldset className="space-y-4 rounded-lg border border-line p-4">
+          <legend className="px-2 text-sm font-medium text-muted">Appearance</legend>
           <div>
-            <label className="block text-sm mb-2">Theme</label>
+            <label className="mb-2 block text-sm">Theme</label>
             <div className="flex gap-4">
               {(['light', 'dark', 'system'] as const).map((t) => (
-                <label key={t} className="cursor-pointer flex items-center gap-2">
+                <label key={t} className="flex cursor-pointer items-center gap-2">
                   <input
                     type="radio"
                     name="theme"
@@ -156,10 +156,10 @@ const Settings = ({ onBack }: SettingsProps) => {
                     onChange={() => {
                       setTheme(t)
                     }}
-                    className="sr-only peer"
+                    className="peer sr-only"
                   />
                   <div
-                    className={`px-4 py-2 rounded-md border text-sm transition-colors ${
+                    className={`rounded-md border px-4 py-2 text-sm transition-colors ${
                       theme === t ? 'border-teal bg-teal/10 text-teal' : 'border-line hover:border-teal/50'
                     }`}
                   >
@@ -171,8 +171,8 @@ const Settings = ({ onBack }: SettingsProps) => {
           </div>
         </fieldset>
 
-        {error && <div className="text-sm text-red">{error}</div>}
-        {success && <div className="text-sm text-green">{success}</div>}
+        {error && <div className="text-sm text-danger">{error}</div>}
+        {success && <div className="text-sm text-teal-dark">{success}</div>}
 
         <button
           type="button"

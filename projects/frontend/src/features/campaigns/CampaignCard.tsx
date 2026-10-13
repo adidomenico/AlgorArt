@@ -34,7 +34,7 @@ const CampaignCard = ({ campaign, nowSeconds, onSelect }: CampaignCardProps) => 
       <div className="mb-3 flex items-center justify-between">
         <span className="text-sm font-semibold text-muted">#{campaign.id.toString()}</span>
         <span
-          className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-bold uppercase tracking-[0.05em] text-white ${badgeBg[campaign.status]}`}
+          className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-bold tracking-wider text-white uppercase ${badgeBg[campaign.status]}`}
         >
           {campaign.status}
         </span>
@@ -50,24 +50,24 @@ const CampaignCard = ({ campaign, nowSeconds, onSelect }: CampaignCardProps) => 
 
       <dl className="m-0 grid grid-cols-2 gap-2">
         <div>
-          <dt className="text-xs uppercase tracking-[0.03em] text-muted">Raised</dt>
+          <dt className="text-xs tracking-[0.03em] text-muted uppercase">Raised</dt>
           <dd className="m-0 text-sm font-semibold">{formatAlgo(campaign.raisedMicroAlgos)} ALGO</dd>
         </div>
         <div>
-          <dt className="text-xs uppercase tracking-[0.03em] text-muted">Goal</dt>
+          <dt className="text-xs tracking-[0.03em] text-muted uppercase">Goal</dt>
           <dd className="m-0 text-sm font-semibold">{formatAlgo(campaign.goalMicroAlgos)} ALGO</dd>
         </div>
         <div>
-          <dt className="text-xs uppercase tracking-[0.03em] text-muted">Deadline</dt>
+          <dt className="text-xs tracking-[0.03em] text-muted uppercase">Deadline</dt>
           <dd className="m-0 text-sm font-semibold">{formatDeadline(campaign.deadlineSeconds)}</dd>
         </div>
         <div>
-          <dt className="text-xs uppercase tracking-[0.03em] text-muted">Ends in</dt>
+          <dt className="text-xs tracking-[0.03em] text-muted uppercase">Ends in</dt>
           <dd className="m-0 text-sm font-semibold">{formatCountdown(campaign.deadlineSeconds, nowSeconds)}</dd>
         </div>
       </dl>
 
-      <p className={`mb-0 mt-3 text-sm font-semibold text-teal-dark${pledgeLine === null ? ' invisible' : ''}`}>{pledgeLine ?? ' '}</p>
+      <p className={`mt-3 mb-0 text-sm font-semibold text-teal-dark${pledgeLine === null ? ' invisible' : ''}`}>{pledgeLine ?? ' '}</p>
     </button>
   )
 }

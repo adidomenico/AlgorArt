@@ -31,13 +31,13 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
   return (
     <dialog
       id="connect_wallet_modal"
-      className={`fixed right-6 top-16 left-auto z-[9999] m-0 w-[22em] max-w-[calc(100vw-2rem)] border-0 bg-transparent p-0 ${openModal ? 'block' : 'hidden'}`}
+      className={`fixed top-16 right-6 left-auto z-9999 m-0 w-[22em] max-w-[calc(100vw-2rem)] border-0 bg-transparent p-0 ${openModal ? 'block' : 'hidden'}`}
       style={{ display: openModal ? 'block' : 'none' }}
     >
       <form method="dialog" className="w-full rounded-lg border border-line bg-white p-6">
-        <h3 className="font-bold text-2xl">{activeAddress ? 'Account' : 'Select wallet provider'}</h3>
+        <h3 className="text-2xl font-bold">{activeAddress ? 'Account' : 'Select wallet provider'}</h3>
 
-        <div className="grid m-2 gap-2 pt-5">
+        <div className="m-2 grid gap-2 pt-5">
           {activeAddress && (
             <>
               <Account />
@@ -91,7 +91,7 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
             ))}
         </div>
 
-        {connectError && <p className="mb-0 mt-3 text-sm text-badge-failed">{connectError}</p>}
+        {connectError && <p className="mt-3 mb-0 text-sm text-badge-failed">{connectError}</p>}
 
         <div className="mt-4 grid gap-2">
           {activeAddress && (

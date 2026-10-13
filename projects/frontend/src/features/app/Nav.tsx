@@ -72,10 +72,10 @@ const Nav = ({ onNavigateHome, onNavigateProfile, onNavigatePledges, onNavigateP
               Menu
             </button>
             {menuOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-card border border-line rounded-md shadow-lg py-1 z-10">
+              <div className="absolute right-0 z-10 mt-2 w-48 rounded-md border border-line bg-card py-1 shadow-lg">
                 <button
                   type="button"
-                  className="w-full text-left px-4 py-2 text-sm hover:bg-muted/50"
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50"
                   onClick={() => {
                     setMenuOpen(false)
                     onNavigateProfile()
@@ -85,7 +85,7 @@ const Nav = ({ onNavigateHome, onNavigateProfile, onNavigatePledges, onNavigateP
                 </button>
                 <button
                   type="button"
-                  className="w-full text-left px-4 py-2 text-sm hover:bg-muted/50"
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50"
                   onClick={() => {
                     setMenuOpen(false)
                     onNavigatePledges()
@@ -95,7 +95,7 @@ const Nav = ({ onNavigateHome, onNavigateProfile, onNavigatePledges, onNavigateP
                 </button>
                 <button
                   type="button"
-                  className="w-full text-left px-4 py-2 text-sm hover:bg-muted/50"
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50"
                   onClick={() => {
                     setMenuOpen(false)
                     onNavigateProjects()
@@ -105,7 +105,7 @@ const Nav = ({ onNavigateHome, onNavigateProfile, onNavigatePledges, onNavigateP
                 </button>
                 <button
                   type="button"
-                  className="w-full text-left px-4 py-2 text-sm hover:bg-muted/50"
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-muted/50"
                   onClick={() => {
                     setMenuOpen(false)
                     onNavigateSettings()

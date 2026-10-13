@@ -80,7 +80,7 @@ const Profile = ({ onBack }: ProfileProps) => {
 
   if (!activeAddress) {
     return (
-      <div className="max-w-md mx-auto text-center py-12">
+      <div className="mx-auto max-w-md py-12 text-center">
         <p className="text-muted">Connect your wallet to view your profile.</p>
         <button
           type="button"
@@ -94,7 +94,7 @@ const Profile = ({ onBack }: ProfileProps) => {
   }
 
   return (
-    <div className="max-w-md mx-auto space-y-6">
+    <div className="mx-auto max-w-md space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Profile</h1>
         <button type="button" className="cursor-pointer text-sm text-muted hover:text-ink" onClick={onBack}>
@@ -104,12 +104,12 @@ const Profile = ({ onBack }: ProfileProps) => {
 
       <div className="space-y-4">
         <div>
-          <label className="block text-sm text-muted mb-1">Address</label>
-          <div className="font-mono text-sm bg-muted/20 px-3 py-2 rounded">{ellipseAddress(activeAddress)}</div>
+          <label className="mb-1 block text-sm text-muted">Address</label>
+          <div className="rounded bg-muted/20 px-3 py-2 font-mono text-sm">{ellipseAddress(activeAddress)}</div>
         </div>
 
         <div>
-          <label htmlFor="displayName" className="block text-sm text-muted mb-1">
+          <label htmlFor="displayName" className="mb-1 block text-sm text-muted">
             Display Name
           </label>
           <input
@@ -120,13 +120,13 @@ const Profile = ({ onBack }: ProfileProps) => {
             onChange={(e) => {
               setDisplayName(e.target.value)
             }}
-            className="w-full rounded-md border border-line bg-card px-3 py-2 text-sm focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
+            className="w-full rounded-md border border-line bg-card px-3 py-2 text-sm focus:border-teal focus:ring-1 focus:ring-teal focus:outline-none"
             placeholder="Your name"
           />
         </div>
 
         <div>
-          <label htmlFor="bio" className="block text-sm text-muted mb-1">
+          <label htmlFor="bio" className="mb-1 block text-sm text-muted">
             Bio
           </label>
           <textarea
@@ -137,13 +137,13 @@ const Profile = ({ onBack }: ProfileProps) => {
               setBio(e.target.value)
             }}
             rows={3}
-            className="w-full rounded-md border border-line bg-card px-3 py-2 text-sm focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal resize-none"
+            className="w-full resize-none rounded-md border border-line bg-card px-3 py-2 text-sm focus:border-teal focus:ring-1 focus:ring-teal focus:outline-none"
             placeholder="Tell us about yourself"
           />
         </div>
 
         <div>
-          <label htmlFor="avatarCid" className="block text-sm text-muted mb-1">
+          <label htmlFor="avatarCid" className="mb-1 block text-sm text-muted">
             Avatar CID (IPFS)
           </label>
           <input
@@ -154,13 +154,13 @@ const Profile = ({ onBack }: ProfileProps) => {
             onChange={(e) => {
               setAvatarCid(e.target.value)
             }}
-            className="w-full rounded-md border border-line bg-card px-3 py-2 text-sm focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
+            className="w-full rounded-md border border-line bg-card px-3 py-2 text-sm focus:border-teal focus:ring-1 focus:ring-teal focus:outline-none"
             placeholder="Qm... (optional)"
           />
         </div>
 
         <div>
-          <label htmlFor="email" className="block text-sm text-muted mb-1">
+          <label htmlFor="email" className="mb-1 block text-sm text-muted">
             Email (for notifications)
           </label>
           <input
@@ -171,13 +171,13 @@ const Profile = ({ onBack }: ProfileProps) => {
             onChange={(e) => {
               setEmail(e.target.value)
             }}
-            className="w-full rounded-md border border-line bg-card px-3 py-2 text-sm focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
+            className="w-full rounded-md border border-line bg-card px-3 py-2 text-sm focus:border-teal focus:ring-1 focus:ring-teal focus:outline-none"
             placeholder="you@example.com (optional)"
           />
         </div>
 
-        {error && <div className="text-sm text-red">{error}</div>}
-        {success && <div className="text-sm text-green">{success}</div>}
+        {error && <div className="text-sm text-danger">{error}</div>}
+        {success && <div className="text-sm text-teal-dark">{success}</div>}
 
         <button
           type="button"

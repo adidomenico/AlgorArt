@@ -4,6 +4,7 @@ import importPlugin from 'eslint-plugin-import'
 import jsdoc from 'eslint-plugin-jsdoc'
 import react from 'eslint-plugin-react'
 import reactHooks from 'eslint-plugin-react-hooks'
+import tailwindcss from 'eslint-plugin-tailwindcss'
 import { defineConfig } from 'eslint/config'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
@@ -84,6 +85,27 @@ export default defineConfig(
       'import/no-duplicates': 'error',
       'import/no-named-as-default': 'error',
       'import/no-named-as-default-member': 'error',
+    },
+  },
+  // Tailwind classes (tsx only - no other file kind carries class names).
+  // Prettier deliberately does NOT sort classes (its plugin conflicts with
+  // organize-imports/jsdoc), so ordering lives here alongside correctness.
+  // Custom theme colors (bg-card, text-muted, ...) resolve through the v4
+  // stylesheet below - without it they would read as typos.
+  {
+    files: ['**/*.tsx'],
+    plugins: { tailwindcss },
+    settings: {
+      tailwindcss: {
+        cssConfigPath: './src/styles/App.css',
+      },
+    },
+    rules: {
+      'tailwindcss/classnames-order': 'error',
+      'tailwindcss/no-contradicting-classname': 'error',
+      'tailwindcss/no-custom-classname': 'error',
+      'tailwindcss/enforces-shorthand': 'error',
+      'tailwindcss/no-unnecessary-arbitrary-value': 'error',
     },
   },
   // Test files get Vitest globals.

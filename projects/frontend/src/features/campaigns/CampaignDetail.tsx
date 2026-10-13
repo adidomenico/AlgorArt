@@ -263,7 +263,7 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
               <p className="text-sm text-muted">Network fee {NETWORK_FEE_ALGO} per refund.</p>
             </div>
           )}
-          {message && <p className="mb-0 mt-3 text-sm text-muted">{message}</p>}
+          {message && <p className="mt-3 mb-0 text-sm text-muted">{message}</p>}
         </div>
       </div>
     )
@@ -283,14 +283,14 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
         <div className="flex items-center justify-between">
           <h2 className="m-0 mb-1 text-2xl">{campaign.title || `Campaign #${campaign.id.toString()}`}</h2>
           <span
-            className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-bold uppercase tracking-[0.05em] text-white ${badgeBg[campaign.status]}`}
+            className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-bold tracking-wider text-white uppercase ${badgeBg[campaign.status]}`}
           >
             {campaign.status}
           </span>
         </div>
         <p className="text-sm text-muted">App id {campaign.id.toString()}</p>
 
-        <div className="mb-4 break-all text-sm text-muted">
+        <div className="mb-4 text-sm break-all text-muted">
           Created by {campaign.creator}
           {campaign.metadataUri !== '' && <span className="break-all text-teal-dark"> · {campaign.metadataUri}</span>}
         </div>
@@ -312,15 +312,15 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
 
         <dl className="my-4 grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-4">
           <div>
-            <dt className="text-xs uppercase tracking-[0.03em] text-muted">Deadline</dt>
+            <dt className="text-xs tracking-[0.03em] text-muted uppercase">Deadline</dt>
             <dd className="m-0 text-sm font-semibold">{formatDeadline(campaign.deadlineSeconds)}</dd>
           </div>
           <div>
-            <dt className="text-xs uppercase tracking-[0.03em] text-muted">Time left</dt>
+            <dt className="text-xs tracking-[0.03em] text-muted uppercase">Time left</dt>
             <dd className="m-0 text-sm font-semibold">{formatCountdown(campaign.deadlineSeconds, nowSeconds)}</dd>
           </div>
           <div>
-            <dt className="text-xs uppercase tracking-[0.03em] text-muted">Your pledge</dt>
+            <dt className="text-xs tracking-[0.03em] text-muted uppercase">Your pledge</dt>
             <dd className="m-0 text-sm font-semibold">
               {campaign.myPledgeMicroAlgos !== undefined ? `${formatAlgo(campaign.myPledgeMicroAlgos)} ALGO` : '-'}
             </dd>
@@ -414,7 +414,7 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
           </div>
         )}
 
-        {message && <p className="mb-0 mt-3 text-sm text-muted">{message}</p>}
+        {message && <p className="mt-3 mb-0 text-sm text-muted">{message}</p>}
       </div>
     </div>
   )
