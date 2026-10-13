@@ -51,8 +51,8 @@ each open item links to the doc with the details. Design context is in
       connect/disconnect is too frequent to bury behind two taps.
 - [ ] **Profile section** - address + network, my pledges (live leaves via
       `fetchMyLeaves`), my projects (campaigns filtered by creator).
-- [ ] **Settings section** - network/wallet info now; theme and notification
-      prefs later (see Product & design).
+- [x] **Settings section** - profile form (display name/bio/avatar/email) and settings
+      form (notification prefs, theme) behind the account menu, wired to the backend CRUD.
 
 ## Content & metadata
 

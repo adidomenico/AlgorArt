@@ -65,7 +65,9 @@ const Nav = ({ onNavigateHome, onNavigateProfile, onNavigatePledges, onNavigateP
             <button
               type="button"
               className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark"
-              onClick={() => setMenuOpen((open) => !open)}
+              onClick={() => {
+                setMenuOpen((open) => !open)
+              }}
             >
               Menu
             </button>

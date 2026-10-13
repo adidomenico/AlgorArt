@@ -1,15 +1,16 @@
 import { useNetwork, useWallet } from '@txnlab/use-wallet-react'
 import { useEffect, useState } from 'react'
 import { adaptSignData } from '../../lib/backend'
-import { clearProfileCache, fetchProfile, saveProfile } from '../../lib/profiles'
+import { fetchProfile, saveProfile } from '../../lib/profiles'
 import { ellipseAddress } from '../../utils/ellipseAddress'
+import { orEmpty } from '../../utils/orEmpty'
 
 interface ProfileProps {
   onBack: () => void
 }
 
 const Profile = ({ onBack }: ProfileProps) => {
-  const { activeAddress, activeWallet, signData } = useWallet()
+  const { activeAddress, signData } = useWallet()
   const { activeNetworkConfig } = useNetwork()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -26,25 +27,29 @@ const Profile = ({ onBack }: ProfileProps) => {
       return
     }
     setLoading(true)
-    fetchProfile(activeAddress)
+    let cancelled = false
+    // fetchProfile resolves null on every failure path, so no catch is needed.
+    void fetchProfile(activeAddress)
       .then((p) => {
-        if (p) {
-          setDisplayName(p.display_name ?? '')
-          setBio(p.bio ?? '')
-          setAvatarCid(p.avatar_cid ?? '')
-          setEmail(p.email ?? '')
+        if (!cancelled && p) {
+          setDisplayName(orEmpty(p.display_name))
+          setBio(orEmpty(p.bio))
+          setAvatarCid(orEmpty(p.avatar_cid))
+          setEmail(orEmpty(p.email))
         }
       })
-      .catch(() => {
-        // Profile fetch failed - form stays empty
-      })
       .finally(() => {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       })
+    return () => {
+      cancelled = true
+    }
   }, [activeAddress])
 
   const handleSave = async () => {
-    if (!activeAddress || !activeWallet || !signData) {
+    // Defensive: the form only renders while connected, so this is unreachable in the UI.
+    /* v8 ignore next */
+    if (!activeAddress) {
       setError('Wallet not connected.')
       return
     }
@@ -52,26 +57,22 @@ const Profile = ({ onBack }: ProfileProps) => {
     setError(null)
     setSuccess(null)
     try {
-      await saveProfile({
+      const updated = await saveProfile({
         address: activeAddress,
-        chainId: activeNetworkConfig?.caipChainId,
+        chainId: activeNetworkConfig.caipChainId,
         sign: adaptSignData(signData),
         displayName,
         bio,
         avatarCid,
         email,
       })
-      clearProfileCache()
-      const updated = await fetchProfile(activeAddress)
-      if (updated) {
-        setDisplayName(updated.display_name ?? '')
-        setBio(updated.bio ?? '')
-        setAvatarCid(updated.avatar_cid ?? '')
-        setEmail(updated.email ?? '')
-      }
+      setDisplayName(orEmpty(updated.display_name))
+      setBio(orEmpty(updated.bio))
+      setAvatarCid(orEmpty(updated.avatar_cid))
+      setEmail(orEmpty(updated.email))
       setSuccess('Profile saved.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save profile.')
+    } catch (error) {
+      setError((error as Error).message)
     } finally {
       setSaving(false)
     }
@@ -116,7 +117,9 @@ const Profile = ({ onBack }: ProfileProps) => {
             type="text"
             maxLength={64}
             value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            onChange={(e) => {
+              setDisplayName(e.target.value)
+            }}
             className="w-full rounded-md border border-line bg-card px-3 py-2 text-sm focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
             placeholder="Your name"
           />
@@ -130,7 +133,9 @@ const Profile = ({ onBack }: ProfileProps) => {
             id="bio"
             maxLength={1000}
             value={bio}
-            onChange={(e) => setBio(e.target.value)}
+            onChange={(e) => {
+              setBio(e.target.value)
+            }}
             rows={3}
             className="w-full rounded-md border border-line bg-card px-3 py-2 text-sm focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal resize-none"
             placeholder="Tell us about yourself"
@@ -146,7 +151,9 @@ const Profile = ({ onBack }: ProfileProps) => {
             type="text"
             maxLength={128}
             value={avatarCid}
-            onChange={(e) => setAvatarCid(e.target.value)}
+            onChange={(e) => {
+              setAvatarCid(e.target.value)
+            }}
             className="w-full rounded-md border border-line bg-card px-3 py-2 text-sm focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
             placeholder="Qm... (optional)"
           />
@@ -161,7 +168,9 @@ const Profile = ({ onBack }: ProfileProps) => {
             type="email"
             maxLength={320}
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value)
+            }}
             className="w-full rounded-md border border-line bg-card px-3 py-2 text-sm focus:border-teal focus:outline-none focus:ring-1 focus:ring-teal"
             placeholder="you@example.com (optional)"
           />
@@ -174,7 +183,7 @@ const Profile = ({ onBack }: ProfileProps) => {
           type="button"
           disabled={saving || loading}
           className="w-full cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
-          onClick={handleSave}
+          onClick={() => void handleSave()}
         >
           {saving ? 'Saving…' : 'Save Profile'}
         </button>

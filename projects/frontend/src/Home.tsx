@@ -30,11 +30,21 @@ const Home = () => {
     window.history.back()
   }, [])
 
-  const navigateHome = useCallback(() => navigate({ kind: 'list' }), [navigate])
-  const navigateProfile = useCallback(() => navigate({ kind: 'profile' }), [navigate])
-  const navigatePledges = useCallback(() => navigate({ kind: 'pledges' }), [navigate])
-  const navigateProjects = useCallback(() => navigate({ kind: 'projects' }), [navigate])
-  const navigateSettings = useCallback(() => navigate({ kind: 'settings' }), [navigate])
+  const navigateHome = useCallback(() => {
+    navigate({ kind: 'list' })
+  }, [navigate])
+  const navigateProfile = useCallback(() => {
+    navigate({ kind: 'profile' })
+  }, [navigate])
+  const navigatePledges = useCallback(() => {
+    navigate({ kind: 'pledges' })
+  }, [navigate])
+  const navigateProjects = useCallback(() => {
+    navigate({ kind: 'projects' })
+  }, [navigate])
+  const navigateSettings = useCallback(() => {
+    navigate({ kind: 'settings' })
+  }, [navigate])
 
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
@@ -103,7 +113,13 @@ const Home = () => {
           />
         )}
 
-        {view.kind === 'profile' && <Profile onBack={() => navigate({ kind: 'list' })} />}
+        {view.kind === 'profile' && (
+          <Profile
+            onBack={() => {
+              navigate({ kind: 'list' })
+            }}
+          />
+        )}
 
         {view.kind === 'pledges' && (
           <div className="max-w-md mx-auto text-center py-12">
@@ -112,7 +128,9 @@ const Home = () => {
             <button
               type="button"
               className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark"
-              onClick={() => navigate({ kind: 'list' })}
+              onClick={() => {
+                navigate({ kind: 'list' })
+              }}
             >
               Back
             </button>
@@ -126,14 +144,22 @@ const Home = () => {
             <button
               type="button"
               className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark"
-              onClick={() => navigate({ kind: 'list' })}
+              onClick={() => {
+                navigate({ kind: 'list' })
+              }}
             >
               Back
             </button>
           </div>
         )}
 
-        {view.kind === 'settings' && <Settings onBack={() => navigate({ kind: 'list' })} />}
+        {view.kind === 'settings' && (
+          <Settings
+            onBack={() => {
+              navigate({ kind: 'list' })
+            }}
+          />
+        )}
       </main>
 
       <Footer />

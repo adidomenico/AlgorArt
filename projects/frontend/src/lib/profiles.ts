@@ -38,15 +38,6 @@ export interface SettingsInput {
   theme?: string
 }
 
-/** Inputs for saving a profile (see `saveProfile`). */
-export interface ProfileInput {
-  address: string
-  chainId: string | undefined
-  sign: (payload: string) => Promise<{ signature: Uint8Array; authenticatorData: Uint8Array }>
-  displayName: string
-  bio: string
-}
-
 const cache = new Map<string, UserProfile | null>()
 const settingsCache = new Map<string, UserSettings | null>()
 
@@ -102,12 +93,24 @@ export async function fetchProfile(address: string): Promise<UserProfile | null>
 }
 
 /**
- * Fetch the caller's settings, cached per address. Null without a backend.
+ * Fetch the caller's settings, cached per address. Null without a backend. Signs in
+ * with the caller's wallet (settings reads are authenticated), sharing the session cache.
  *
- * @param address Wallet address.
+ * @param input Fetch inputs.
+ * @param input.address Backend address.
+ * @param input.chainId CAIP-2 chain id for the SIWA request, if the network config provides one.
+ * @param input.sign Wallet message signer (receives the base64 SIWA payload), returning raw signature bytes.
  * @returns The settings, or null when unreachable.
  */
-export async function fetchSettings(address: string): Promise<UserSettings | null> {
+export async function fetchSettings({
+  address,
+  chainId,
+  sign,
+}: {
+  address: string
+  chainId: string | undefined
+  sign: (payload: string) => Promise<{ signature: Uint8Array; authenticatorData: Uint8Array }>
+}): Promise<UserSettings | null> {
   const base = backendUrl()
   if (base === '' || address === '') return null
   const cached = settingsCache.get(address)
@@ -117,8 +120,8 @@ export async function fetchSettings(address: string): Promise<UserSettings | nul
     const token = await ensureSession({
       baseUrl: base,
       address,
-      chainId: undefined,
-      sign: async () => ({ signature: new Uint8Array(), authenticatorData: new Uint8Array() }),
+      chainId,
+      sign,
       statement: 'Sign in to AlgorArt to manage your settings.',
       action: 'settings fetch',
     })
@@ -144,9 +147,16 @@ export async function fetchSettings(address: string): Promise<UserSettings | nul
 }
 
 /**
- * Save the caller's profile (display name and bio; blanks clear), signing in first.
+ * Save the caller's profile (blanks clear), signing in first.
  *
- * @param input Backend address, chain id, signer, display name, and bio.
+ * @param input Save inputs.
+ * @param input.address Backend address.
+ * @param input.chainId CAIP-2 chain id for the SIWA request, if the network config provides one.
+ * @param input.sign Wallet message signer (receives the base64 SIWA payload), returning raw signature bytes.
+ * @param input.displayName Display name, blank clears.
+ * @param input.bio Bio text, blank clears.
+ * @param input.avatarCid Avatar CID, blank clears.
+ * @param input.email Email address, blank clears.
  * @returns The saved profile.
  */
 export async function saveProfile({ address, chainId, sign, displayName, bio, avatarCid, email }: ProfileInput): Promise<UserProfile> {
@@ -193,10 +203,22 @@ export async function saveProfile({ address, chainId, sign, displayName, bio, av
 /**
  * Save the caller's settings (notify prefs and theme; undefined keeps current), signing in first.
  *
- * @param input Backend address, chain id, signer, and optional settings fields.
+ * @param input Save inputs.
+ * @param input.address Backend address.
+ * @param input.chainId CAIP-2 chain id for the SIWA request, if the network config provides one.
+ * @param input.sign Wallet message signer (receives the base64 SIWA payload), returning raw signature bytes.
+ * @param input.notifyFunded Whether to notify on funded campaigns.
+ * @param input.notifyFailed Whether to notify on failed campaigns.
+ * @param input.theme Theme setting.
  * @returns The saved settings.
  */
 export async function saveSettings({ address, chainId, sign, notifyFunded, notifyFailed, theme }: SettingsInput): Promise<UserSettings> {
+  const body: Record<string, unknown> = {}
+  if (notifyFunded !== undefined) body.notify_funded = notifyFunded
+  if (notifyFailed !== undefined) body.notify_failed = notifyFailed
+  if (theme !== undefined) body.theme = theme
+  if (Object.keys(body).length === 0) throw new Error('Nothing to update.')
+
   const base = backendUrl()
   if (base === '') throw new Error('Settings need the backend configured (VITE_BACKEND_URL).')
   const token = await ensureSession({
@@ -207,12 +229,6 @@ export async function saveSettings({ address, chainId, sign, notifyFunded, notif
     statement: 'Sign in to AlgorArt to manage your settings.',
     action: 'settings update',
   })
-
-  const body: Record<string, unknown> = {}
-  if (notifyFunded !== undefined) body.notify_funded = notifyFunded
-  if (notifyFailed !== undefined) body.notify_failed = notifyFailed
-  if (theme !== undefined) body.theme = theme
-  if (Object.keys(body).length === 0) throw new Error('Nothing to update.')
 
   let response: Response
   try {

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { clearSession } from './backend'
 import type { ProfileInput, SettingsInput } from './profiles'
 import { clearProfileCache, clearSettingsCache, fetchProfile, fetchSettings, saveProfile, saveSettings } from './profiles'
 
@@ -31,6 +32,10 @@ function okJson(json: unknown): { ok: boolean; status: number; json: () => Promi
   return { ok: true, status: 200, json: () => Promise.resolve(json) }
 }
 
+function testSign(): (payload: string) => Promise<{ signature: Uint8Array; authenticatorData: Uint8Array }> {
+  return () => Promise.resolve({ signature: new Uint8Array([1, 2, 3]), authenticatorData: new Uint8Array([4, 5, 6]) })
+}
+
 function notOkJson(status: number): { ok: boolean; status: number; json: () => Promise<unknown> } {
   return { ok: false, status, json: () => Promise.resolve({}) }
 }
@@ -38,6 +43,7 @@ function notOkJson(status: number): { ok: boolean; status: number; json: () => P
 describe('fetchProfile', () => {
   afterEach(() => {
     clearProfileCache()
+    clearSession()
     vi.unstubAllGlobals()
     vi.unstubAllEnvs()
   })
@@ -96,16 +102,17 @@ describe('fetchProfile', () => {
       email: null,
     })
     clearProfileCache()
-    await expect(fetchProfile('ADDRESS')).toBeNull()
+    await expect(fetchProfile('ADDRESS')).resolves.toBeNull()
   })
 
   it('returns null without a backend or address', async () => {
-    // When VITE_BACKEND_URL is empty, fetchProfile returns null immediately
-    const { rows } = await import('../lib/backend.ts')
-    ;(rows as any).backendUrl = () => ''
+    vi.stubEnv('VITE_BACKEND_URL', '')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
     await expect(fetchProfile('ADDRESS')).resolves.toBeNull()
     vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
-    await expect(fetchProfile('ADDRESS')).resolves.toEqual(expect.objectContaining({ address: 'ADDRESS' }))
+    await expect(fetchProfile('')).resolves.toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -123,6 +130,7 @@ describe('fetchProfile', () => {
 describe('saveProfile', () => {
   afterEach(() => {
     clearProfileCache()
+    clearSession()
     vi.unstubAllGlobals()
     vi.unstubAllEnvs()
   })
@@ -232,6 +240,7 @@ describe('saveProfile', () => {
 describe('fetchSettings', () => {
   afterEach(() => {
     clearSettingsCache()
+    clearSession()
     vi.unstubAllGlobals()
     vi.unstubAllEnvs()
   })
@@ -245,7 +254,7 @@ describe('fetchSettings', () => {
       .mockResolvedValueOnce(okJson({ notify_funded: false, notify_failed: true, theme: 'dark' }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(fetchSettings('ADDRESS')).resolves.toEqual({
+    await expect(fetchSettings({ address: 'ADDRESS', chainId: 'algorand:testnet', sign: testSign() })).resolves.toEqual({
       address: 'ADDRESS',
       notify_funded: false,
       notify_failed: true,
@@ -266,25 +275,47 @@ describe('fetchSettings', () => {
       .mockResolvedValueOnce(okJson({ notify_funded: false, notify_failed: true, theme: 'dark' }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await fetchSettings('ADDRESS')
-    await fetchSettings('ADDRESS')
+    await fetchSettings({ address: 'ADDRESS', chainId: 'algorand:testnet', sign: testSign() })
+    await fetchSettings({ address: 'ADDRESS', chainId: 'algorand:testnet', sign: testSign() })
 
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
   it('returns null without a backend or address', async () => {
-    const { rows } = await import('../lib/backend.ts')
-    ;(rows as any).backendUrl = () => ''
-    await expect(fetchSettings('ADDRESS')).resolves.toBeNull()
+    vi.stubEnv('VITE_BACKEND_URL', '')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchSettings({ address: 'ADDRESS', chainId: 'algorand:testnet', sign: testSign() })).resolves.toBeNull()
     vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
-    await expect(fetchSettings('ADDRESS')).resolves.toEqual(expect.objectContaining({ address: 'ADDRESS' }))
+    await expect(fetchSettings({ address: '', chainId: 'algorand:testnet', sign: testSign() })).resolves.toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+  it('treats malformed settings as missing', async () => {
+    vi.stubEnv('VITE_BACKEND_URL', 'http://backend')
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
+      .mockResolvedValueOnce(okJson({ token: 'session' }))
+      .mockResolvedValueOnce(okJson('oops'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(fetchSettings({ address: 'ADDRESS', chainId: 'algorand:testnet', sign: testSign() })).resolves.toBeNull()
+    clearSettingsCache()
+    clearSession()
+    fetchMock
+      .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
+      .mockResolvedValueOnce(okJson({ token: 'session' }))
+      .mockResolvedValueOnce({ ok: false, status: 404, json: () => Promise.resolve({}) })
+
+    await expect(fetchSettings({ address: 'ADDRESS', chainId: 'algorand:testnet', sign: testSign() })).resolves.toBeNull()
   })
 })
 
 describe('saveSettings', () => {
   afterEach(() => {
     clearSettingsCache()
+    clearSession()
     vi.unstubAllGlobals()
     vi.unstubAllEnvs()
   })
@@ -307,7 +338,7 @@ describe('saveSettings', () => {
     const calls = fetchMock.mock.calls as unknown[][]
     const saveInit = calls[2]?.[1] as { body?: unknown } | undefined
     expect(saveInit?.body).toEqual(JSON.stringify({ notify_funded: false, notify_failed: true, theme: 'dark' }))
-    await expect(fetchSettings('ADDRESS')).resolves.toEqual({
+    await expect(fetchSettings({ address: 'ADDRESS', chainId: 'algorand:testnet', sign: testSign() })).resolves.toEqual({
       address: 'ADDRESS',
       notify_funded: false,
       notify_failed: true,

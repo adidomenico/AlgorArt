@@ -134,4 +134,55 @@ describe('Nav', () => {
     await user.click(screen.getByText('page content'))
     expect(dialog).toHaveClass('hidden')
   })
+
+  it('hides the menu button when disconnected', () => {
+    useWalletMock.mockReturnValue({ activeAddress: null, wallets: [] })
+    render(<Nav {...defaultProps} />)
+    expect(screen.queryByRole('button', { name: 'Menu' })).not.toBeInTheDocument()
+  })
+
+  it('opens the menu and navigates to each section', async () => {
+    const props = {
+      onNavigateHome: vi.fn(),
+      onNavigateProfile: vi.fn(),
+      onNavigatePledges: vi.fn(),
+      onNavigateProjects: vi.fn(),
+      onNavigateSettings: vi.fn(),
+    }
+    useWalletMock.mockReturnValue({ activeAddress: 'CONNECTED', wallets: [] })
+    const user = userEvent.setup()
+    render(<Nav {...props} />)
+
+    await user.click(screen.getByRole('button', { name: 'Menu' }))
+    await user.click(screen.getByRole('button', { name: 'Profile' }))
+    expect(props.onNavigateProfile).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: 'Profile' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Menu' }))
+    await user.click(screen.getByRole('button', { name: 'My Pledges' }))
+    expect(props.onNavigatePledges).toHaveBeenCalledOnce()
+
+    await user.click(screen.getByRole('button', { name: 'Menu' }))
+    await user.click(screen.getByRole('button', { name: 'My Projects' }))
+    expect(props.onNavigateProjects).toHaveBeenCalledOnce()
+
+    await user.click(screen.getByRole('button', { name: 'Menu' }))
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(props.onNavigateSettings).toHaveBeenCalledOnce()
+  })
+
+  it('closes the menu when clicking outside of it', async () => {
+    useWalletMock.mockReturnValue({ activeAddress: 'CONNECTED', wallets: [] })
+    const user = userEvent.setup()
+    render(
+      <>
+        <Nav {...defaultProps} />
+        <main>page content</main>
+      </>,
+    )
+    await user.click(screen.getByRole('button', { name: 'Menu' }))
+    expect(screen.getByRole('button', { name: 'Profile' })).toBeInTheDocument()
+    await user.click(screen.getByText('page content'))
+    expect(screen.queryByRole('button', { name: 'Profile' })).not.toBeInTheDocument()
+  })
 })

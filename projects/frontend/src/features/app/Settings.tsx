@@ -1,7 +1,7 @@
 import { useNetwork, useWallet } from '@txnlab/use-wallet-react'
 import { useEffect, useState } from 'react'
 import { adaptSignData } from '../../lib/backend'
-import { clearSettingsCache, fetchSettings, saveSettings } from '../../lib/profiles'
+import { fetchSettings, saveSettings } from '../../lib/profiles'
 
 interface SettingsProps {
   onBack: () => void
@@ -24,24 +24,28 @@ const Settings = ({ onBack }: SettingsProps) => {
       return
     }
     setLoading(true)
-    fetchSettings(activeAddress)
+    let cancelled = false
+    // fetchSettings resolves null on every failure path, so no catch is needed.
+    void fetchSettings({ address: activeAddress, chainId: activeNetworkConfig.caipChainId, sign: adaptSignData(signData) })
       .then((s) => {
-        if (s) {
+        if (!cancelled && s) {
           setNotifyFunded(s.notify_funded)
           setNotifyFailed(s.notify_failed)
           setTheme(s.theme as 'light' | 'dark' | 'system')
         }
       })
-      .catch(() => {
-        // Settings fetch failed - form uses defaults
-      })
       .finally(() => {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       })
-  }, [activeAddress])
+    return () => {
+      cancelled = true
+    }
+  }, [activeAddress, activeNetworkConfig.caipChainId, signData])
 
   const handleSave = async () => {
-    if (!activeAddress || !activeWallet || !signData) {
+    // Defensive: the form only renders while connected, so this is unreachable in the UI.
+    /* v8 ignore next */
+    if (!activeAddress || !activeWallet) {
       setError('Wallet not connected.')
       return
     }
@@ -49,21 +53,17 @@ const Settings = ({ onBack }: SettingsProps) => {
     setError(null)
     setSuccess(null)
     try {
-      await saveSettings({
+      const updated = await saveSettings({
         address: activeAddress,
-        chainId: activeNetworkConfig?.caipChainId,
+        chainId: activeNetworkConfig.caipChainId,
         sign: adaptSignData(signData),
         notifyFunded,
         notifyFailed,
         theme,
       })
-      clearSettingsCache()
-      const updated = await fetchSettings(activeAddress)
-      if (updated) {
-        setNotifyFunded(updated.notify_funded)
-        setNotifyFailed(updated.notify_failed)
-        setTheme(updated.theme as 'light' | 'dark' | 'system')
-      }
+      setNotifyFunded(updated.notify_funded)
+      setNotifyFailed(updated.notify_failed)
+      setTheme(updated.theme as 'light' | 'dark' | 'system')
       setSuccess('Settings saved.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save settings.')
@@ -101,21 +101,41 @@ const Settings = ({ onBack }: SettingsProps) => {
           <legend className="text-sm font-medium text-muted px-2">Notifications</legend>
           <div className="flex items-center justify-between">
             <div>
-              <label className="block text-sm">Funded campaigns</label>
+              <label htmlFor="notify-funded" className="block text-sm">
+                Funded campaigns
+              </label>
               <p className="text-xs text-muted">Email me when a campaign I backed reaches its goal.</p>
             </div>
             <label className="cursor-pointer relative inline-flex items-center">
-              <input type="checkbox" checked={notifyFunded} onChange={(e) => setNotifyFunded(e.target.checked)} className="sr-only peer" />
+              <input
+                id="notify-funded"
+                type="checkbox"
+                checked={notifyFunded}
+                onChange={(e) => {
+                  setNotifyFunded(e.target.checked)
+                }}
+                className="sr-only peer"
+              />
               <div className="w-11 h-6 bg-muted/50 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-teal rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal"></div>
             </label>
           </div>
           <div className="flex items-center justify-between">
             <div>
-              <label className="block text-sm">Failed campaigns</label>
+              <label htmlFor="notify-failed" className="block text-sm">
+                Failed campaigns
+              </label>
               <p className="text-xs text-muted">Email me when a campaign I backed fails and I can refund.</p>
             </div>
             <label className="cursor-pointer relative inline-flex items-center">
-              <input type="checkbox" checked={notifyFailed} onChange={(e) => setNotifyFailed(e.target.checked)} className="sr-only peer" />
+              <input
+                id="notify-failed"
+                type="checkbox"
+                checked={notifyFailed}
+                onChange={(e) => {
+                  setNotifyFailed(e.target.checked)
+                }}
+                className="sr-only peer"
+              />
               <div className="w-11 h-6 bg-muted/50 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-teal rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal"></div>
             </label>
           </div>
@@ -128,7 +148,16 @@ const Settings = ({ onBack }: SettingsProps) => {
             <div className="flex gap-4">
               {(['light', 'dark', 'system'] as const).map((t) => (
                 <label key={t} className="cursor-pointer flex items-center gap-2">
-                  <input type="radio" name="theme" value={t} checked={theme === t} onChange={() => setTheme(t)} className="sr-only peer" />
+                  <input
+                    type="radio"
+                    name="theme"
+                    value={t}
+                    checked={theme === t}
+                    onChange={() => {
+                      setTheme(t)
+                    }}
+                    className="sr-only peer"
+                  />
                   <div
                     className={`px-4 py-2 rounded-md border text-sm transition-colors ${
                       theme === t ? 'border-teal bg-teal/10 text-teal' : 'border-line hover:border-teal/50'
@@ -149,7 +178,7 @@ const Settings = ({ onBack }: SettingsProps) => {
           type="button"
           disabled={saving || loading}
           className="w-full cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"
-          onClick={handleSave}
+          onClick={() => void handleSave()}
         >
           {saving ? 'Saving…' : 'Save Settings'}
         </button>
