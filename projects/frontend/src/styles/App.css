@@ -14,6 +14,14 @@
   --color-badge-claimed: #2f855a;
   --color-danger: #c53030;
   --color-warning: #d69e2e;
+
+  /* Repeated one-off values, named so markup reuses them instead of
+     re-declaring arbitrary values. */
+  --text-page-title: 1.75rem;
+  --text-badge: 0.6875rem;
+  --tracking-label: 0.03em;
+  --width-modal: 22em;
+  --container-modal: calc(100vw - 2rem);
 }
 
 @layer base {

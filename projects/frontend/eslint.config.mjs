@@ -106,6 +106,9 @@ export default defineConfig(
       'tailwindcss/no-custom-classname': 'error',
       'tailwindcss/enforces-shorthand': 'error',
       'tailwindcss/no-unnecessary-arbitrary-value': 'error',
+      'tailwindcss/enforces-canonical-classname': 'error',
+      'tailwindcss/enforces-negative-arbitrary-values': 'error',
+      'tailwindcss/important-modifier-suffix': 'error',
     },
   },
   // Test files get Vitest globals.

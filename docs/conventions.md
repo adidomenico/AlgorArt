@@ -49,11 +49,22 @@ documents the rules and the reasoning behind them.
   `**/*.tsx` with `cssConfigPath` pointing at the v4 stylesheet
   (`src/styles/App.css`), so custom `@theme` colors resolve instead of reading as
   typos. Enabled rules: `classnames-order`, `no-contradicting-classname`,
-  `no-custom-classname`, `enforces-shorthand`, `no-unnecessary-arbitrary-value`
+  `no-custom-classname`, `enforces-shorthand`, `no-unnecessary-arbitrary-value`,
+  `enforces-canonical-classname`, `enforces-negative-arbitrary-values`,
+  `important-modifier-suffix`
   (all `error`, all autofixable via `npm run lint:fix`). Class **ordering** lives
   here, not in Prettier - the official `prettier-plugin-tailwindcss` conflicts with
   `organize-imports`/`jsdoc` (shared parser hooks) and reflows unrelated comments,
   so it is deliberately not installed.
+- **Sizes live in the theme, in rem.** Repeated values become `@theme` tokens
+  (`--text-badge`, `--tracking-label`, `--width-modal`, ...) instead of arbitrary
+  values; sizing uses `rem` so it follows the user's font-size settings, with `px`
+  reserved for deliberate fixed geometry (1px hairlines) and `em` where sizing must
+  stay relative to the element. `no-unnecessary-arbitrary-value` enforces the
+  convertible cases; the remaining arbitrary values (`grid-cols-[repeat(...)]`,
+  `content-['']`, `font-[inherit]`) are one-offs with no scale equivalent and stay.
+  `no-arbitrary-value` stays off on purpose: it has no whitelist and would ban those
+  legitimate cases.
 - **JSDoc is required on public/exported declarations.** The jsdoc plugin runs the
   `flat/recommended-typescript-error` preset (all rules at `error` severity), with
   `require-jsdoc` and `require-returns` scoped via `publicOnly` so internal helpers are

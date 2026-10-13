@@ -116,7 +116,7 @@ const Settings = ({ onBack }: SettingsProps) => {
                 }}
                 className="peer sr-only"
               />
-              <div className="peer h-6 w-11 rounded-full bg-muted/50 peer-checked:bg-teal peer-focus:ring-2 peer-focus:ring-teal peer-focus:outline-none after:absolute after:top-[2px] after:left-[2px] after:size-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
+              <div className="peer h-6 w-11 rounded-full bg-muted/50 peer-checked:bg-teal peer-focus:ring-2 peer-focus:ring-teal peer-focus:outline-none after:absolute after:top-0.5 after:left-0.5 after:size-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
             </label>
           </div>
           <div className="flex items-center justify-between">
@@ -136,7 +136,7 @@ const Settings = ({ onBack }: SettingsProps) => {
                 }}
                 className="peer sr-only"
               />
-              <div className="peer h-6 w-11 rounded-full bg-muted/50 peer-checked:bg-teal peer-focus:ring-2 peer-focus:ring-teal peer-focus:outline-none after:absolute after:top-[2px] after:left-[2px] after:size-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
+              <div className="peer h-6 w-11 rounded-full bg-muted/50 peer-checked:bg-teal peer-focus:ring-2 peer-focus:ring-teal peer-focus:outline-none after:absolute after:top-0.5 after:left-0.5 after:size-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full peer-checked:after:border-white"></div>
             </label>
           </div>
         </fieldset>

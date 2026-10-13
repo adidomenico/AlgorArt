@@ -31,7 +31,7 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
   return (
     <dialog
       id="connect_wallet_modal"
-      className={`fixed top-16 right-6 left-auto z-9999 m-0 w-[22em] max-w-[calc(100vw-2rem)] border-0 bg-transparent p-0 ${openModal ? 'block' : 'hidden'}`}
+      className={`fixed top-16 right-6 left-auto z-9999 m-0 w-modal max-w-modal border-0 bg-transparent p-0 ${openModal ? 'block' : 'hidden'}`}
       style={{ display: openModal ? 'block' : 'none' }}
     >
       <form method="dialog" className="w-full rounded-lg border border-line bg-white p-6">
@@ -84,7 +84,7 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
                 }}
               >
                 {!isKmd(wallet) && (
-                  <img alt={`wallet_icon_${wallet.id}`} src={wallet.metadata.icon} className="h-auto w-[30px] object-contain" />
+                  <img alt={`wallet_icon_${wallet.id}`} src={wallet.metadata.icon} className="h-auto w-7.5 object-contain" />
                 )}
                 <span>{isKmd(wallet) ? 'LocalNet Wallet' : wallet.metadata.name}</span>
               </button>

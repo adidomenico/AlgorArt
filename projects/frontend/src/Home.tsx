@@ -71,7 +71,7 @@ const Home = () => {
         {view.kind === 'list' && (
           <>
             <div className="mb-6 flex items-center justify-between">
-              <h1 className="m-0 text-[1.75rem]">Campaigns</h1>
+              <h1 className="m-0 text-page-title">Campaigns</h1>
               <button
                 type="button"
                 className="cursor-pointer rounded-md border border-teal bg-teal px-4 py-2 text-sm text-white hover:border-teal-dark hover:bg-teal-dark disabled:cursor-not-allowed disabled:opacity-50"

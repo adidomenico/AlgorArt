@@ -282,9 +282,7 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
       <div className="rounded-lg border border-line bg-card p-6">
         <div className="flex items-center justify-between">
           <h2 className="m-0 mb-1 text-2xl">{campaign.title || `Campaign #${campaign.id.toString()}`}</h2>
-          <span
-            className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-bold tracking-wider text-white uppercase ${badgeBg[campaign.status]}`}
-          >
+          <span className={`rounded-full px-2 py-0.5 text-badge font-bold tracking-wider text-white uppercase ${badgeBg[campaign.status]}`}>
             {campaign.status}
           </span>
         </div>
@@ -312,15 +310,15 @@ const CampaignDetail = ({ appId, onBack }: CampaignDetailProps) => {
 
         <dl className="my-4 grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-4">
           <div>
-            <dt className="text-xs tracking-[0.03em] text-muted uppercase">Deadline</dt>
+            <dt className="text-xs tracking-label text-muted uppercase">Deadline</dt>
             <dd className="m-0 text-sm font-semibold">{formatDeadline(campaign.deadlineSeconds)}</dd>
           </div>
           <div>
-            <dt className="text-xs tracking-[0.03em] text-muted uppercase">Time left</dt>
+            <dt className="text-xs tracking-label text-muted uppercase">Time left</dt>
             <dd className="m-0 text-sm font-semibold">{formatCountdown(campaign.deadlineSeconds, nowSeconds)}</dd>
           </div>
           <div>
-            <dt className="text-xs tracking-[0.03em] text-muted uppercase">Your pledge</dt>
+            <dt className="text-xs tracking-label text-muted uppercase">Your pledge</dt>
             <dd className="m-0 text-sm font-semibold">
               {campaign.myPledgeMicroAlgos !== undefined ? `${formatAlgo(campaign.myPledgeMicroAlgos)} ALGO` : '-'}
             </dd>
