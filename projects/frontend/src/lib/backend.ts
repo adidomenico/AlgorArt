@@ -107,11 +107,11 @@ export interface SignIn {
   action: string
 }
 
-let cachedToken: string | null = null
+let cachedSession: { address: string; token: string } | null = null
 
 /** Clear the cached session token (wallet disconnect; tests). */
 export function clearSession(): void {
-  cachedToken = null
+  cachedSession = null
 }
 
 /**
@@ -155,15 +155,16 @@ export async function signIn({ baseUrl, address, chainId, sign, statement, actio
 }
 
 /**
- * The cached session token, signing in on first use. One popup per session, shared by every upload.
+ * The cached session token, signing in on first use per address. One popup per address per session, shared by
+ * every upload. Keyed by address so switching wallets never reuses the previous account's token.
  *
  * @param input Sign-in inputs.
  * @returns The session JWT.
  */
 export async function ensureSession(input: SignIn): Promise<string> {
-  if (cachedToken !== null) return cachedToken
+  if (cachedSession !== null && cachedSession.address === input.address) return cachedSession.token
   const token = await signIn(input)
-  cachedToken = token
+  cachedSession = { address: input.address, token }
   return token
 }
 

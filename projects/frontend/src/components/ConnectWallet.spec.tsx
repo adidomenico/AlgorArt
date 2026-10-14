@@ -31,6 +31,16 @@ vi.mock('./Account', () => ({
   default: () => <div>ACCOUNT_VIEW</div>,
 }))
 
+const clearSessionMock = vi.fn()
+
+vi.mock('../lib/backend', async () => {
+  const actual = await vi.importActual('../lib/backend')
+  return {
+    ...actual,
+    clearSession: () => clearSessionMock(),
+  }
+})
+
 describe('ConnectWallet', () => {
   beforeEach(() => {
     useNetworkMock.mockReturnValue({ activeNetworkConfig: { caipChainId: 'algorand:testnet' } })
@@ -122,6 +132,7 @@ describe('ConnectWallet', () => {
 
     await user.click(screen.getByText('Logout'))
     expect(disconnect).toHaveBeenCalled()
+    expect(clearSessionMock).toHaveBeenCalled()
   })
 
   it('cleans up and reloads when no wallet is active on logout', async () => {
@@ -140,6 +151,7 @@ describe('ConnectWallet', () => {
     await user.click(screen.getByText('Logout'))
     expect(removeItemSpy).toHaveBeenCalledWith('@txnlab/use-wallet:v5')
     expect(reloadSpy).toHaveBeenCalled()
+    expect(clearSessionMock).toHaveBeenCalled()
   })
 
   it('renders the KMD wallet as "LocalNet Wallet" without an icon', () => {

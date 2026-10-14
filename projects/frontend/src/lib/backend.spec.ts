@@ -1,7 +1,7 @@
 import { ScopeType } from '@txnlab/use-wallet'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { CoverUpload, MetadataUpload } from './backend'
-import { adaptSignData, backendUrl, clearSession, uploadCover, uploadMetadata } from './backend'
+import type { CoverUpload, MetadataUpload, SignIn } from './backend'
+import { adaptSignData, backendUrl, clearSession, ensureSession, uploadCover, uploadMetadata } from './backend'
 
 function uploadInput(overrides: Partial<CoverUpload> = {}): CoverUpload {
   return {
@@ -43,6 +43,55 @@ describe('adaptSignData', () => {
       authenticatorData: new Uint8Array([2]),
     })
     expect(signData).toHaveBeenCalledWith('cGF5bG9hZA==', { encoding: 'base64', scope: ScopeType.AUTH })
+  })
+})
+
+describe('ensureSession', () => {
+  afterEach(() => {
+    clearSession()
+    vi.unstubAllGlobals()
+  })
+
+  function sessionInput(overrides: Partial<SignIn> = {}): SignIn {
+    return {
+      baseUrl: 'http://backend',
+      address: 'ADDRESS',
+      chainId: 'algorand:testnet',
+      sign: () => Promise.resolve({ signature: new Uint8Array([1, 2, 3]), authenticatorData: new Uint8Array([4, 5, 6]) }),
+      statement: 'Sign in.',
+      action: 'upload',
+      ...overrides,
+    }
+  }
+
+  function signInFlow(token: string) {
+    return vi
+      .fn()
+      .mockResolvedValueOnce(okJson({ nonce: 'n' }))
+      .mockResolvedValueOnce(okJson({ token }))
+  }
+
+  it('reuses the token for the same address without signing again', async () => {
+    const sign = vi.fn().mockResolvedValue({ signature: new Uint8Array([1]), authenticatorData: new Uint8Array([2]) })
+    vi.stubGlobal('fetch', signInFlow('session'))
+
+    await expect(ensureSession(sessionInput({ sign }))).resolves.toBe('session')
+    await expect(ensureSession(sessionInput({ sign }))).resolves.toBe('session')
+    expect(sign).toHaveBeenCalledOnce()
+  })
+
+  it('signs in fresh for a different address', async () => {
+    const sign = vi.fn().mockResolvedValue({ signature: new Uint8Array([1]), authenticatorData: new Uint8Array([2]) })
+    vi.stubGlobal('fetch', signInFlow('session-a'))
+    await expect(ensureSession(sessionInput({ sign, address: 'ADDRESS-A' }))).resolves.toBe('session-a')
+
+    const secondFetch = signInFlow('session-b')
+    vi.stubGlobal('fetch', secondFetch)
+    await expect(ensureSession(sessionInput({ sign, address: 'ADDRESS-B' }))).resolves.toBe('session-b')
+
+    expect(sign).toHaveBeenCalledTimes(2)
+    const challengeInit = (secondFetch.mock.calls[0]?.[1] ?? {}) as { body?: unknown }
+    expect(challengeInit.body).toContain('"address":"ADDRESS-B"')
   })
 })
 

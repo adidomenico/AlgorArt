@@ -46,7 +46,7 @@ each open item links to the doc with the details. Design context is in
 - [ ] **Dead sessions look connected (confirmed)** - wallet-side disconnect refreshes the nav, but a silently dead bridge keeps the address + Account button (`isConnected`/`activeAddress` are store-derived, never bridge-derived). Fixed by the items below.
 - [x] **Liveness revalidation** - new `lib/session.ts` `ensureLiveSessionFor()` rechecks the bridge through the adapter's silent `resumeSession()` on tab-visible and before every money-moving action; a dead bridge throws `Wallet session expired` into the existing dead-session handling.
 - [x] **Nav reflects liveness** - needed no extra state: a failed revalidation clears the store via the adapter's `onDisconnect()`, and the nav already reads the store, so it flips to Connect wallet on its own.
-- [ ] **Backend JWT hygiene** - `clearSession()` on disconnect/account-switch and key the cached token by address (today it outlives the wallet connection and is shared across accounts).
+- [x] **Backend JWT hygiene** - the cached token is keyed by address (switching wallets signs in fresh instead of reusing the previous account's token) and `clearSession()` runs on logout.
 - [ ] **Gate uploads on `canSignData`** - Defly lacks `signData`, so cover uploads fail at sign time; say so up front instead of a raw error.
 - [ ] **App chrome: navbar + footer** - navbar: logo left (home), search box center,
       hamburger menu right; footer: brand + `© <year> AlgorArt`, Contacts, Privacy

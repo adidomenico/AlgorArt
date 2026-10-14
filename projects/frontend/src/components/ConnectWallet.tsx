@@ -3,7 +3,7 @@ import { WALLET_ID as KMD_WALLET_ID } from '@txnlab/use-wallet-kmd'
 import type { Wallet } from '@txnlab/use-wallet-react'
 import { useNetwork, useWallet } from '@txnlab/use-wallet-react'
 import { useState } from 'react'
-import { adaptSignData, backendUrl, ensureSession } from '../lib/backend'
+import { adaptSignData, backendUrl, clearSession, ensureSession } from '../lib/backend'
 import { isDismissalError } from '../lib/errors'
 import Account from './Account'
 
@@ -115,6 +115,8 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
                     localStorage.removeItem('@txnlab/use-wallet:v5')
                     window.location.reload()
                   }
+                  // Drop the backend session too - it belongs to the disconnected address.
+                  clearSession()
                 })()
               }}
             >
