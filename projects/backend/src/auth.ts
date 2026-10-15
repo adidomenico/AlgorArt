@@ -111,6 +111,68 @@ export async function createChallenge(address: string): Promise<Challenge> {
 }
 
 /**
+ * The exact note a login payment must carry: binds this deployment's domain to a live challenge nonce. The
+ * frontend builds the identical string (see `loginNote` in the frontend's `lib/backend.ts`).
+ *
+ * @param domain Deployment domain (matches `APP_DOMAIN`).
+ * @param nonce Live challenge nonce for the address.
+ * @returns The note text.
+ */
+export function loginNote(domain: string, nonce: string): string {
+  return `AlgorArt login ${domain} ${nonce}`
+}
+
+/**
+ * Decode a signed login payment and check its shape: a single-key-signed zero self-payment with no close-out
+ * and no rekey. Address, nonce, and signature checks live in `verifyTransactionChallenge`, so this stays pure
+ * (no DB, no env) and unit-verifiable.
+ *
+ * @param signedTxn Base64 signed transaction bytes.
+ * @returns The decoded payment and its signature.
+ */
+export function decodeLoginPayment(signedTxn: string): { txn: algosdk.Transaction; sig: Uint8Array } {
+  let decoded: algosdk.SignedTransaction
+  try {
+    decoded = algosdk.decodeSignedTransaction(base64ToBytes(signedTxn))
+  } catch {
+    throw new Error('malformed signed transaction')
+  }
+  const { txn, sig, msig, lsig, sgnr } = decoded
+  if (sig === undefined) {
+    throw new Error('expected a single key signature')
+  }
+  if ([msig, lsig, sgnr].some((part) => part !== undefined)) {
+    throw new Error('expected a single key signature')
+  }
+  const payment = txn.payment
+  if (payment === undefined || payment.receiver.toString() !== txn.sender.toString()) {
+    throw new Error('expected a self payment')
+  }
+  if (payment.amount !== BigInt(0)) {
+    throw new Error('expected a zero payment')
+  }
+  if (payment.closeRemainderTo !== undefined || txn.rekeyTo !== undefined) {
+    throw new Error('close-out and rekey are not allowed')
+  }
+  return { txn, sig }
+}
+
+/**
+ * Issue a session JWT for an address. Single place minting tokens for both proof paths.
+ *
+ * @param address Verified Algorand address.
+ * @returns Session JWT (Bearer token, seven days).
+ */
+function issueSessionToken(address: string): Promise<string> {
+  return new SignJWT({ address })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime(TOKEN_TTL)
+    .setIssuer(TOKEN_ISSUER)
+    .sign(sessionSecret())
+}
+
+/**
  * Verify a wallet-signed SIWA request (ARC-60) and issue a session JWT. Nonces are single-use and expire after five
  * minutes. The wallet signs `sha256(data) || sha256(authenticatorData)` where the authenticator data starts with
  * the SHA-256 of this deployment's domain (see use-wallet's `createStdSignData`); rekeyed accounts are not
@@ -166,12 +228,41 @@ export async function verifyChallenge(address: string, data: string, authenticat
     throw new Error('invalid signature')
   }
   await pool().query('UPDATE auth_nonces SET used_at = now() WHERE nonce = $1', [nonce])
-  return new SignJWT({ address })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime(TOKEN_TTL)
-    .setIssuer(TOKEN_ISSUER)
-    .sign(sessionSecret())
+  return issueSessionToken(address)
+}
+
+/**
+ * Verify a wallet-signed zero self-payment login and issue a session JWT. The universal fallback for wallets
+ * without message signing (Defly, Exodus): every wallet signs transactions. The payment is never broadcast -
+ * it only carries the challenge nonce in its note - so no fee is paid and nothing lands on-chain. Nonces are
+ * single-use and expire after five minutes; rekeyed accounts are not supported, like the ARC-60 path.
+ *
+ * @param address Claimed Algorand address.
+ * @param signedTxn Base64 signed payment bytes (sender and receiver are the address, amount zero).
+ * @returns Session JWT (Bearer token, seven days).
+ */
+export async function verifyTransactionChallenge(address: string, signedTxn: string): Promise<string> {
+  const { txn, sig } = decodeLoginPayment(signedTxn)
+  if (txn.sender.toString() !== address) {
+    throw new Error('transaction is not from the claimed address')
+  }
+  const note = Buffer.from(txn.note).toString('utf8')
+  const domain = appDomain()
+  const live = (
+    await pool().query<{ nonce: string }>('SELECT nonce FROM auth_nonces WHERE address = $1 AND used_at IS NULL AND expires_at > now()', [
+      address,
+    ])
+  ).rows.map((row) => row.nonce)
+  const nonce = live.find((candidate) => note === loginNote(domain, candidate))
+  if (nonce === undefined) {
+    throw new Error('invalid or expired challenge')
+  }
+  const valid = nacl.sign.detached.verify(txn.bytesToSign(), sig, algosdk.decodeAddress(address).publicKey)
+  if (!valid) {
+    throw new Error('invalid signature')
+  }
+  await pool().query('UPDATE auth_nonces SET used_at = now() WHERE nonce = $1', [nonce])
+  return issueSessionToken(address)
 }
 
 /**

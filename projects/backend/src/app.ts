@@ -1,6 +1,6 @@
 import algosdk from 'algosdk'
 import Fastify from 'fastify'
-import { authenticate, createChallenge, verifyChallenge } from './auth.js'
+import { authenticate, createChallenge, verifyChallenge, verifyTransactionChallenge } from './auth.js'
 import { getProfile, getSettings, upsertProfile, upsertSettings } from './profiles.js'
 import { PinningError, pinImage, pinJson, safeFilename } from './uploads.js'
 
@@ -59,6 +59,19 @@ export function buildApp() {
       }
     },
   )
+
+  app.post<{ Body: { address: unknown; signedTxn: unknown } }>('/auth/verify-txn', async (request, reply) => {
+    const { address, signedTxn } = request.body
+    if (typeof address !== 'string' || typeof signedTxn !== 'string') {
+      await reply.code(400).send({ error: 'address and signedTxn are required' })
+      return
+    }
+    try {
+      await reply.send({ token: await verifyTransactionChallenge(address, signedTxn) })
+    } catch {
+      await reply.code(400).send({ error: 'challenge verification failed' })
+    }
+  })
 
   app.get('/me', { preHandler: authenticate }, (request) => {
     return { address: request.address }

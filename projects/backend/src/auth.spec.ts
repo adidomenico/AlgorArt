@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import nacl from 'tweetnacl'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildApp } from './app.js'
-import { createChallenge } from './auth.js'
+import { base64ToBytes, createChallenge } from './auth.js'
 import { pool } from './db.js'
 
 function keypair(): { address: string; sk: Uint8Array } {
@@ -306,5 +306,294 @@ describe('wallet-signature auth', () => {
     } finally {
       vi.unstubAllEnvs()
     }
+  })
+})
+
+/**
+ * Build a signed login payment for the transaction proof path (plain object assembly: the backend checks the
+ * exact bytes it receives, so canonical form only matters for real wallets).
+ *
+ * @param nonce Challenge nonce from `createChallenge`.
+ * @param address Signer address (sender and receiver).
+ * @param sk Signing secret key.
+ * @param overrides Optional field replacements for negative tests.
+ * @param overrides.amount Payment amount (default zero).
+ * @param overrides.receiver Payment receiver (default the sender).
+ * @param overrides.closeTo Close-out target (absent by default).
+ * @param overrides.rekeyTo Rekey target (absent by default).
+ * @param overrides.note Note text (default the login note for the nonce).
+ * @returns Base64 signed transaction bytes.
+ */
+function loginPaymentBlob(
+  nonce: string,
+  address: string,
+  sk: Uint8Array,
+  overrides: { amount?: bigint; receiver?: string; closeTo?: string; rekeyTo?: string; note?: string } = {},
+): string {
+  const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+    sender: address,
+    receiver: overrides.receiver ?? address,
+    amount: overrides.amount ?? BigInt(0),
+    ...(overrides.closeTo === undefined ? {} : { closeRemainderTo: overrides.closeTo }),
+    ...(overrides.rekeyTo === undefined ? {} : { rekeyTo: overrides.rekeyTo }),
+    note: new TextEncoder().encode(overrides.note ?? `AlgorArt login localhost ${nonce}`),
+    suggestedParams: {
+      fee: BigInt(0),
+      minFee: BigInt(1000),
+      firstValid: BigInt(1),
+      lastValid: BigInt(1001),
+      genesisID: 'testnet-v1.0',
+      genesisHash: new Uint8Array(32),
+    },
+  })
+  // Test fixtures use explicit fees, so the deprecation's flat-fee rationale does not apply.
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
+  return bytesToBase64(algosdk.signTransaction(txn, sk).blob)
+}
+
+describe('transaction-signature auth', () => {
+  afterEach(async () => {
+    await pool().query('DELETE FROM auth_nonces')
+  })
+
+  it('issues a token for a correctly signed login payment', async () => {
+    const app = buildApp()
+    const { address, sk } = keypair()
+
+    const nonce = (await createChallenge(address)).nonce
+    const signedTxn = loginPaymentBlob(nonce, address, sk)
+
+    const verified = await app.inject({ method: 'POST', url: '/auth/verify-txn', payload: { address, signedTxn } })
+    expect(verified.statusCode).toBe(200)
+    const { token } = verified.json<{ token: string }>()
+    expect(typeof token).toBe('string')
+
+    const me = await app.inject({ method: 'GET', url: '/me', headers: { authorization: `Bearer ${token}` } })
+    expect(me.statusCode).toBe(200)
+    expect(me.json()).toEqual({ address })
+  })
+
+  it('rejects reusing a signed payment', async () => {
+    const app = buildApp()
+    const { address, sk } = keypair()
+
+    const nonce = (await createChallenge(address)).nonce
+    const signedTxn = loginPaymentBlob(nonce, address, sk)
+
+    const first = await app.inject({ method: 'POST', url: '/auth/verify-txn', payload: { address, signedTxn } })
+    expect(first.statusCode).toBe(200)
+    const second = await app.inject({ method: 'POST', url: '/auth/verify-txn', payload: { address, signedTxn } })
+    expect(second.statusCode).toBe(400)
+  })
+
+  it('rejects a payment from another key', async () => {
+    const app = buildApp()
+    const victim = keypair()
+    const attacker = keypair()
+
+    const nonce = (await createChallenge(victim.address)).nonce
+    const signedTxn = loginPaymentBlob(nonce, attacker.address, attacker.sk)
+
+    const verified = await app.inject({
+      method: 'POST',
+      url: '/auth/verify-txn',
+      payload: { address: victim.address, signedTxn },
+    })
+    expect(verified.statusCode).toBe(400)
+  })
+
+  it('rejects a payment signed with another key as auth-addr', async () => {
+    const app = buildApp()
+    const victim = keypair()
+    const attacker = keypair()
+
+    const nonce = (await createChallenge(victim.address)).nonce
+    const signedTxn = loginPaymentBlob(nonce, victim.address, attacker.sk)
+
+    const verified = await app.inject({
+      method: 'POST',
+      url: '/auth/verify-txn',
+      payload: { address: victim.address, signedTxn },
+    })
+    expect(verified.statusCode).toBe(400)
+  })
+
+  it('rejects a tampered signature', async () => {
+    const app = buildApp()
+    const { address, sk } = keypair()
+
+    const nonce = (await createChallenge(address)).nonce
+    const raw = algosdk.msgpackRawDecode(base64ToBytes(loginPaymentBlob(nonce, address, sk))) as Record<string, unknown>
+    const sigValue = raw['sig']
+    if (!(sigValue instanceof Uint8Array)) throw new Error('test setup broken')
+    const sig = Uint8Array.from(sigValue)
+    const first = sig[0]
+    if (first === undefined) throw new Error('test setup broken')
+    sig[0] = first ^ 1
+    raw['sig'] = sig
+    const signedTxn = bytesToBase64(algosdk.msgpackRawEncode(raw))
+
+    const verified = await app.inject({
+      method: 'POST',
+      url: '/auth/verify-txn',
+      payload: { address, signedTxn },
+    })
+    expect(verified.statusCode).toBe(400)
+  })
+
+  it('rejects a nonzero payment', async () => {
+    const app = buildApp()
+    const { address, sk } = keypair()
+
+    const nonce = (await createChallenge(address)).nonce
+    const signedTxn = loginPaymentBlob(nonce, address, sk, { amount: BigInt(1000) })
+
+    const verified = await app.inject({ method: 'POST', url: '/auth/verify-txn', payload: { address, signedTxn } })
+    expect(verified.statusCode).toBe(400)
+  })
+
+  it('rejects a payment to another address', async () => {
+    const app = buildApp()
+    const { address, sk } = keypair()
+    const other = keypair()
+
+    const nonce = (await createChallenge(address)).nonce
+    const signedTxn = loginPaymentBlob(nonce, address, sk, { receiver: other.address })
+
+    const verified = await app.inject({ method: 'POST', url: '/auth/verify-txn', payload: { address, signedTxn } })
+    expect(verified.statusCode).toBe(400)
+  })
+
+  it('rejects a close-out payment', async () => {
+    const app = buildApp()
+    const { address, sk } = keypair()
+    const other = keypair()
+
+    const nonce = (await createChallenge(address)).nonce
+    const signedTxn = loginPaymentBlob(nonce, address, sk, { closeTo: other.address })
+
+    const verified = await app.inject({ method: 'POST', url: '/auth/verify-txn', payload: { address, signedTxn } })
+    expect(verified.statusCode).toBe(400)
+  })
+
+  it('rejects a rekey payment', async () => {
+    const app = buildApp()
+    const { address, sk } = keypair()
+    const other = keypair()
+
+    const nonce = (await createChallenge(address)).nonce
+    const signedTxn = loginPaymentBlob(nonce, address, sk, { rekeyTo: other.address })
+
+    const verified = await app.inject({ method: 'POST', url: '/auth/verify-txn', payload: { address, signedTxn } })
+    expect(verified.statusCode).toBe(400)
+  })
+
+  it('rejects a non-payment', async () => {
+    const app = buildApp()
+    const { address, sk } = keypair()
+
+    const nonce = (await createChallenge(address)).nonce
+    const txn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+      sender: address,
+      receiver: address,
+      assetIndex: 1,
+      amount: BigInt(0),
+      note: new TextEncoder().encode(`AlgorArt login localhost ${nonce}`),
+      suggestedParams: {
+        fee: BigInt(0),
+        minFee: BigInt(1000),
+        firstValid: BigInt(1),
+        lastValid: BigInt(1001),
+        genesisID: 'testnet-v1.0',
+        genesisHash: new Uint8Array(32),
+      },
+    })
+    const signedTxn = bytesToBase64(
+      // Test fixture with an explicit fee; see the note on `signTransaction` above.
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
+      algosdk.signTransaction(txn, sk).blob,
+    )
+
+    const verified = await app.inject({ method: 'POST', url: '/auth/verify-txn', payload: { address, signedTxn } })
+    expect(verified.statusCode).toBe(400)
+  })
+
+  it('rejects an unsigned transaction', async () => {
+    const app = buildApp()
+    const { address } = keypair()
+
+    const nonce = (await createChallenge(address)).nonce
+    const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+      sender: address,
+      receiver: address,
+      amount: BigInt(0),
+      note: new TextEncoder().encode(`AlgorArt login localhost ${nonce}`),
+      suggestedParams: {
+        fee: BigInt(0),
+        minFee: BigInt(1000),
+        firstValid: BigInt(1),
+        lastValid: BigInt(1001),
+        genesisID: 'testnet-v1.0',
+        genesisHash: new Uint8Array(32),
+      },
+    })
+    const signedTxn = bytesToBase64(algosdk.encodeUnsignedTransaction(txn))
+
+    const verified = await app.inject({ method: 'POST', url: '/auth/verify-txn', payload: { address, signedTxn } })
+    expect(verified.statusCode).toBe(400)
+  })
+
+  it('rejects a multisig-signed payment', async () => {
+    const app = buildApp()
+    const { address, sk } = keypair()
+
+    const nonce = (await createChallenge(address)).nonce
+    const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+      sender: address,
+      receiver: address,
+      amount: BigInt(0),
+      note: new TextEncoder().encode(`AlgorArt login localhost ${nonce}`),
+      suggestedParams: {
+        fee: BigInt(0),
+        minFee: BigInt(1000),
+        firstValid: BigInt(1),
+        lastValid: BigInt(1001),
+        genesisID: 'testnet-v1.0',
+        genesisHash: new Uint8Array(32),
+      },
+    })
+    // Test fixture with an explicit fee; see the note on `signTransaction` above.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    const signedTxn = bytesToBase64(algosdk.signMultisigTransaction(txn, { version: 1, threshold: 1, addrs: [address] }, sk).blob)
+
+    const verified = await app.inject({ method: 'POST', url: '/auth/verify-txn', payload: { address, signedTxn } })
+    expect(verified.statusCode).toBe(400)
+  })
+
+  it('rejects a note bound to another nonce', async () => {
+    const app = buildApp()
+    const { address, sk } = keypair()
+
+    await createChallenge(address)
+    const signedTxn = loginPaymentBlob('wrong-nonce', address, sk, { note: 'AlgorArt login localhost wrong-nonce' })
+
+    const verified = await app.inject({ method: 'POST', url: '/auth/verify-txn', payload: { address, signedTxn } })
+    expect(verified.statusCode).toBe(400)
+  })
+
+  it('rejects malformed verify-txn requests', async () => {
+    const app = buildApp()
+
+    const noFields = await app.inject({ method: 'POST', url: '/auth/verify-txn', payload: {} })
+    expect(noFields.statusCode).toBe(400)
+    const garbage = await app.inject({
+      method: 'POST',
+      url: '/auth/verify-txn',
+      payload: {
+        address: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ',
+        signedTxn: '!!!not-base64!!!',
+      },
+    })
+    expect(garbage.statusCode).toBe(400)
   })
 })
