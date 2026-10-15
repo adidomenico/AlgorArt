@@ -1,6 +1,6 @@
 import { useNetwork, useWallet } from '@txnlab/use-wallet-react'
 import { useEffect, useState } from 'react'
-import { adaptSignData } from '../../lib/backend'
+import { adaptSignData, adaptSignTransaction } from '../../lib/backend'
 import { fetchSettings, saveSettings } from '../../lib/profiles'
 
 interface SettingsProps {
@@ -8,7 +8,7 @@ interface SettingsProps {
 }
 
 const Settings = ({ onBack }: SettingsProps) => {
-  const { activeAddress, activeWallet, signData } = useWallet()
+  const { activeAddress, activeWallet, signData, signTransactions } = useWallet()
   const { activeNetworkConfig } = useNetwork()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -26,7 +26,12 @@ const Settings = ({ onBack }: SettingsProps) => {
     setLoading(true)
     let cancelled = false
     // fetchSettings resolves null on every failure path, so no catch is needed.
-    void fetchSettings({ address: activeAddress, chainId: activeNetworkConfig.caipChainId, sign: adaptSignData(signData) })
+    void fetchSettings({
+      address: activeAddress,
+      chainId: activeNetworkConfig.caipChainId,
+      sign: adaptSignData(signData),
+      signTxn: adaptSignTransaction(signTransactions),
+    })
       .then((s) => {
         if (!cancelled && s) {
           setNotifyFunded(s.notify_funded)
@@ -40,7 +45,7 @@ const Settings = ({ onBack }: SettingsProps) => {
     return () => {
       cancelled = true
     }
-  }, [activeAddress, activeNetworkConfig.caipChainId, signData])
+  }, [activeAddress, activeNetworkConfig.caipChainId, signData, signTransactions])
 
   const handleSave = async () => {
     // Defensive: the form only renders while connected, so this is unreachable in the UI.
@@ -57,6 +62,7 @@ const Settings = ({ onBack }: SettingsProps) => {
         address: activeAddress,
         chainId: activeNetworkConfig.caipChainId,
         sign: adaptSignData(signData),
+        signTxn: adaptSignTransaction(signTransactions),
         notifyFunded,
         notifyFailed,
         theme,

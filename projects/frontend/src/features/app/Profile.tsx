@@ -1,6 +1,6 @@
 import { useNetwork, useWallet } from '@txnlab/use-wallet-react'
 import { useEffect, useState } from 'react'
-import { adaptSignData } from '../../lib/backend'
+import { adaptSignData, adaptSignTransaction } from '../../lib/backend'
 import { fetchProfile, saveProfile } from '../../lib/profiles'
 import { ellipseAddress } from '../../utils/ellipseAddress'
 import { orEmpty } from '../../utils/orEmpty'
@@ -10,7 +10,7 @@ interface ProfileProps {
 }
 
 const Profile = ({ onBack }: ProfileProps) => {
-  const { activeAddress, signData } = useWallet()
+  const { activeAddress, signData, signTransactions } = useWallet()
   const { activeNetworkConfig } = useNetwork()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -61,6 +61,7 @@ const Profile = ({ onBack }: ProfileProps) => {
         address: activeAddress,
         chainId: activeNetworkConfig.caipChainId,
         sign: adaptSignData(signData),
+        signTxn: adaptSignTransaction(signTransactions),
         displayName,
         bio,
         avatarCid,

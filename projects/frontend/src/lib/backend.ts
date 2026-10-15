@@ -1,6 +1,9 @@
 import type { StdSignDataResponse, StdSignMetadata } from '@txnlab/use-wallet'
 import { ScopeType } from '@txnlab/use-wallet'
+import type { useWallet } from '@txnlab/use-wallet-react'
+import algosdk from 'algosdk'
 import { canonify } from 'canonify'
+import { algorand } from './algorand'
 
 /**
  * Backend (catalog) API client: wallet sign-in plus cover-image upload.
@@ -30,6 +33,8 @@ export interface CoverUpload {
   address: string
   chainId: string | undefined
   sign: (payload: string) => Promise<{ signature: Uint8Array; authenticatorData: Uint8Array }>
+  /** Transaction signer for wallets without message signing (universal sign-in fallback). */
+  signTxn?: SignTxn | undefined
   file: File
 }
 
@@ -97,14 +102,41 @@ export function adaptSignData(
     }))
 }
 
+/** Transaction signer for wallets without message signing (universal sign-in fallback). */
+export type SignTxn = (unsignedTxn: Uint8Array) => Promise<Uint8Array>
+
 /** Inputs for a wallet sign-in (see `signIn`). */
 export interface SignIn {
   baseUrl: string
   address: string
   chainId: string | undefined
   sign: (payload: string) => Promise<{ signature: Uint8Array; authenticatorData: Uint8Array }>
+  /** Transaction signer for wallets without message signing (universal fallback, see `signInWithTransaction`). */
+  signTxn?: SignTxn | undefined
   statement: string
   action: string
+  /** Suggested-params source for the transaction fallback (live algod values by default; injectable for tests). */
+  getParams?: (() => Promise<algosdk.SuggestedParams>) | undefined
+}
+
+/** Wallet `signTransactions` hook shape, for `adaptSignTransaction` (type-only: erased at runtime). */
+type WalletSignTransactions = ReturnType<typeof useWallet>['signTransactions']
+
+/**
+ * Adapt the wallet `signTransactions` hook to the signed-bytes signer the transaction proof takes. Single place
+ * defining the call shape: one unsigned transaction in, its signed bytes out. Never broadcasts.
+ *
+ * @param signTransactions Wallet `signTransactions` hook.
+ * @returns Signer returning the signed transaction bytes.
+ */
+export function adaptSignTransaction(signTransactions: WalletSignTransactions): (unsignedTxn: Uint8Array) => Promise<Uint8Array> {
+  return async (unsignedTxn) => {
+    const [signed] = await signTransactions([unsignedTxn], [0])
+    if (!(signed instanceof Uint8Array) || signed.length === 0) {
+      throw new Error('Sign-in failed. Try again.')
+    }
+    return signed
+  }
 }
 
 let cachedSession: { address: string; token: string } | null = null
@@ -156,16 +188,98 @@ export async function signIn({ baseUrl, address, chainId, sign, statement, actio
 
 /**
  * The cached session token, signing in on first use per address. One popup per address per session, shared by
- * every upload. Keyed by address so switching wallets never reuses the previous account's token.
+ * every upload. Keyed by address so switching wallets never reuses the previous account's token. Tries ARC-60
+ * first (the proven path); wallets without message signing fail that call fast without opening a popup and fall
+ * back to the universal transaction proof. Dismissals and real errors rethrow untouched - no second popup.
  *
  * @param input Sign-in inputs.
  * @returns The session JWT.
  */
 export async function ensureSession(input: SignIn): Promise<string> {
   if (cachedSession !== null && cachedSession.address === input.address) return cachedSession.token
-  const token = await signIn(input)
+  const token = await signInWithFallback(input)
   cachedSession = { address: input.address, token }
   return token
+}
+
+const CAPABILITY_PATTERN = /method not supported/i
+
+async function signInWithFallback(input: SignIn): Promise<string> {
+  try {
+    return await signIn(input)
+  } catch (error) {
+    if (input.signTxn === undefined || !isCapabilityError(error)) throw error
+    return await signInWithTransaction({
+      baseUrl: input.baseUrl,
+      address: input.address,
+      signTxn: input.signTxn,
+      action: input.action,
+      getParams: input.getParams,
+    })
+  }
+}
+
+function isCapabilityError(error: unknown): boolean {
+  return error instanceof Error && CAPABILITY_PATTERN.test(error.message)
+}
+
+/**
+ * UTF-8 bytes owned by this realm (globals like `TextEncoder` can come from another realm, whose instances fail
+ * the SDK's `instanceof Uint8Array` checks).
+ *
+ * @param text Text to encode.
+ * @returns The bytes.
+ */
+function utf8Bytes(text: string): Uint8Array {
+  const encoded = new TextEncoder().encode(text)
+  const bytes = new Uint8Array(encoded.length)
+  bytes.set(encoded)
+  return bytes
+}
+
+/** Inputs for a transaction-signature sign-in (see `signInWithTransaction`). */
+export interface TxnSignIn {
+  baseUrl: string
+  address: string
+  signTxn: SignTxn
+  action: string
+  /** Suggested-params source (live algod values by default; injectable for tests). */
+  getParams?: (() => Promise<algosdk.SuggestedParams>) | undefined
+}
+
+/**
+ * Sign in with a zero self-payment: the wallet signs (never broadcasts) a payment carrying the challenge nonce
+ * in its note, and the backend verifies the signature against the challenge. Works on every wallet - the
+ * fallback for missing `signData`.
+ *
+ * @param input Sign-in inputs.
+ * @param input.baseUrl Backend base URL.
+ * @param input.address Signer address for the challenge.
+ * @param input.signTxn Transaction signer (receives the unsigned payment bytes), returning signed bytes.
+ * @param input.action Action noun for user-facing messages.
+ * @param input.getParams Suggested-params source (live algod values by default; injectable for tests).
+ * @returns The session JWT.
+ */
+export async function signInWithTransaction({ baseUrl, address, signTxn, action, getParams }: TxnSignIn): Promise<string> {
+  const challenge = await postJson(`${baseUrl}/auth/challenge`, { address })
+  if (challenge.status !== 200) throw new Error(`Could not start the ${action}. Is the backend reachable?`)
+  const nonce = challengeNonce(challenge.json, action)
+  const params = getParams === undefined ? await algorand.client.algod.getTransactionParams().do() : await getParams()
+  const unsigned = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+    sender: address,
+    receiver: address,
+    amount: 0,
+    // Mirrors `loginNote` on the backend (`AlgorArt login <domain> <nonce>`).
+    note: utf8Bytes(`AlgorArt login ${location.host} ${nonce}`),
+    suggestedParams: params,
+  })
+  const signed = await signTxn(algosdk.encodeUnsignedTransaction(unsigned))
+  const verified = await postJson(`${baseUrl}/auth/verify-txn`, {
+    address,
+    signedTxn: bytesToBase64(signed),
+  })
+  if (verified.status !== 200) throw new Error('Sign-in failed. Try again.')
+  return sessionToken(verified.json)
 }
 
 /**
@@ -176,10 +290,11 @@ export async function ensureSession(input: SignIn): Promise<string> {
  * @param upload.address Signer address for the challenge.
  * @param upload.chainId CAIP-2 chain id for the SIWA request, if the network config provides one.
  * @param upload.sign Wallet message signer (receives the base64 SIWA payload), returning raw signature bytes.
+ * @param upload.signTxn Transaction signer for wallets without message signing (universal sign-in fallback).
  * @param upload.file Image file to pin.
  * @returns The `ipfs://` URI to store as the campaign metadata URI.
  */
-export async function uploadCover({ baseUrl, address, chainId, sign, file }: CoverUpload): Promise<string> {
+export async function uploadCover({ baseUrl, address, chainId, sign, signTxn, file }: CoverUpload): Promise<string> {
   if (baseUrl === '') throw new Error('Image upload needs the backend configured (VITE_BACKEND_URL).')
 
   const token = await ensureSession({
@@ -187,6 +302,7 @@ export async function uploadCover({ baseUrl, address, chainId, sign, file }: Cov
     address,
     chainId,
     sign,
+    signTxn,
     statement: 'Sign in to AlgorArt to upload a cover image.',
     action: 'upload',
   })
@@ -215,6 +331,8 @@ export interface MetadataUpload {
   address: string
   chainId: string | undefined
   sign: (payload: string) => Promise<{ signature: Uint8Array; authenticatorData: Uint8Array }>
+  /** Transaction signer for wallets without message signing (universal sign-in fallback). */
+  signTxn?: SignTxn | undefined
   name: string
   description: string
   image: string
@@ -230,6 +348,7 @@ export interface MetadataUpload {
  * @param upload.address Signer address for the challenge.
  * @param upload.chainId CAIP-2 chain id for the SIWA request, if the network config provides one.
  * @param upload.sign Wallet message signer (receives the base64 SIWA payload), returning raw signature bytes.
+ * @param upload.signTxn Transaction signer for wallets without message signing (universal sign-in fallback).
  * @param upload.name Campaign title.
  * @param upload.description Campaign description, omitted when blank.
  * @param upload.image Cover image URI.
@@ -241,6 +360,7 @@ export async function uploadMetadata({
   address,
   chainId,
   sign,
+  signTxn,
   name,
   description,
   image,
@@ -253,6 +373,7 @@ export async function uploadMetadata({
     address,
     chainId,
     sign,
+    signTxn,
     statement: 'Sign in to AlgorArt to upload campaign metadata.',
     action: 'metadata upload',
   })

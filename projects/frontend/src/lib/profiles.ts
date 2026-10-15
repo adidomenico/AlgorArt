@@ -1,3 +1,4 @@
+import type { SignTxn } from './backend'
 import { backendUrl, ensureSession } from './backend'
 
 /** A creator profile as served by the backend. */
@@ -22,6 +23,7 @@ export interface ProfileInput {
   address: string
   chainId: string | undefined
   sign: (payload: string) => Promise<{ signature: Uint8Array; authenticatorData: Uint8Array }>
+  signTxn?: SignTxn | undefined
   displayName: string
   bio: string
   avatarCid?: string
@@ -33,6 +35,7 @@ export interface SettingsInput {
   address: string
   chainId: string | undefined
   sign: (payload: string) => Promise<{ signature: Uint8Array; authenticatorData: Uint8Array }>
+  signTxn?: SignTxn | undefined
   notifyFunded?: boolean
   notifyFailed?: boolean
   theme?: string
@@ -100,16 +103,19 @@ export async function fetchProfile(address: string): Promise<UserProfile | null>
  * @param input.address Backend address.
  * @param input.chainId CAIP-2 chain id for the SIWA request, if the network config provides one.
  * @param input.sign Wallet message signer (receives the base64 SIWA payload), returning raw signature bytes.
+ * @param input.signTxn Transaction signer for wallets without message signing (universal sign-in fallback).
  * @returns The settings, or null when unreachable.
  */
 export async function fetchSettings({
   address,
   chainId,
   sign,
+  signTxn,
 }: {
   address: string
   chainId: string | undefined
   sign: (payload: string) => Promise<{ signature: Uint8Array; authenticatorData: Uint8Array }>
+  signTxn?: SignTxn | undefined
 }): Promise<UserSettings | null> {
   const base = backendUrl()
   if (base === '' || address === '') return null
@@ -122,6 +128,7 @@ export async function fetchSettings({
       address,
       chainId,
       sign,
+      signTxn,
       statement: 'Sign in to AlgorArt to manage your settings.',
       action: 'settings fetch',
     })
@@ -153,13 +160,23 @@ export async function fetchSettings({
  * @param input.address Backend address.
  * @param input.chainId CAIP-2 chain id for the SIWA request, if the network config provides one.
  * @param input.sign Wallet message signer (receives the base64 SIWA payload), returning raw signature bytes.
+ * @param input.signTxn Transaction signer for wallets without message signing (universal sign-in fallback).
  * @param input.displayName Display name, blank clears.
  * @param input.bio Bio text, blank clears.
  * @param input.avatarCid Avatar CID, blank clears.
  * @param input.email Email address, blank clears.
  * @returns The saved profile.
  */
-export async function saveProfile({ address, chainId, sign, displayName, bio, avatarCid, email }: ProfileInput): Promise<UserProfile> {
+export async function saveProfile({
+  address,
+  chainId,
+  sign,
+  signTxn,
+  displayName,
+  bio,
+  avatarCid,
+  email,
+}: ProfileInput): Promise<UserProfile> {
   const base = backendUrl()
   if (base === '') throw new Error('Profiles need the backend configured (VITE_BACKEND_URL).')
   const token = await ensureSession({
@@ -167,6 +184,7 @@ export async function saveProfile({ address, chainId, sign, displayName, bio, av
     address,
     chainId,
     sign,
+    signTxn,
     statement: 'Sign in to AlgorArt to manage your profile.',
     action: 'profile update',
   })
@@ -207,12 +225,21 @@ export async function saveProfile({ address, chainId, sign, displayName, bio, av
  * @param input.address Backend address.
  * @param input.chainId CAIP-2 chain id for the SIWA request, if the network config provides one.
  * @param input.sign Wallet message signer (receives the base64 SIWA payload), returning raw signature bytes.
+ * @param input.signTxn Transaction signer for wallets without message signing (universal sign-in fallback).
  * @param input.notifyFunded Whether to notify on funded campaigns.
  * @param input.notifyFailed Whether to notify on failed campaigns.
  * @param input.theme Theme setting.
  * @returns The saved settings.
  */
-export async function saveSettings({ address, chainId, sign, notifyFunded, notifyFailed, theme }: SettingsInput): Promise<UserSettings> {
+export async function saveSettings({
+  address,
+  chainId,
+  sign,
+  signTxn,
+  notifyFunded,
+  notifyFailed,
+  theme,
+}: SettingsInput): Promise<UserSettings> {
   const body: Record<string, unknown> = {}
   if (notifyFunded !== undefined) body.notify_funded = notifyFunded
   if (notifyFailed !== undefined) body.notify_failed = notifyFailed
@@ -226,6 +253,7 @@ export async function saveSettings({ address, chainId, sign, notifyFunded, notif
     address,
     chainId,
     sign,
+    signTxn,
     statement: 'Sign in to AlgorArt to manage your settings.',
     action: 'settings update',
   })

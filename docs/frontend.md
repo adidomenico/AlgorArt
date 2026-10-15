@@ -121,11 +121,13 @@ to a placeholder on any failure so cards keep a consistent height; the detail
 view also shows `description` and `category`. A blob
 with none of the four fields is treated as absent, so seed URIs render
 the placeholder instead of erroring. Creating a campaign pins the cover and the
-metadata blob inside the Create button: one shared backend session (ARC-60 wallet
-`signData` sign-in over canonified SIWA, pre-warmed at connect, cached per week),
-then the atomic create group. Campaigns without a cover skip pinning entirely.
-Needs `VITE_BACKEND_URL`; wallets without message signing still create imageless
-campaigns. Descriptions
+metadata blob inside the Create button: one shared backend session (wallet
+sign-in over canonified SIWA, pre-warmed at connect, cached per week per
+address), then the atomic create group. Sign-in tries ARC-60 `signData` first
+and falls back silently to a zero self-payment proof on `Method not supported`,
+so every wallet uploads the same way. Campaigns without a cover skip pinning
+entirely.
+Needs `VITE_BACKEND_URL`. Descriptions
 evolve through the creator updates feed (roadmap), not by editing the blob -
 the pledge-time content stays frozen and always viewable.
 

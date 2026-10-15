@@ -1,7 +1,23 @@
 import { ScopeType } from '@txnlab/use-wallet'
+import algosdk from 'algosdk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CoverUpload, MetadataUpload, SignIn } from './backend'
-import { adaptSignData, backendUrl, clearSession, ensureSession, uploadCover, uploadMetadata } from './backend'
+import {
+  adaptSignData,
+  adaptSignTransaction,
+  backendUrl,
+  clearSession,
+  ensureSession,
+  signInWithTransaction,
+  uploadCover,
+  uploadMetadata,
+} from './backend'
+
+const { algodParamsMock } = vi.hoisted(() => ({ algodParamsMock: vi.fn() }))
+
+vi.mock('./algorand', () => ({
+  algorand: { client: { algod: { getTransactionParams: () => ({ do: () => algodParamsMock() }) } } },
+}))
 
 function uploadInput(overrides: Partial<CoverUpload> = {}): CoverUpload {
   return {
@@ -92,6 +108,170 @@ describe('ensureSession', () => {
     expect(sign).toHaveBeenCalledTimes(2)
     const challengeInit = (secondFetch.mock.calls[0]?.[1] ?? {}) as { body?: unknown }
     expect(challengeInit.body).toContain('"address":"ADDRESS-B"')
+  })
+
+  it('falls back to the transaction proof when message signing is unsupported', async () => {
+    const sign = vi.fn().mockRejectedValue(new Error('Method not supported: signData'))
+    const signTxn = vi.fn().mockResolvedValue(new Uint8Array([7]))
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(okJson({ nonce: 'n' }))
+        .mockResolvedValueOnce(okJson({ nonce: 'n' }))
+        .mockResolvedValueOnce(okJson({ token: 'session' })),
+    )
+
+    await expect(
+      ensureSession(sessionInput({ address: txnAddress, sign, signTxn, getParams: () => Promise.resolve(fakeParams()) })),
+    ).resolves.toBe('session')
+    expect(signTxn).toHaveBeenCalledOnce()
+
+    await expect(
+      ensureSession(sessionInput({ address: txnAddress, sign, signTxn, getParams: () => Promise.resolve(fakeParams()) })),
+    ).resolves.toBe('session')
+    expect(sign).toHaveBeenCalledOnce()
+    expect(signTxn).toHaveBeenCalledOnce()
+  })
+
+  it('rethrows dismissals without falling back', async () => {
+    const sign = vi.fn().mockRejectedValue(new Error('Operation cancelled by user'))
+    const signTxn = vi.fn()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(okJson({ nonce: 'n' })))
+
+    await expect(ensureSession(sessionInput({ sign, signTxn, getParams: () => Promise.resolve(fakeParams()) }))).rejects.toThrow(
+      'Operation cancelled by user',
+    )
+    expect(signTxn).not.toHaveBeenCalled()
+  })
+
+  it('rethrows capability errors without a transaction signer', async () => {
+    const sign = vi.fn().mockRejectedValue(new Error('Method not supported: signData'))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(okJson({ nonce: 'n' })))
+
+    await expect(ensureSession(sessionInput({ sign }))).rejects.toThrow('Method not supported')
+  })
+})
+
+const txnAddress = algosdk.generateAccount().addr.toString()
+
+function fakeParams(): algosdk.SuggestedParams {
+  return {
+    fee: BigInt(0),
+    minFee: BigInt(1000),
+    firstValid: BigInt(1),
+    lastValid: BigInt(1001),
+    genesisID: 'testnet-v1.0',
+    genesisHash: new Uint8Array(32),
+  }
+}
+
+describe('adaptSignTransaction', () => {
+  it('returns the first signed blob', async () => {
+    const unsigned = new Uint8Array([0])
+    const signTransactions = vi.fn().mockResolvedValue([new Uint8Array([1, 2])])
+
+    await expect(adaptSignTransaction(signTransactions)(unsigned)).resolves.toEqual(new Uint8Array([1, 2]))
+    expect(signTransactions).toHaveBeenCalledWith([unsigned], [0])
+  })
+
+  it('rejects empty results', async () => {
+    const signTransactions = vi.fn().mockResolvedValue([null])
+
+    await expect(adaptSignTransaction(signTransactions)(new Uint8Array([0]))).rejects.toThrow('Sign-in failed')
+  })
+})
+
+describe('signInWithTransaction', () => {
+  afterEach(() => {
+    clearSession()
+    vi.unstubAllGlobals()
+  })
+
+  it('signs a zero self-payment carrying the challenge nonce', async () => {
+    const seen: Uint8Array[] = []
+    const signTxn = (unsigned: Uint8Array) => {
+      seen.push(unsigned)
+      return Promise.resolve(new Uint8Array([9, 9, 9]))
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(okJson({ nonce: 'abc123' }))
+      .mockResolvedValueOnce(okJson({ token: 'session' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      signInWithTransaction({
+        baseUrl: 'http://backend',
+        address: txnAddress,
+        signTxn,
+        action: 'upload',
+        getParams: () => Promise.resolve(fakeParams()),
+      }),
+    ).resolves.toBe('session')
+
+    const unsigned = algosdk.decodeUnsignedTransaction(seen[0] ?? new Uint8Array())
+    expect(unsigned.sender.toString()).toBe(txnAddress)
+    expect(unsigned.payment?.receiver.toString()).toBe(txnAddress)
+    expect(unsigned.payment?.amount).toBe(BigInt(0))
+    expect(Buffer.from(unsigned.note).toString('utf8')).toBe(`AlgorArt login ${location.host} abc123`)
+
+    const calls = fetchMock.mock.calls as unknown[][]
+    expect(calls[1]?.[0]).toBe('http://backend/auth/verify-txn')
+    const verifyInit = calls[1]?.[1] as { body?: unknown } | undefined
+    expect(verifyInit?.body).toContain(`"address":"${txnAddress}"`)
+    expect(verifyInit?.body).toContain('"signedTxn":"CQkJ"')
+  })
+
+  it('reports an unreachable backend on challenge', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ status: 500, json: () => Promise.resolve(null) }))
+
+    await expect(
+      signInWithTransaction({
+        baseUrl: 'http://backend',
+        address: txnAddress,
+        signTxn: () => Promise.resolve(new Uint8Array([7])),
+        action: 'upload',
+        getParams: () => Promise.resolve(fakeParams()),
+      }),
+    ).rejects.toThrow('Could not start the upload')
+  })
+
+  it('reports a rejected proof on verify', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(okJson({ nonce: 'n' }))
+        .mockResolvedValueOnce({ status: 400, json: () => Promise.resolve(null) }),
+    )
+
+    await expect(
+      signInWithTransaction({
+        baseUrl: 'http://backend',
+        address: txnAddress,
+        signTxn: () => Promise.resolve(new Uint8Array([7])),
+        action: 'upload',
+        getParams: () => Promise.resolve(fakeParams()),
+      }),
+    ).rejects.toThrow('Sign-in failed')
+  })
+
+  it('reads live params by default', async () => {
+    algodParamsMock.mockResolvedValue(fakeParams())
+    const signTxn = () => Promise.resolve(new Uint8Array([7]))
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(okJson({ nonce: 'n' }))
+        .mockResolvedValueOnce(okJson({ token: 'session' })),
+    )
+
+    await expect(signInWithTransaction({ baseUrl: 'http://backend', address: txnAddress, signTxn, action: 'upload' })).resolves.toBe(
+      'session',
+    )
+    expect(algodParamsMock).toHaveBeenCalledOnce()
   })
 })
 

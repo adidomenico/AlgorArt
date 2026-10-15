@@ -1,7 +1,7 @@
 import { useNetwork, useWallet } from '@txnlab/use-wallet-react'
 import { useState } from 'react'
 import { fetchChainTimestamp } from '../../lib/algorand'
-import { adaptSignData, backendUrl, uploadCover, uploadMetadata } from '../../lib/backend'
+import { adaptSignData, adaptSignTransaction, backendUrl, uploadCover, uploadMetadata } from '../../lib/backend'
 import { classifyError, errorMessage } from '../../lib/errors'
 import { parseAlgoToMicroAlgos } from '../../lib/format'
 import { logError } from '../../lib/log'
@@ -18,7 +18,7 @@ interface CreateCampaignFormProps {
 const CATEGORIES = ['Art', 'Music', 'Film', 'Games', 'Books', 'Tech']
 
 const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) => {
-  const { activeAddress, activeWallet, signData, transactionSigner } = useWallet()
+  const { activeAddress, activeWallet, signData, signTransactions, transactionSigner } = useWallet()
   const { activeNetworkConfig } = useNetwork()
   const [title, setTitle] = useState('')
   const [imageFile, setImageFile] = useState<File | null>(null)
@@ -62,15 +62,17 @@ const CreateCampaignForm = ({ onCreated, onCancel }: CreateCampaignFormProps) =>
       if (imageFile !== null) {
         try {
           const sign = adaptSignData(signData)
+          const signTxn = adaptSignTransaction(signTransactions)
           const baseUrl = backendUrl()
           const address = activeAddress
           const chainId = activeNetworkConfig.caipChainId
-          const coverUri = await uploadCover({ baseUrl, address, chainId, sign, file: imageFile })
+          const coverUri = await uploadCover({ baseUrl, address, chainId, sign, signTxn, file: imageFile })
           metadataUri = await uploadMetadata({
             baseUrl,
             address,
             chainId,
             sign,
+            signTxn,
             name: title.trim(),
             description: description.trim(),
             image: coverUri,

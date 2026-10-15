@@ -63,7 +63,8 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
                       const [account] = accounts
                       if (account !== undefined && account.address !== '') {
                         // Pre-warm the backend session so later uploads skip their sign-in popup.
-                        // Silent: anything failing here falls back to signing on demand.
+                        // Silent: anything failing here falls back to signing on demand. ARC-60 only on
+                        // purpose: the transaction fallback would pop the wallet right after connecting.
                         void ensureSession({
                           baseUrl: backendUrl(),
                           address: account.address,
