@@ -49,6 +49,9 @@ each open item links to the doc with the details. Design context is in
 - [x] **Backend JWT hygiene** - the cached token is keyed by address (switching wallets signs in fresh instead of reusing the previous account's token) and `clearSession()` runs on logout.
 - [x] **Transaction-proof login** - uploads sign in with ARC-60 `signData` first and fall back silently to a zero self-payment proof (`POST /auth/verify-txn`) on `Method not supported`, so every wallet uploads. The `canSignData` gate is dropped as unnecessary.
 - [ ] **TestNet trial: universal uploads** - trial cover + metadata upload with Defly and Exodus on TestNet, plus a Pera regression (its ARC-60 path is unchanged).
+- [ ] **Indexer fallback rotation** - the app points at one indexer URL; on failure, try the next (AlgoNode, Nodely, self-hosted) instead of erroring. Free tiers have no SLA and throttle under load.
+- [ ] **Persist last-known trees locally** - keep the replayed per-campaign trees in browser storage so a flaky indexer hurts less (stale roots self-heal through the existing retry-once proof rebuild).
+- [ ] **Document the self-hosted escape** - alongside the CLI, document running your own node + indexer and pointing any client at it, so history never depends solely on third-party endpoints.
 - [ ] **App chrome: navbar + footer** - navbar: logo left (home), search box center,
       hamburger menu right; footer: brand + `© <year> AlgorArt`, Contacts, Privacy
       Policy, non-custodial disclaimer. New `features/app/` components, Tailwind.
@@ -122,7 +125,9 @@ one commit each - CI wiring comes last:
 
 - [ ] Wire up the CI coverage gate + lint/format/type-check gate (workflow partially done - see [`ci.md`](ci.md)).
 - [ ] Package the frontend as a container image for portable hosting.
-- [ ] Publish the ARC-32/56 specs.
+- [ ] **Publish the contract interface** - commit the generated ARC-32/56 specs (currently gitignored build output) and attach them to GitHub Releases, so explorers, auditors, and third-party clients can build against the contracts without our code.
+- [ ] **Publish the client SDK** - extract the pure claim-tree math (`lib/claimtree.ts` pure layer + vectors) and the generated typed clients into versioned npm packages under an `@algorart` scope, published to the public npm registry (not GitHub Packages: even public installs there need an auth token). The SDK takes indexer-provider and signer interfaces so one codebase serves the UI, the CLI, and third parties.
+- [ ] **Ship the escape-hatch CLI** - graduate `scripts/reclaim.ts` into a standalone `npx`-runnable tool (refund/cancel/claim by app ID from a mnemonic, public indexer only, no backend). Canonical proof that exits never need our servers.
 
 ## Open design questions
 
