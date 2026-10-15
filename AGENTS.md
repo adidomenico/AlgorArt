@@ -70,6 +70,9 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
   changing behavior.
 - Don't create or switch branches or worktrees without explicit approval.
 - The contract is the source of truth; the indexer is only a read model.
+- **Keep the UI normal.** Never surface chain or storage internals (CIDs, hashes, hand-authored JSON,
+  transaction mechanics) in the interface, and never send users to external tools to shuttle data
+  back in. Approvals follow user intent: one click, only the approvals the protocol structurally requires.
 - **Confirm assumptions against real documentation.** Algorand behavior (box MBR,
   app lifecycle, indexer retention, transaction semantics, inner-txn fees) changes
   over time and is easy to misremember. Do not assert how the chain works from
