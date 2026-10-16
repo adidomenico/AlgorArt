@@ -66,6 +66,24 @@ each open item links to the doc with the details. Design context is in
 - [x] **Settings section** - profile form (display name/bio/avatar/email) and settings
       form (notification prefs, theme) behind the account menu, wired to the backend CRUD.
 
+## Frontend clarity
+
+Informed consent before irreversible actions, in plain language - see the
+transparency rule in [`AGENTS.md`](../AGENTS.md).
+
+- [ ] **Creation is immutable (say it upfront)** - title, description, and cover can't be edited after creation; uploads pin to IPFS under our key, and while we unpin our copies on request, pinned content persists wherever else it lives. State this on the create form before submit (short notice + learn-more), not after.
+- [ ] **Create progress steps** - the create flow shows exactly these steps, one bar per stage (metadata covers title, description, cover, and category in a single step), followed by the existing created message:
+  1. Waiting for approval to upload metadata
+  2. Uploading metadata
+  3. Waiting for approval to create the campaign
+  4. Creating the campaign
+  5. Waiting for approval to list the campaign
+  6. Listing the campaign
+- [ ] **Wallet approval invitation** - separate from the steps above: a prominent element below the progress (bigger than step captions) reading "Open your wallet and confirm", shown during every waiting-for-approval state and cleared on resolve or reject. The wallet popup itself is browser chrome and not configurable; this invitation plus the vendors' in-page sign toasts (default-on, keep them on) are the layers we control.
+- [ ] **Pledge receipt transparency** - after pledging, show what the backer holds: funds pooled in escrow (never paid to the creator), cancel anytime while open, automatic refund rights if the goal fails, until when (refund window end date).
+- [ ] **Outcome states in plain language** - funded (creator claims, nothing needed from backers), failed (refund window with the actual end date), deleted (refunds continue from the vault; the page stays reachable via My pledges). No chain jargon.
+- [ ] **Delete consequences for creators** - deleting removes the listing and returns the deposit, but changes nothing for backers: live pledges stay refundable from the vault until the window closes. Say so on the delete confirmation.
+
 ## Content & metadata
 
 - [x] Rich off-chain rendering (IPFS image/description/category) - ARC-3-style blob rendered in card/detail via the public gateway; cover and metadata pinning flow through the backend, single-click create still open (see [`frontend.md`](frontend.md) → Campaign metadata).
@@ -105,6 +123,10 @@ one commit each - CI wiring comes last:
   2. [x] ARC-60 verification end-to-end (backend verifies `sha256(data)||sha256(authenticatorData)` + domain binding; frontend sends the ARC-60 payload). Pera trial on TestNet still open - see below.
 - [x] **Pera upload trial** - cover picker → Upload with Pera on TestNet passed; the URI fills in.
 - [x] **Profiles + settings CRUD** - `GET /profiles?address=` (public) plus authenticated `PUT /profiles` (display name/avatar/bio/email, partial updates, null clears) and `GET`/`PUT /settings` (notification prefs, theme, defaults served when unsaved); frontend profile section reads them.
+- [ ] **Per-address upload quotas** - cap uploads per address per day (small counter table, 429 + plain message when exceeded) plus an abnormal-volume alert. Signature auth stops impersonation and casual abuse; quotas only slow determined scripters (keypairs are free), so the alert matters as much as the cap.
+- [ ] **Server-side image validation** - check magic bytes (not extensions), enforce dimensions, and re-encode covers (strips EXIF/metadata and doubles as malware hygiene) before pinning.
+- [ ] **Takedown procedure** - unpin abusive CIDs + block the uploader address, so one bad actor can't endanger the shared Pinata account holding every legitimate campaign.
+- [ ] **Funded-account gating (if abuse shows up)** - require the uploader address to hold ALGO or show on-chain history (one free indexer call). Costs attackers real money per identity, unlike keygen; costs legitimate pledgers nothing extra. Only if quotas prove insufficient.
 - [x] **CI matrix** - backend lane in `build-and-test` (own job with a Postgres service; landed early, ahead of the remaining slices).
 
 - [ ] **Minimal catalog backend** - API + DB storing one row per campaign (app id, creator, title, metadata URI, goal, deadline, status, outcome, raised, backer count), serving browse/detail pages for ended campaigns.
@@ -128,6 +150,7 @@ one commit each - CI wiring comes last:
 - [ ] **Publish the contract interface** - commit the generated ARC-32/56 specs (currently gitignored build output) and attach them to GitHub Releases, so explorers, auditors, and third-party clients can build against the contracts without our code.
 - [ ] **Publish the client SDK** - extract the pure claim-tree math (`lib/claimtree.ts` pure layer + vectors) and the generated typed clients into versioned npm packages under an `@algorart` scope, published to the public npm registry (not GitHub Packages: even public installs there need an auth token). The SDK takes indexer-provider and signer interfaces so one codebase serves the UI, the CLI, and third parties.
 - [ ] **Ship the escape-hatch CLI** - graduate `scripts/reclaim.ts` into a standalone `npx`-runnable tool (refund/cancel/claim by app ID from a mnemonic, public indexer only, no backend). Canonical proof that exits never need our servers.
+- [ ] **On-chain campaign headers (deleted included)** - SDK functions: enumerate campaigns from factory registry + vault boxes, recover title/metadata/goal/deadline/creator for deleted ones by decoding the creation transaction (live campaigns read globals as today), and derive display status via `getCampaignStatus` (Open/Successful/Failed from status + goal + deadline + clock - never a new on-chain status). Headers keep the raw facts too (`deleted`, on-chain `status`) for completeness - e.g. reminding a creator to claim a funded-but-unclaimed campaign. Serves My pledges, the ended-list, and the CLI alike - no catalog involved.
 
 ## Open design questions
 
