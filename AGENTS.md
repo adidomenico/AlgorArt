@@ -21,6 +21,9 @@ workspace: an Algorand TypeScript smart contract plus a React + Vite frontend.
     `register`/`unregister`, readonly `isRegistered`)
   - `smart_contracts/artifacts/` - **generated** (compiled TEAL, ARC-32/56 specs, clients)
 - `projects/frontend/` - React + Vite + TypeScript dApp
+- `projects/sdk/` - `@kasakame/sdk`: claim-tree math, campaign reads, and
+  transaction assembly (the chain layer the frontend consumes); see
+  [`docs/sdk.md`](docs/sdk.md) for the migration order
 - `projects/backend/` - optional Fastify + Postgres user service (wallet-signature auth, profiles/settings storage; pinning and catalog planned)
 - [`docs/`](docs/) - technical docs: [`architecture.md`](docs/architecture.md)
   (overview), [`campaign.md`](docs/campaign.md) (contract reference),
@@ -37,7 +40,7 @@ workspace: an Algorand TypeScript smart contract plus a React + Vite frontend.
 Run from the repo root unless noted.
 
 ```bash
-algokit project bootstrap all    # install deps for contracts + frontend + backend
+algokit project bootstrap all    # install deps for contracts + frontend + sdk + backend
 algokit localnet start           # start algod + indexer (Docker)
 
 npx --yes markdownlint-cli2@0.23.2        # markdownlint across all docs (add --fix to autofix)
@@ -52,6 +55,12 @@ cd ../frontend
 npm run dev                      # regenerates app clients then runs Vite
 npm run check-types              # tsc --noEmit
 npm run lint                     # ESLint (+ react/react-hooks plugins)
+npm run format                   # Prettier check
+
+cd ../sdk
+npm run build                    # tsc emit to dist (the published artifact)
+npm run check-types              # tsc --noEmit
+npm run lint                     # ESLint
 npm run format                   # Prettier check
 
 cd ../backend                    # optional API; Postgres via docker compose
@@ -156,7 +165,7 @@ green. Don't skip a step because the change "looks small."
 - **Never commit or push automatically** unless asked; always propose a commit message first.
 - Follow **Conventional Commits**: `<type>(<scope>): <description>`
   - Types: `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`, `perf`, `style`
-  - Scopes: `contracts`, `frontend`, `repo` (workspace/docs/CI). Omit the scope when a
+  - Scopes: `contracts`, `frontend`, `sdk`, `repo` (workspace/docs/CI). Omit the scope when a
     change spans everything.
   - Description is imperative and ≤ 72 chars.
   - No body unless needed; when present, explain the "why" as a short bullet list.

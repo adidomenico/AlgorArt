@@ -4,7 +4,7 @@ The chain layer leaves `projects/frontend/src/lib` and becomes a versioned packa
 
 ## Package identity and placement
 
-- Location `projects/sdk/` (the AlgoKit workspace auto-discovers `projects/*`, so `algokit project run` needs no config changes).
+- Location `projects/sdk/`. The AlgoKit workspace discovers `projects/*` entries through their `.algokit.toml`, so the SDK ships a minimal one (mirroring the backend's `[project.run]` entries) to take part in `algokit project run` and `bootstrap`.
 - One package, not three. Split only when a consumer needs a subset — today nobody does.
 - Version `0.1.0` while the contracts churn; follows the contracts' breaking changes.
 - Reserve the `@kasakame` npm org early (free, prevents squatting).
@@ -22,8 +22,9 @@ The chain layer leaves `projects/frontend/src/lib` and becomes a versioned packa
 ```text
 projects/sdk/
   package.json          # name @kasakame/sdk, version 0.1.0, exports → ./dist
-  tsconfig.json         # strict + noUncheckedIndexedAccess + exactOptionalPropertyTypes (copied)
-  eslint.config.mjs     # copied from frontend
+  tsconfig.json         # strict trio copied; NodeNext module/resolution (portable ESM)
+  tsconfig.build.json   # noEmit off, specs excluded → dist/
+  eslint.config.mjs     # copied from frontend (minus react/tailwind)
   vitest.config.ts      # copied; same 100% gate (SDK = utils)
   scripts/codegen.mjs   # contracts build → copy clients + arc56 → src/generated/
   src/
