@@ -52,7 +52,7 @@ npm run lint                     # ESLint (also: npm run lint:fix)
 npm run format                   # Prettier check (also: npm run format:fix)
 
 cd ../frontend
-npm run dev                      # regenerates app clients then runs Vite
+npm run dev                      # builds the SDK, regenerates app clients, then Vite
 npm run check-types              # tsc --noEmit
 npm run lint                     # ESLint (+ react/react-hooks plugins)
 npm run format                   # Prettier check

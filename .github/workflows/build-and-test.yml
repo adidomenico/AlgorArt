@@ -38,6 +38,17 @@ jobs:
           cache: npm
           cache-dependency-path: projects/sdk/package-lock.json
 
+      # The frontend resolves `@kasakame/sdk` as a `file:` dependency with a
+      # prebuilt dist/, so build it before the frontend bundle (gitignored,
+      # like the other build outputs).
+      - name: Install SDK dependencies
+        run: npm ci
+        working-directory: projects/sdk
+
+      - name: Build SDK package
+        run: npm run build
+        working-directory: projects/sdk
+
       - name: Set up Python (for AlgoKit CLI)
         uses: actions/setup-python@v7
         with:
@@ -77,15 +88,6 @@ jobs:
       - name: Build frontend bundle (Vite)
         run: npx vite build
         working-directory: projects/frontend
-
-      - name: Install SDK dependencies
-        run: npm ci
-        working-directory: projects/sdk
-
-      # The SDK's publishable output (gitignored, like the other build outputs).
-      - name: Build SDK package
-        run: npm run build
-        working-directory: projects/sdk
 
       # Share the two build outputs with the downstream jobs.
       - name: Upload contract artifacts
@@ -132,6 +134,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
         working-directory: projects/${{ matrix.project }}
+
+      # The frontend lane resolves `@kasakame/sdk` (file:../sdk) and needs its
+      # built dist/ before type-checking.
+      - name: Install and build the SDK
+        if: matrix.project == 'frontend'
+        run: |
+          npm ci
+          npm run build
+        working-directory: projects/sdk
+
       - name: Lint
         run: npm run lint
         working-directory: projects/${{ matrix.project }}
@@ -172,6 +184,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
         working-directory: projects/${{ matrix.project }}
+
+      # The frontend lane resolves `@kasakame/sdk` (file:../sdk) and needs its
+      # built dist/ for the tests.
+      - name: Install and build the SDK
+        if: matrix.project == 'frontend'
+        run: |
+          npm ci
+          npm run build
+        working-directory: projects/sdk
+
       - name: Run unit tests with coverage
         run: npm run test:coverage
         working-directory: projects/${{ matrix.project }}

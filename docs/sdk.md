@@ -1,6 +1,6 @@
 # SDK design
 
-The chain layer leaves `projects/frontend/src/lib` and becomes a versioned package, `projects/sdk` (published as `@kasakame/sdk`). SDK-first: the frontend clarity work, the escape-hatch CLI, and third-party clients all consume this package instead of reimplementing proofs. Status: in progress — stages 1–4 landed; the migration stages at the end are the build order. Related roadmap items: the SDK/CLI steps under CI & packaging, on-chain headers, and the Frontend clarity section.
+The chain layer leaves `projects/frontend/src/lib` and becomes a versioned package, `projects/sdk` (published as `@kasakame/sdk`). SDK-first: the frontend clarity work, the escape-hatch CLI, and third-party clients all consume this package instead of reimplementing proofs. Status: in progress — stages 1–5 landed; the migration stages at the end are the build order. Related roadmap items: the SDK/CLI steps under CI & packaging, on-chain headers, and the Frontend clarity section.
 
 ## Package identity and placement
 
@@ -42,11 +42,11 @@ Moved functions keep their names and signatures; new ones are marked. Only delib
 
 ### Pure tree math (`claim-tree.ts`, no network)
 
-`ZERO_ROOT` (constant), `zeroLeaf()`, `hashPair(left, right)`, `u64be(value)` / `u64beDecode(value)`, `leafFor(backer, amount, txidHex)`, `emptyTree()`, `appendLeaf(state, pledge)`, `foldPeaks(peaks)`, `treeFrontier(state)`, `treeRoot(state)`, `nullLeaf(state, position, amount)`, `pathShape(n, k)`, `treePathFor(state, k)`, `concatHashes(parts)`, `frontierForPledge(state)`, `pathBlobForRefund(state, k)`, `base32ToBytes(input)`, `clearTreeCache()`, plus types `PledgeRecord`, `TreeState`, `AuthPath`, `PledgeEvent`, `SpendEvent`. Vectors (`claimtree.vectors.ts`, generator script) move with the math.
+`ZERO_ROOT` (constant), `zeroLeaf()`, `hashPair(left, right)`, `u64be(value)` / `u64beDecode(value)`, `leafFor(backer, amount, txidHex)`, `emptyTree()`, `appendLeaf(state, pledge)`, `foldPeaks(peaks)`, `treeFrontier(state)`, `treeRoot(state)`, `nullLeaf(state, position, amount)`, `pathShape(n, k)`, `treePathFor(state, k)`, `concatHashes(parts)`, `frontierForPledge(state)`, `pathBlobForRefund(state, k)`, `base32ToBytes(input)`, plus types `PledgeRecord`, `TreeState`, `AuthPath`, `PledgeEvent`, `SpendEvent`. Vectors (`claimtree.vectors.ts`, generator script) move with the math.
 
 ### Replay and leaves (`claim-tree.ts`, configured indexer)
 
-`fetchPledges(campaignId, vaultAddress)`, `fetchSpends(campaignId, vaultId)`, `loadTree(campaignId, vaultId, vaultAddress)`, `fetchMyLeaves(appId, address)` (the `transaction.ts` shape wins; the `vaultId`/`vaultAddress` variant folds into it via configured ids).
+`fetchPledges(campaignId, vaultAddress)`, `fetchSpends(campaignId, vaultId)`, `loadTree(campaignId, vaultId, vaultAddress)`, `fetchMyLeaves(appId, address)` (the `transaction.ts` shape wins; the `vaultId`/`vaultAddress` variant folds into it via configured ids), plus `clearTreeCache()`.
 
 ### Campaign reads (`campaigns.ts`)
 

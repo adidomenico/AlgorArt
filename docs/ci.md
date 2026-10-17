@@ -31,7 +31,7 @@ the reasoning behind the split.
 
 ```mermaid
 flowchart TD
-    build["build<br/>(compile contracts, link clients, Vite bundle, SDK build)"]
+    build["build<br/>(compile contracts, build SDK, link clients, Vite bundle)"]
     lint["lint-format-type-check<br/>(matrix: contracts, frontend, sdk)"]
     unit["unit-test<br/>(matrix: contracts, frontend, sdk)"]
     backend["backend<br/>(lint, format, types, tests + Postgres)"]
@@ -55,7 +55,8 @@ flowchart TD
 
 Key point: **lint/format/type-check, unit-test, and markdown are pure Node**.
 `eslint`, `prettier`, `tsc`, `vitest`, and `markdownlint-cli2` need no Docker
-or AlgoKit install; they only download the `build` job's artifacts. The
+or AlgoKit install; they only download the `build` job's artifacts (the
+frontend lanes additionally build the SDK - see below). The
 backend lane is the exception: its suite runs against a throwaway Postgres
 service (migrations first, like local development).
 
@@ -69,17 +70,27 @@ gitignored) from `lib/transaction.ts`. Those files only exist after
 linked clients - so the build job uploads them once and the two consumer jobs
 download them.
 
+## Why the frontend lanes build the SDK
+
+The frontend consumes `@kasakame/sdk` as `"@kasakame/sdk": "file:../sdk"` with
+a prebuilt `dist/` (see [`sdk.md`](sdk.md)), so **both the frontend type-check
+and its unit tests resolve that `dist/`**. The `lint-format-type-check` and
+`unit-test` frontend lanes therefore install the SDK's dependencies and build it
+before running their scripts (`tsc` emit, seconds). Cheaper to rebuild per lane
+than to shuttle another artifact. The frontend's own `pre*` npm hooks rebuild
+it on demand for local dev.
+
 ## Workflow: build-and-test
 
 Implemented at `.github/workflows/build-and-test.yml`. Five jobs, with
 `build` as the upstream dependency:
 
-- **`build`** - installs Node + AlgoKit, compiles the contracts
+- **`build`** - installs Node + AlgoKit, builds the SDK (`npm run build` →
+  `dist/`; the frontend bundle resolves it), compiles the contracts
   (`npm run build` → TEAL + clients), links the clients into the frontend
   (`algokit project link --all`), tags them so `tsc` skips them
   (`scripts/ts-nocheck-generated.mjs`), bundles the frontend (`npx vite build`),
-  builds the SDK (`npm run build` → `dist/`), and
-  uploads two artifacts: `contracts-artifacts` and `frontend-clients`.
+  and uploads two artifacts: `contracts-artifacts` and `frontend-clients`.
 - **`lint-format-type-check`** - matrix over `[contracts, frontend, sdk]`. The
   frontend lane downloads `frontend-clients` first, then each lane runs lint,
   format, and type-check. `fail-fast` is off so one project's failure doesn't

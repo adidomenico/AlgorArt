@@ -4,6 +4,10 @@ import { defineConfig } from 'vitest/config'
 
 // https://vitest.dev/config/
 export default defineConfig({
+  // Mirror vite.config.ts: keep one copy of the SDK's shared runtime deps.
+  resolve: {
+    dedupe: ['algosdk', '@noble/hashes'],
+  },
   plugins: [
     react(),
     nodePolyfills({
