@@ -63,6 +63,7 @@ npm run dev             # API on http://127.0.0.1:3001
 | [`docs/campaign.md`](docs/campaign.md) | Campaign contract reference: state, methods, fees |
 | [`docs/claim-tree-protocol.md`](docs/claim-tree-protocol.md) | Claim-tree math, proofs, and security analysis |
 | [`docs/frontend.md`](docs/frontend.md) | UI structure, wallet, reads, writes, metadata |
+| [`docs/sdk.md`](docs/sdk.md) | SDK package design and migration order |
 | [`docs/testing.md`](docs/testing.md) | Contract and frontend test strategy |
 | [`docs/ci.md`](docs/ci.md) | GitHub Actions workflows and checks |
 | [`docs/conventions.md`](docs/conventions.md) | Lint, format, and TypeScript rules |

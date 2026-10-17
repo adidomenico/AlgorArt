@@ -25,7 +25,8 @@ workspace: an Algorand TypeScript smart contract plus a React + Vite frontend.
 - [`docs/`](docs/) - technical docs: [`architecture.md`](docs/architecture.md)
   (overview), [`campaign.md`](docs/campaign.md) (contract reference),
   [`claim-tree-protocol.md`](docs/claim-tree-protocol.md) (tree math and
-  security), [`frontend.md`](docs/frontend.md), [`testing.md`](docs/testing.md),
+  security), [`frontend.md`](docs/frontend.md), [`sdk.md`](docs/sdk.md) (SDK
+  package design and migration order), [`testing.md`](docs/testing.md),
   [`ci.md`](docs/ci.md), [`conventions.md`](docs/conventions.md)
   (lint/format/tsconfig rules), [`roadmap.md`](docs/roadmap.md) (checklist),
   [`design.md`](docs/design.md) (product plan)
