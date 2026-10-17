@@ -36,14 +36,14 @@
     "@eslint/js": "^9.39.5",
     "@rollup/plugin-typescript": "^12.3.0",
     "@tsconfig/node24": "^24.0.0",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.5",
     "algosdk": "^3.0.0",
     "bip39": "^3.1.0",
-    "dotenv": "^16.4.7",
+    "dotenv": "^18.0.8",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-import": "^2.32.0",
-    "eslint-plugin-jsdoc": "^64.3.3",
+    "eslint-plugin-jsdoc": "^65.3.11",
     "globals": "^17.11.0",
     "prettier": "^3.9.6",
     "prettier-plugin-jsdoc": "^1.8.1",
@@ -51,7 +51,7 @@
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.68.0",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.5"
   },
   "overrides": {
     "esbuild": "0.25.0",
