@@ -1,21 +1,23 @@
-import { encodeAddress } from 'algosdk'
+import type { AlgorandClient } from '@algorandfoundation/algokit-utils'
+import { encodeAddress, getApplicationAddress, hexToBytes } from 'algosdk'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearTreeCache, fetchMyLeaves, fetchPledges, fetchSpends, loadTree } from './claimtree'
+import { configureSdk } from './chain.js'
+import { clearTreeCache, fetchMyLeaves, fetchPledges, fetchSpends, loadTree, u64be } from './claim-tree.js'
 
 const indexerMock = vi.hoisted(() => ({
   searchForTransactions: vi.fn(),
   lookupBlock: vi.fn(),
 }))
 
-vi.mock('./algorand', () => ({
-  indexer: indexerMock,
-}))
-
-const VAULT = encodeAddress(new Uint8Array(32).fill(9))
-const BACKER_A = encodeAddress(new Uint8Array(32).fill(1))
-const BACKER_B = encodeAddress(new Uint8Array(32).fill(2))
 const CAMPAIGN = 42n
 const VAULT_ID = 7n
+const VAULT = getApplicationAddress(VAULT_ID).toString()
+const BACKER_A = encodeAddress(new Uint8Array(32).fill(1))
+const BACKER_B = encodeAddress(new Uint8Array(32).fill(2))
+
+function fakeAlgorand(): AlgorandClient {
+  return { client: { indexer: indexerMock } } as unknown as AlgorandClient
+}
 
 const SELECTOR = {
   pledge: 'a4030bd2',
@@ -25,20 +27,6 @@ const SELECTOR = {
   vaultRefund: '0fe03dd2',
   credit: 'deadbeef',
 } as const
-
-function selectorBytes(selector: string): Uint8Array {
-  return Buffer.from(selector, 'hex')
-}
-
-function u64(value: bigint): Uint8Array {
-  const out = new Uint8Array(8)
-  let v = value
-  for (let i = 7; i >= 0; i--) {
-    out[i] = Number(v & 0xffn)
-    v >>= 8n
-  }
-  return out
-}
 
 /**
  * Minimal app-call fixture: only the fields the fetcher reads.
@@ -54,11 +42,11 @@ function appCall(txid: string, sender: string, round: bigint, args: Uint8Array[]
 }
 
 function pledgeCall(txid: string, sender: string, round: bigint): unknown {
-  return appCall(txid, sender, round, [selectorBytes(SELECTOR.pledge), new Uint8Array()])
+  return appCall(txid, sender, round, [hexToBytes(SELECTOR.pledge), new Uint8Array()])
 }
 
 function spendCall(txid: string, sender: string, round: bigint, selector: string, k: bigint): unknown {
-  return appCall(txid, sender, round, [selectorBytes(selector), u64(k)])
+  return appCall(txid, sender, round, [hexToBytes(selector), u64be(k)])
 }
 
 function vaultRefundCall(txid: string, sender: string, round: bigint, appId: bigint, k: bigint): unknown {
@@ -66,7 +54,7 @@ function vaultRefundCall(txid: string, sender: string, round: bigint, appId: big
     id: txid,
     sender,
     confirmedRound: round,
-    applicationTransaction: { applicationId: VAULT_ID, applicationArgs: [selectorBytes(SELECTOR.vaultRefund), u64(appId), u64(k)] },
+    applicationTransaction: { applicationId: VAULT_ID, applicationArgs: [hexToBytes(SELECTOR.vaultRefund), u64be(appId), u64be(k)] },
   }
 }
 
@@ -123,6 +111,7 @@ function blockMock(blocks: Map<bigint, unknown[]>) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  configureSdk({ algorand: fakeAlgorand(), factoryAppId: CAMPAIGN, vaultAppId: VAULT_ID })
   clearTreeCache()
 })
 
@@ -131,7 +120,7 @@ describe('fetchPledges', () => {
     // Block 100 exercises every scan-skip branch before the match: wrong sender, app call (no payment fields),
     // wrong receiver, zero amount, and a full match without id.
     const decoySender = payment('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB', BACKER_B, VAULT, 9n)
-    const decoyApp = appCall('TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT', BACKER_A, 100n, [selectorBytes(SELECTOR.claim)])
+    const decoyApp = appCall('TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT', BACKER_A, 100n, [hexToBytes(SELECTOR.claim)])
     const decoyReceiver = {
       id: 'UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU',
       sender: BACKER_A,
@@ -153,7 +142,7 @@ describe('fetchPledges', () => {
     const callD = pledgeCall('FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', BACKER_B, 102n)
     const noRoundCall = {
       sender: BACKER_A,
-      applicationTransaction: { applicationArgs: [selectorBytes(SELECTOR.pledge)] },
+      applicationTransaction: { applicationArgs: [hexToBytes(SELECTOR.pledge)] },
     }
     const noArgsCall = {
       id: 'HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH',
@@ -198,7 +187,7 @@ describe('fetchPledges', () => {
   })
 
   it('ignores non-pledge calls', async () => {
-    const claim = appCall('ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ', BACKER_A, 100n, [selectorBytes(SELECTOR.claim)])
+    const claim = appCall('ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ', BACKER_A, 100n, [hexToBytes(SELECTOR.claim)])
     indexerMock.searchForTransactions.mockImplementation(searchMock(new Map([[CAMPAIGN, [[claim]]]])))
     indexerMock.lookupBlock.mockImplementation(blockMock(new Map([[100n, [claim]]])))
 
@@ -219,7 +208,7 @@ describe('fetchPledges', () => {
     const noId = (sender: string) => ({
       sender,
       confirmedRound: 100n,
-      applicationTransaction: { applicationArgs: [selectorBytes(SELECTOR.pledge)] },
+      applicationTransaction: { applicationArgs: [hexToBytes(SELECTOR.pledge)] },
     })
     indexerMock.searchForTransactions.mockImplementation(searchMock(new Map([[CAMPAIGN, [[noId(BACKER_A), noId(BACKER_B)]]]])))
     indexerMock.lookupBlock.mockImplementation(blockMock(new Map([[100n, []]])))
@@ -255,7 +244,7 @@ describe('fetchPledges', () => {
     const noIdCall = {
       sender: BACKER_A,
       confirmedRound: 100n,
-      applicationTransaction: { applicationArgs: [selectorBytes(SELECTOR.pledge)] },
+      applicationTransaction: { applicationArgs: [hexToBytes(SELECTOR.pledge)] },
     }
     indexerMock.searchForTransactions.mockImplementation(searchMock(new Map([[CAMPAIGN, [[callA, noIdCall]]]])))
     indexerMock.lookupBlock.mockImplementation(blockMock(new Map([[100n, [payA, callA]]])))
@@ -324,13 +313,11 @@ describe('fetchSpends', () => {
   it('collects campaign and vault spends for this campaign only', async () => {
     const cancel = spendCall('PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP', BACKER_A, 100n, SELECTOR.cancel, 2n)
     const refund = spendCall('QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ', BACKER_B, 101n, SELECTOR.refund, 0n)
-    const shortCancel = appCall('IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII', BACKER_A, 100n, [selectorBytes(SELECTOR.cancel)])
+    const shortCancel = appCall('IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII', BACKER_A, 100n, [hexToBytes(SELECTOR.cancel)])
     const vaultOurs = vaultRefundCall('RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR', BACKER_A, 102n, CAMPAIGN, 1n)
     const vaultTheirs = vaultRefundCall('SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS', BACKER_A, 102n, 999n, 5n)
-    const vaultShort = appCall('JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ', BACKER_A, 102n, [
-      selectorBytes(SELECTOR.vaultRefund),
-    ])
-    const credit = appCall('TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT', BACKER_A, 100n, [selectorBytes(SELECTOR.credit)])
+    const vaultShort = appCall('JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ', BACKER_A, 102n, [hexToBytes(SELECTOR.vaultRefund)])
+    const credit = appCall('TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT', BACKER_A, 100n, [hexToBytes(SELECTOR.credit)])
     indexerMock.searchForTransactions.mockImplementation(
       searchMock(
         new Map([
@@ -361,9 +348,9 @@ describe('fetchMyLeaves', () => {
     )
     indexerMock.lookupBlock.mockImplementation(blockMock(new Map([[100n, [payA, callA, payB, callB]]])))
 
-    const leaves = await fetchMyLeaves(CAMPAIGN, VAULT_ID, VAULT, BACKER_A)
+    const leaves = await fetchMyLeaves(CAMPAIGN, BACKER_A)
     expect(leaves).toEqual([])
-    const leavesB = await fetchMyLeaves(CAMPAIGN, VAULT_ID, VAULT, BACKER_B)
+    const leavesB = await fetchMyLeaves(CAMPAIGN, BACKER_B)
     expect(leavesB.map((leaf) => [leaf.position, leaf.amount])).toEqual([[1, 1_000_000n]])
   })
 })

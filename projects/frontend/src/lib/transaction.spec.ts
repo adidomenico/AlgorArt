@@ -343,7 +343,7 @@ describe('transaction helpers', () => {
   it('fetchMyLeaves passes through the proof builder', async () => {
     fetchMyLeavesMock.mockResolvedValue([{ position: 1, amount: 5n, txidHex: 'cd' }])
     await expect(fetchMyLeaves(9n, 'ADDRESS')).resolves.toEqual([{ position: 1, amount: 5n, txidHex: 'cd' }])
-    expect(fetchMyLeavesMock).toHaveBeenCalledWith(9n, 2002n, VAULT_APP_ADDRESS, 'ADDRESS')
+    expect(fetchMyLeavesMock).toHaveBeenCalledWith(9n, 'ADDRESS')
   })
 
   it('fetchVaultBox unpacks the 65-byte box, or undefined when missing', async () => {

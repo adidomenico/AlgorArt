@@ -123,7 +123,8 @@ under the per-project matrix. The lint command checks all
 Contracts and frontend test differently. Contract suites are offline AVM tests
 with a 100% lines/branches/functions gate; frontend suites are Vitest unit +
 component tests with a 100% gate on components and utils. The SDK's suite is
-pure Vitest over the claim-tree math with a 100% gate on `src` (no artifacts
+pure Vitest over the chain layer (claim-tree math and replay) with a 100% gate
+on `src` (no artifacts
 needed). All are described in
 [`testing.md`](testing.md) (contracts) and [`frontend.md`](frontend.md) (frontend).
 

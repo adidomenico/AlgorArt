@@ -1,6 +1,6 @@
 import algosdk from 'algosdk'
 import { describe, expect, it, vi } from 'vitest'
-import { decodeGlobalState, deriveStatus, factoryAppId, isCampaignApp, toCampaignViewModel } from './campaign'
+import { decodeGlobalState, deriveStatus, factoryAppId, isCampaignApp, toCampaignViewModel, vaultAppId } from './campaign'
 
 const ZERO_ADDRESS = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ'
 
@@ -57,6 +57,21 @@ describe('factoryAppId', () => {
     vi.stubEnv('VITE_FACTORY_APP_ID', '0')
     try {
       expect(factoryAppId()).toBe(0n)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+})
+
+describe('vaultAppId', () => {
+  it('reads the vault app id from the environment', () => {
+    expect(vaultAppId()).toBe(2002n)
+  })
+
+  it('reads zero when the variable is absent', () => {
+    vi.stubEnv('VITE_VAULT_APP_ID', undefined)
+    try {
+      expect(vaultAppId()).toBe(0n)
     } finally {
       vi.unstubAllEnvs()
     }

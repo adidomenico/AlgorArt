@@ -1,5 +1,5 @@
 import type algosdk from 'algosdk'
-import { encodeAddress, getApplicationAddress } from 'algosdk'
+import { encodeAddress } from 'algosdk'
 import { appIdFromEnv } from '../utils/network/getAlgoClientConfigs'
 import { fetchChainTimestamp, indexer } from './algorand'
 import { fetchMyLeaves } from './claimtree'
@@ -206,18 +206,9 @@ export function toCampaignViewModel(
  * @returns Pledge in microAlgos, or undefined if the backer has no live leaves.
  */
 export async function fetchMyPledge(appId: bigint, address: string): Promise<bigint | undefined> {
-  const leaves = await fetchMyLeaves(appId, vaultAppId(), vaultAddress(), address)
+  const leaves = await fetchMyLeaves(appId, address)
   if (leaves.length === 0) return undefined
   return leaves.reduce((sum, leaf) => sum + leaf.amount, 0n)
-}
-
-/**
- * The vault app's account address, derived locally (no network).
- *
- * @returns The vault's app account address.
- */
-function vaultAddress(): string {
-  return getApplicationAddress(vaultAppId()).toString()
 }
 
 /**

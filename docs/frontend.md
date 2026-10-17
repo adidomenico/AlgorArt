@@ -19,9 +19,9 @@ Contract behavior is defined in [`campaign.md`](campaign.md) and
    One code path for data, one code path for transactions.
 4. **Receipts are reconstructed, never trusted.** A backer's pledge is their
    leaf in the campaign's frontier-Merkle tree - the UI replays pledge/null
-   events from the indexer into frontiers and paths (`lib/claimtree.ts` for the
-   replay, `@kasakame/sdk` for the tree math) and the contract authenticates
-   every proof.
+   events from the indexer into frontiers and paths (`@kasakame/sdk`: tree math
+   plus replay, re-exported through `lib/claimtree.ts`) and the contract
+   authenticates every proof.
 
 ## Structure
 
@@ -42,7 +42,7 @@ projects/frontend/src/
 ├── lib/                      # shared services
 │   ├── algorand.ts           # AlgorandClient + IndexerClient singletons; configures the SDK session
 │   ├── campaign.ts           # indexer -> CampaignViewModel mapping + Factory box search
-│   ├── claimtree.ts          # proof builder: indexer event replay → frontiers/paths (tree math re-exported from @kasakame/sdk)
+│   ├── claimtree.ts          # re-exports the SDK proof builder (tree math + indexer replay)
 │   ├── metadata.ts           # campaign metadata blob type
 │   ├── transaction.ts        # create/register/pledge/claim/refund/cancel/delete send helpers
 │   └── format.ts             # microAlgo / deadline formatting
@@ -152,7 +152,8 @@ All reads use `algosdk.Indexer` configured from the same env as algod:
 - **Vault box / window** - fresh reads (algod, not the indexer) drive refund
   routing (campaign vs vault path) and the refund-window banner.
 - **Read caching** - replay downloads (`searchAppCalls`, block lookups) are
-  memoized per session (`clearTreeCache` in `lib/claimtree.ts`); independent
+  memoized per session (`clearTreeCache` in `@kasakame/sdk`, re-exported
+  through `lib/claimtree.ts`); independent
   reads fan out over `Promise.all` instead of sequential awaits. Mutating calls
   (`pledge`, `cancelPledge`, `refund`) drop the cache before each proof build
   and after success, so submissions and post-write reloads always refetch.
@@ -380,8 +381,8 @@ reason instead of theater tests:
 - `lib/format.ts` - ALGO/microAlgo conversion, deadline/countdown formatting.
 - `lib/campaign.ts` - global-state decoding, status derivation, tree-sum pledge
   reads, Factory box decoding, and the indexer-backed read helpers.
-- `lib/claimtree.ts` - the proof builder (indexer replay; the tree math and its
-  oracle vectors live in `@kasakame/sdk`).
+- `lib/claimtree.ts` - a re-export of the SDK's proof builder (tree math,
+  oracle vectors, and indexer replay); its replay tests live in the SDK.
 - `lib/algorand.ts` / `lib/transaction.ts` - client singletons and the SDK
   session config (the timestamp/indexer waiters are re-exported from
   `@kasakame/sdk`) plus the create/register/pledge/claim/refund/cancel/delete

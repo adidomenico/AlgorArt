@@ -316,7 +316,7 @@ export async function pledge(appId: bigint, session: WalletSession, amountMicroA
  * @returns Live leaves owned by the viewer.
  */
 export async function fetchMyLeaves(appId: bigint, address: string): Promise<BackerLeaf[]> {
-  return loadBackerLeaves(appId, vaultAppId(), vaultAddress(), address)
+  return loadBackerLeaves(appId, address)
 }
 
 /**
