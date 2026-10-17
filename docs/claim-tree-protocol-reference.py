@@ -1,5 +1,5 @@
 """
-Reference model for the AlgorArt Claim Tree Protocol (see
+Reference model for the kasakame Claim Tree Protocol (see
 docs/claim-tree-protocol.md). Language-independent oracle: the smart
 contract implementation must reproduce its outputs (root, N, raised,
 paidInOf/paidOutOf) for every operation sequence.

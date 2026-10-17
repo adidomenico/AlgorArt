@@ -6,5 +6,5 @@
  * @param error The caught failure.
  */
 export function logError(context: string, error: unknown): void {
-  console.error(`[AlgorArt:${context}]`, error)
+  console.error(`[kasakame:${context}]`, error)
 }

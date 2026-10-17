@@ -10,6 +10,6 @@ describe('logError', () => {
     const consoleMock = vi.spyOn(console, 'error').mockImplementation(() => {})
     const failure = new Error('boom')
     logError('pledge', failure)
-    expect(consoleMock).toHaveBeenCalledWith('[AlgorArt:pledge]', failure)
+    expect(consoleMock).toHaveBeenCalledWith('[kasakame:pledge]', failure)
   })
 })

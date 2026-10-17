@@ -48,7 +48,7 @@ describe('Nav', () => {
 
   it('renders the brand and connect button when disconnected', () => {
     render(<Nav {...defaultProps} />)
-    expect(screen.getByText('AlgorArt')).toBeInTheDocument()
+    expect(screen.getByText('kasakame')).toBeInTheDocument()
     expect(screen.getByText('Connect wallet')).toBeInTheDocument()
   })
 
@@ -63,7 +63,7 @@ describe('Nav', () => {
     const onNavigateHome = vi.fn()
     const user = userEvent.setup()
     render(<Nav {...defaultProps} onNavigateHome={onNavigateHome} />)
-    await user.click(screen.getByText('AlgorArt'))
+    await user.click(screen.getByText('kasakame'))
     expect(onNavigateHome).toHaveBeenCalled()
   })
 
@@ -228,7 +228,7 @@ describe('Nav', () => {
 
     document.dispatchEvent(new Event('visibilitychange'))
     await waitFor(() => {
-      expect(screen.getByText('AlgorArt')).toBeInTheDocument()
+      expect(screen.getByText('kasakame')).toBeInTheDocument()
     })
     expect(resumeSession).not.toHaveBeenCalled()
   })
@@ -257,7 +257,7 @@ describe('Nav', () => {
 
     document.dispatchEvent(new Event('visibilitychange'))
     await waitFor(() => {
-      expect(screen.queryByText('AlgorArt')).not.toBeInTheDocument()
+      expect(screen.queryByText('kasakame')).not.toBeInTheDocument()
     })
     expect(resumeSession).not.toHaveBeenCalled()
   })

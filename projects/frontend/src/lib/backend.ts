@@ -269,8 +269,8 @@ export async function signInWithTransaction({ baseUrl, address, signTxn, action,
     sender: address,
     receiver: address,
     amount: 0,
-    // Mirrors `loginNote` on the backend (`AlgorArt login <domain> <nonce>`).
-    note: utf8Bytes(`AlgorArt login ${location.host} ${nonce}`),
+    // Mirrors `loginNote` on the backend (`kasakame login <domain> <nonce>`).
+    note: utf8Bytes(`kasakame login ${location.host} ${nonce}`),
     suggestedParams: params,
   })
   const signed = await signTxn(algosdk.encodeUnsignedTransaction(unsigned))
@@ -303,7 +303,7 @@ export async function uploadCover({ baseUrl, address, chainId, sign, signTxn, fi
     chainId,
     sign,
     signTxn,
-    statement: 'Sign in to AlgorArt to upload a cover image.',
+    statement: 'Sign in to kasakame to upload a cover image.',
     action: 'upload',
   })
 
@@ -374,7 +374,7 @@ export async function uploadMetadata({
     chainId,
     sign,
     signTxn,
-    statement: 'Sign in to AlgorArt to upload campaign metadata.',
+    statement: 'Sign in to kasakame to upload campaign metadata.',
     action: 'metadata upload',
   })
 

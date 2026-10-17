@@ -19,7 +19,7 @@ import {
 } from '@algorandfoundation/algorand-typescript'
 
 /**
- * ClaimsVault - the permanent, pooled refund escrow for AlgorArt campaigns (claim-tree design, see
+ * ClaimsVault - the permanent, pooled refund escrow for kasakame campaigns (claim-tree design, see
  * docs/claim-tree-protocol.md).
  *
  * The vault separates **backers' pledged ALGO** from campaign apps: pledges are paid to the vault and recorded per

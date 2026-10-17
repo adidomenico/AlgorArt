@@ -256,7 +256,7 @@ describe('wallet-signature auth', () => {
     const token = await new SignJWT({})
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
-      .setIssuer('algorart')
+      .setIssuer('kasakame')
       .sign(new TextEncoder().encode(process.env.SESSION_SECRET ?? 'test-secret'))
     const me = await app.inject({ method: 'GET', url: '/me', headers: { authorization: `Bearer ${token}` } })
     expect(me.statusCode).toBe(401)
@@ -336,7 +336,7 @@ function loginPaymentBlob(
     amount: overrides.amount ?? BigInt(0),
     ...(overrides.closeTo === undefined ? {} : { closeRemainderTo: overrides.closeTo }),
     ...(overrides.rekeyTo === undefined ? {} : { rekeyTo: overrides.rekeyTo }),
-    note: new TextEncoder().encode(overrides.note ?? `AlgorArt login localhost ${nonce}`),
+    note: new TextEncoder().encode(overrides.note ?? `kasakame login localhost ${nonce}`),
     suggestedParams: {
       fee: BigInt(0),
       minFee: BigInt(1000),
@@ -498,7 +498,7 @@ describe('transaction-signature auth', () => {
       receiver: address,
       assetIndex: 1,
       amount: BigInt(0),
-      note: new TextEncoder().encode(`AlgorArt login localhost ${nonce}`),
+      note: new TextEncoder().encode(`kasakame login localhost ${nonce}`),
       suggestedParams: {
         fee: BigInt(0),
         minFee: BigInt(1000),
@@ -527,7 +527,7 @@ describe('transaction-signature auth', () => {
       sender: address,
       receiver: address,
       amount: BigInt(0),
-      note: new TextEncoder().encode(`AlgorArt login localhost ${nonce}`),
+      note: new TextEncoder().encode(`kasakame login localhost ${nonce}`),
       suggestedParams: {
         fee: BigInt(0),
         minFee: BigInt(1000),
@@ -552,7 +552,7 @@ describe('transaction-signature auth', () => {
       sender: address,
       receiver: address,
       amount: BigInt(0),
-      note: new TextEncoder().encode(`AlgorArt login localhost ${nonce}`),
+      note: new TextEncoder().encode(`kasakame login localhost ${nonce}`),
       suggestedParams: {
         fee: BigInt(0),
         minFee: BigInt(1000),
@@ -575,7 +575,7 @@ describe('transaction-signature auth', () => {
     const { address, sk } = keypair()
 
     await createChallenge(address)
-    const signedTxn = loginPaymentBlob('wrong-nonce', address, sk, { note: 'AlgorArt login localhost wrong-nonce' })
+    const signedTxn = loginPaymentBlob('wrong-nonce', address, sk, { note: 'kasakame login localhost wrong-nonce' })
 
     const verified = await app.inject({ method: 'POST', url: '/auth/verify-txn', payload: { address, signedTxn } })
     expect(verified.statusCode).toBe(400)

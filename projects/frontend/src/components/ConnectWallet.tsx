@@ -70,7 +70,7 @@ const ConnectWallet = ({ openModal, onHide, onShow }: ConnectWalletInterface) =>
                           address: account.address,
                           chainId: activeNetworkConfig.caipChainId,
                           sign: adaptSignData(signData),
-                          statement: 'Sign in to AlgorArt.',
+                          statement: 'Sign in to kasakame.',
                           action: 'sign-in',
                         }).catch(() => undefined)
                       }

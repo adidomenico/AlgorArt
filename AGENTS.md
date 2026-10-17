@@ -4,7 +4,7 @@ Guidance for AI coding agents (and contributors) working in this repository.
 
 ## What this is
 
-AlgorArt is a non-custodial crowdfunding dApp on Algorand, built as an AlgoKit
+kasakame is a non-custodial crowdfunding dApp on Algorand, built as an AlgoKit
 workspace: an Algorand TypeScript smart contract plus a React + Vite frontend.
 
 ## Layout

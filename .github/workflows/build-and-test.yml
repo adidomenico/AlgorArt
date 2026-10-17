@@ -171,7 +171,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: algorart
+          POSTGRES_DB: kasakame
         ports:
           - 5432:5432
         options: >-
@@ -180,7 +180,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/algorart
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kasakame
     steps:
       - name: Check out repository
         uses: actions/checkout@v7

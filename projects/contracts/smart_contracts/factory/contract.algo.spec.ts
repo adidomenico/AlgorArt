@@ -16,7 +16,7 @@ const REGISTER_MBR = 18_900 // µA - the registration box's minimum balance
 
 // The fake campaign app: an application with a known approval program (preimage), whose SHA-256 we set as the official hash.
 const FAKE_APP_ID = 1234
-const FAKE_PROGRAM = new Uint8Array([0x41, 0x6c, 0x67, 0x6f, 0x72, 0x41, 0x72, 0x74]) // "AlgorArt"
+const FAKE_PROGRAM = new Uint8Array([0x6b, 0x61, 0x73, 0x61, 0x6b, 0x61, 0x6d, 0x65]) // "kasakame"
 const FAKE_PROGRAM_HASH = createHash('sha256').update(FAKE_PROGRAM).digest('base64')
 
 describe('Factory', () => {
@@ -148,7 +148,7 @@ describe('Factory', () => {
 
       expect(() => {
         registerAs(factory, app)
-      }).toThrow('not an official AlgorArt campaign')
+      }).toThrow('not an official kasakame campaign')
     })
 
     test('rejects a deposit below the registration minimum balance', () => {

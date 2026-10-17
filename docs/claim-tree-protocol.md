@@ -1,4 +1,4 @@
-# AlgorArt Claim Tree Protocol - Specification
+# kasakame Claim Tree Protocol - Specification
 
 > This document defines the claim tree: a trustless **incremental
 > frontier-Merkle claim tree with in-place null-deletion**. The contracts, the offline and LocalNet test suites, and the frontend proof

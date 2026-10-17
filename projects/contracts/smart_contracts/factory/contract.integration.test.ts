@@ -209,7 +209,7 @@ describe('Factory (localnet)', () => {
         appReferences: [factoryClient.appId],
         suppressLog: true,
       }),
-    ).rejects.toThrow(/not an official AlgorArt campaign/)
+    ).rejects.toThrow(/not an official kasakame campaign/)
   })
 
   test(

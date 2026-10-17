@@ -70,7 +70,7 @@ const Nav = ({ onNavigateHome, onNavigateProfile, onNavigatePledges, onNavigateP
   return (
     <nav ref={navRef} className="flex items-center justify-between border-b border-line bg-card px-6 py-3">
       <button type="button" className="cursor-pointer border-0 bg-transparent text-xl font-bold text-teal-dark" onClick={onNavigateHome}>
-        AlgorArt
+        kasakame
       </button>
 
       <div className="flex items-center gap-3">

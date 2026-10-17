@@ -1,6 +1,6 @@
 # Frontend design
 
-This page describes the structure of the AlgorArt dApp. The contract is the source of
+This page describes the structure of the kasakame dApp. The contract is the source of
 truth; the frontend is a read model plus signer: it reads campaign state from
 the indexer, and it assembles transaction groups for the user's wallet to sign.
 It never holds keys, never holds funds, and never decides a campaign outcome.

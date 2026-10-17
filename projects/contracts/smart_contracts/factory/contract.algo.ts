@@ -14,10 +14,10 @@ import {
 } from '@algorandfoundation/algorand-typescript'
 
 /**
- * Factory - the canonical, on-chain registry for AlgorArt campaigns.
+ * Factory - the canonical, on-chain registry for kasakame campaigns.
  *
  * The Factory is **not** a shared escrow: every campaign keeps its own application account and its own funds. The Factory's only job is
- * authenticity and registration - it verifies that a new `Campaign` app runs the official AlgorArt approval program (by SHA-256 hash) and
+ * authenticity and registration - it verifies that a new `Campaign` app runs the official kasakame approval program (by SHA-256 hash) and
  * records `app id → creator`, so the frontend can tell official campaigns apart from arbitrary copies of the contract.
  *
  * Registration costs a small, refundable deposit (the registration box's minimum balance, ~0.019 ALGO), paid to the Factory account and
@@ -84,7 +84,7 @@ export class Factory extends Contract {
     assert(payment.receiver === Global.currentApplicationAddress, 'payment must be made to the factory')
     assert(payment.amount >= REGISTER_MBR, 'registration deposit too small')
     assert(!this.registered(app.id).exists, 'campaign already registered')
-    assert(op.sha256(app.approvalProgram) === this.approvalHash.value, 'not an official AlgorArt campaign')
+    assert(op.sha256(app.approvalProgram) === this.approvalHash.value, 'not an official kasakame campaign')
 
     this.registered(app.id).value = Txn.sender
   }
@@ -114,7 +114,7 @@ export class Factory extends Contract {
   }
 
   /**
-   * Whether an application is registered as an official AlgorArt campaign.
+   * Whether an application is registered as an official kasakame campaign.
    *
    * @param app The application to check.
    * @returns True when the app is registered.

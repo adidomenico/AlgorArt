@@ -2,7 +2,7 @@
 
 This page describes the system pieces, the campaign lifecycle, and the tech stack. The contract reference is in [`campaign.md`](campaign.md); the tree math is in [`claim-tree-protocol.md`](claim-tree-protocol.md).
 
-AlgorArt is a non-custodial crowdfunding dApp on Algorand. Creators open campaigns with a goal and a deadline; backers pledge ALGO from their own wallets. The UI never holds funds or keys. It reads state from the indexer and builds transaction groups that the wallet signs.
+kasakame is a non-custodial crowdfunding dApp on Algorand. Creators open campaigns with a goal and a deadline; backers pledge ALGO from their own wallets. The UI never holds funds or keys. It reads state from the indexer and builds transaction groups that the wallet signs.
 
 ## Pieces
 

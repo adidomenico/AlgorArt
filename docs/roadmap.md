@@ -53,7 +53,7 @@ each open item links to the doc with the details. Design context is in
 - [ ] **Persist last-known trees locally** - keep the replayed per-campaign trees in browser storage so a flaky indexer hurts less (stale roots self-heal through the existing retry-once proof rebuild).
 - [ ] **Document the self-hosted escape** - alongside the CLI, document running your own node + indexer and pointing any client at it, so history never depends solely on third-party endpoints.
 - [ ] **App chrome: navbar + footer** - navbar: logo left (home), search box center,
-      hamburger menu right; footer: brand + `© <year> AlgorArt`, Contacts, Privacy
+      hamburger menu right; footer: brand + `© <year> kasakame`, Contacts, Privacy
       Policy, non-custodial disclaimer. New `features/app/` components, Tailwind.
 - [ ] **Search** - navbar search filters the browse list by title client-side
       (state in `CampaignList`); indexer/catalog-backed search stays a Backend item.
@@ -148,7 +148,7 @@ one commit each - CI wiring comes last:
 - [ ] Wire up the CI coverage gate + lint/format/type-check gate (workflow partially done - see [`ci.md`](ci.md)).
 - [ ] Package the frontend as a container image for portable hosting.
 - [ ] **Publish the contract interface** - commit the generated ARC-32/56 specs (currently gitignored build output) and attach them to GitHub Releases, so explorers, auditors, and third-party clients can build against the contracts without our code.
-- [ ] **Publish the client SDK** - extract the pure claim-tree math (`lib/claimtree.ts` pure layer + vectors) and the generated typed clients into versioned npm packages under an `@algorart` scope, published to the public npm registry (not GitHub Packages: even public installs there need an auth token). The SDK takes indexer-provider and signer interfaces so one codebase serves the UI, the CLI, and third parties.
+- [ ] **Publish the client SDK** - extract the pure claim-tree math (`lib/claimtree.ts` pure layer + vectors) and the generated typed clients into versioned npm packages under an `@kasakame` scope, published to the public npm registry (not GitHub Packages: even public installs there need an auth token). The SDK takes indexer-provider and signer interfaces so one codebase serves the UI, the CLI, and third parties.
 - [ ] **Ship the escape-hatch CLI** - graduate `scripts/reclaim.ts` into a standalone `npx`-runnable tool (refund/cancel/claim by app ID from a mnemonic, public indexer only, no backend). Canonical proof that exits never need our servers.
 - [ ] **On-chain campaign headers (deleted included)** - SDK functions: enumerate campaigns from factory registry + vault boxes, recover title/metadata/goal/deadline/creator for deleted ones by decoding the creation transaction (live campaigns read globals as today), and derive display status via `getCampaignStatus` (Open/Successful/Failed from status + goal + deadline + clock - never a new on-chain status). Headers keep the raw facts too (`deleted`, on-chain `status`) for completeness - e.g. reminding a creator to claim a funded-but-unclaimed campaign. Serves My pledges, the ended-list, and the CLI alike - no catalog involved.
 

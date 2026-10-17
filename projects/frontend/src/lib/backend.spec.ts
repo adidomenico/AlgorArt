@@ -214,7 +214,7 @@ describe('signInWithTransaction', () => {
     expect(unsigned.sender.toString()).toBe(txnAddress)
     expect(unsigned.payment?.receiver.toString()).toBe(txnAddress)
     expect(unsigned.payment?.amount).toBe(BigInt(0))
-    expect(Buffer.from(unsigned.note).toString('utf8')).toBe(`AlgorArt login ${location.host} abc123`)
+    expect(Buffer.from(unsigned.note).toString('utf8')).toBe(`kasakame login ${location.host} abc123`)
 
     const calls = fetchMock.mock.calls as unknown[][]
     expect(calls[1]?.[0]).toBe('http://backend/auth/verify-txn')

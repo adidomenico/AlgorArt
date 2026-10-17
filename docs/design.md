@@ -1,6 +1,6 @@
 # Product design & open questions
 
-This page records where AlgorArt is headed beyond the current contract and frontend:
+This page records where kasakame is headed beyond the current contract and frontend:
 identity, profiles, notifications, the backend question, content, UI work, and contract
 versioning. Nothing here is implemented unless noted. Contract behavior is defined in
 [`campaign.md`](campaign.md); remaining work is tracked in [`roadmap.md`](roadmap.md).

@@ -28,13 +28,13 @@ export async function setup(): Promise<void> {
   const admin = new Client({ connectionString: withDatabase(appUrl, 'postgres') })
   await admin.connect()
   try {
-    await admin.query('CREATE DATABASE algorart_test')
+    await admin.query('CREATE DATABASE kasakame_test')
   } catch (error) {
     if (!(error instanceof Error) || !error.message.includes('already exists')) throw error
   } finally {
     await admin.end()
   }
-  const testUrl = withDatabase(appUrl, 'algorart_test')
+  const testUrl = withDatabase(appUrl, 'kasakame_test')
   process.env.DATABASE_URL = testUrl
   process.env.SESSION_SECRET ??= 'test-secret'
   const { runner } = await import('node-pg-migrate')

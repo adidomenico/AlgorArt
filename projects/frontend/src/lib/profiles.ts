@@ -129,7 +129,7 @@ export async function fetchSettings({
       chainId,
       sign,
       signTxn,
-      statement: 'Sign in to AlgorArt to manage your settings.',
+      statement: 'Sign in to kasakame to manage your settings.',
       action: 'settings fetch',
     })
     const response = await fetch(`${base}/settings`, {
@@ -185,7 +185,7 @@ export async function saveProfile({
     chainId,
     sign,
     signTxn,
-    statement: 'Sign in to AlgorArt to manage your profile.',
+    statement: 'Sign in to kasakame to manage your profile.',
     action: 'profile update',
   })
 
@@ -254,7 +254,7 @@ export async function saveSettings({
     chainId,
     sign,
     signTxn,
-    statement: 'Sign in to AlgorArt to manage your settings.',
+    statement: 'Sign in to kasakame to manage your settings.',
     action: 'settings update',
   })
 

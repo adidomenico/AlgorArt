@@ -3,15 +3,15 @@ services:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: algorart
-      POSTGRES_PASSWORD: algorart
-      POSTGRES_DB: algorart
+      POSTGRES_USER: kasakame
+      POSTGRES_PASSWORD: kasakame
+      POSTGRES_DB: kasakame
     ports:
       - '5432:5432'
     volumes:
       - backend-db:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U algorart']
+      test: ['CMD-SHELL', 'pg_isready -U kasakame']
       interval: 5s
       timeout: 5s
       retries: 5

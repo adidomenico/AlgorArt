@@ -5,6 +5,6 @@ import Footer from './Footer'
 describe('Footer', () => {
   it('renders the brand and year', () => {
     render(<Footer />)
-    expect(screen.getByText('AlgorArt 2026')).toBeInTheDocument()
+    expect(screen.getByText('kasakame 2026')).toBeInTheDocument()
   })
 })

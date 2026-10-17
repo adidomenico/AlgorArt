@@ -1,4 +1,4 @@
-# AlgorArt
+# kasakame
 
 Non-custodial crowdfunding on Algorand. Creators open campaigns with a funding goal and a deadline; backers pledge ALGO from their own wallets. The contract enforces the outcome: if the goal is met by the deadline, the creator claims the total, otherwise each backer refunds their own pledge.
 

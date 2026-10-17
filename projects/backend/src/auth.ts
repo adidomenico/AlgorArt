@@ -13,7 +13,7 @@ declare module 'fastify' {
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000
 const TOKEN_TTL = '7d'
-const TOKEN_ISSUER = 'algorart'
+const TOKEN_ISSUER = 'kasakame'
 
 /** A sign-in challenge for one address: the client embeds the nonce in its SIWA request. */
 export interface Challenge {
@@ -119,7 +119,7 @@ export async function createChallenge(address: string): Promise<Challenge> {
  * @returns The note text.
  */
 export function loginNote(domain: string, nonce: string): string {
-  return `AlgorArt login ${domain} ${nonce}`
+  return `kasakame login ${domain} ${nonce}`
 }
 
 /**
