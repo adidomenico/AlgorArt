@@ -270,8 +270,8 @@ complements the two layers above rather than replacing them.
 
 ### Why it's needed
 
-The existing layers share one blind spot: they do not exercise the **frontend
-send path** (`lib/transaction.ts`) against a live chain. The contract
+The existing layers share one blind spot: they do not exercise the **SDK
+send path** (`projects/sdk/src/transactions.ts`) against a live chain. The contract
 integration tests call the low-level client directly (with `extraFee`), so a bug
 in the frontend helpers (for example, `coverAppCallInnerTransactionFees: true`,
 which throws at send time because the typed client doesn't populate the required
@@ -295,7 +295,8 @@ real user clicks a button. Browser E2E tests close this gap.
 Automating real Pera/Defly wallet popups is brittle and out of scope for a
 first cut. The plan is to inject a **test signer** (a LocalNet-funded mnemonic)
 so the app signs transactions without a real wallet. This reuses the existing
-`WalletSession` shape (`{ address, signer }`) in `lib/transaction.ts`. The
+`WalletSession` shape (`{ address, signer }`) in the SDK
+(`projects/sdk/src/transactions.ts`). The
 remaining questions to settle before implementing:
 
 - Whether to run against the `npm run dev` Vite server or a `vite build` preview

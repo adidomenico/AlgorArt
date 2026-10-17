@@ -1,9 +1,30 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  appIdFromEnv,
   getAlgodConfigFromViteEnvironment,
   getIndexerConfigFromViteEnvironment,
   getKmdConfigFromViteEnvironment,
 } from './getAlgoClientConfigs'
+
+describe('appIdFromEnv', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('reads a positive app id from the environment', () => {
+    expect(appIdFromEnv('VITE_FACTORY_APP_ID')).toBe(1001n)
+  })
+
+  it('reads zero when the variable is absent', () => {
+    vi.stubEnv('VITE_FACTORY_APP_ID', undefined)
+    expect(appIdFromEnv('VITE_FACTORY_APP_ID')).toBe(0n)
+  })
+
+  it('reads zero for non-positive values', () => {
+    vi.stubEnv('VITE_FACTORY_APP_ID', '0')
+    expect(appIdFromEnv('VITE_FACTORY_APP_ID')).toBe(0n)
+  })
+})
 
 describe('client configs', () => {
   afterEach(() => {

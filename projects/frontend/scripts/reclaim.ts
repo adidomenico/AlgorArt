@@ -3,11 +3,12 @@ import algosdk, { getApplicationAddress } from 'algosdk'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fetchChainTimestamp } from '../src/lib/algorand'
-import { getCampaign, vaultAppId } from '../src/lib/campaign'
+import { getCampaign } from '../src/lib/campaign'
 import { fetchPledges, fetchSpends } from '../src/lib/claimtree'
 import { formatAlgo } from '../src/lib/format'
 import type { BackerLeaf, WalletSession } from '../src/lib/transaction'
 import { cancelPledge, claim, deleteCampaign, refund } from '../src/lib/transaction'
+import { appIdFromEnv } from '../src/utils/network/getAlgoClientConfigs'
 
 /**
  * Reclaim demo/test campaign funds and remove the campaigns from the browse list.
@@ -63,7 +64,7 @@ void (async () => {
   if (sessions.size === 0) {
     throw new Error('No *_MNEMONIC env vars found (source ../contracts/.env.testnet first).')
   }
-  const vaultId = vaultAppId()
+  const vaultId = appIdFromEnv('VITE_VAULT_APP_ID')
   const vaultAddress = getApplicationAddress(vaultId).toString()
   const now = await fetchChainTimestamp()
   let leftovers = 0

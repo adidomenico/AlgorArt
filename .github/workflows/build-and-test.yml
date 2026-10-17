@@ -6,10 +6,11 @@ on:
     branches: [main]
 
 jobs:
-  # Build once: compile contracts (TEAL + generated clients), link the typed
-  # clients into the frontend, and build the SDK package. All outputs are
-  # gitignored and regenerable; the contract artifacts and linked clients are
-  # shared as artifacts instead of being rebuilt by every consumer.
+  # Build once: compile contracts (TEAL + generated clients), copy the
+  # clients into the SDK and build it, link the typed clients into the
+  # frontend, and bundle the frontend. All outputs are gitignored and
+  # regenerable; the contract artifacts and linked clients are shared as
+  # artifacts instead of being rebuilt by every consumer.
   build:
     name: Build contracts, frontend, and SDK
     runs-on: ubuntu-latest
@@ -38,17 +39,6 @@ jobs:
           cache: npm
           cache-dependency-path: projects/sdk/package-lock.json
 
-      # The frontend resolves `@kasakame/sdk` as a `file:` dependency with a
-      # prebuilt dist/, so build it before the frontend bundle (gitignored,
-      # like the other build outputs).
-      - name: Install SDK dependencies
-        run: npm ci
-        working-directory: projects/sdk
-
-      - name: Build SDK package
-        run: npm run build
-        working-directory: projects/sdk
-
       - name: Set up Python (for AlgoKit CLI)
         uses: actions/setup-python@v7
         with:
@@ -69,6 +59,18 @@ jobs:
       - name: Compile contracts (TEAL + generate clients)
         run: npm run build
         working-directory: projects/contracts
+
+      # The SDK's prebuild codegen copies the compiled clients and ARC-56
+      # specs into src/generated/ (gitignored); the frontend then resolves
+      # `@kasakame/sdk` as a `file:` dependency with a prebuilt dist/, so the
+      # SDK builds after the contracts and before the frontend bundle.
+      - name: Install SDK dependencies
+        run: npm ci
+        working-directory: projects/sdk
+
+      - name: Build SDK package (codegen + tsc)
+        run: npm run build
+        working-directory: projects/sdk
 
       - name: Install frontend dependencies
         run: npm ci
@@ -123,7 +125,7 @@ jobs:
           cache: npm
           cache-dependency-path: projects/${{ matrix.project }}/package-lock.json
 
-      # The frontend's type-check imports the generated clients; bring them in.
+      # The linked typed clients for the frontend lane.
       - name: Download frontend clients
         if: matrix.project == 'frontend'
         uses: actions/download-artifact@v8
@@ -131,12 +133,30 @@ jobs:
           name: frontend-clients
           path: projects/frontend/src/contracts
 
+      # The SDK's codegen copies the compiled contract clients and ARC-56
+      # specs into src/generated/ (gitignored); the build job's artifacts are
+      # that input for the sdk lane and for the SDK build the frontend needs.
+      - name: Download contract artifacts
+        if: matrix.project != 'contracts'
+        uses: actions/download-artifact@v8
+        with:
+          name: contracts-artifacts
+          path: projects/contracts/smart_contracts/artifacts
+
       - name: Install dependencies
         run: npm ci
         working-directory: projects/${{ matrix.project }}
 
+      # Copy the generated clients in before type-checking the SDK (the
+      # artifacts are already local, so codegen only copies).
+      - name: Run SDK codegen
+        if: matrix.project == 'sdk'
+        run: npm run codegen
+        working-directory: projects/sdk
+
       # The frontend lane resolves `@kasakame/sdk` (file:../sdk) and needs its
-      # built dist/ before type-checking.
+      # built dist/ before type-checking; the SDK build copies the generated
+      # clients via its prebuild codegen.
       - name: Install and build the SDK
         if: matrix.project == 'frontend'
         run: |
@@ -173,7 +193,7 @@ jobs:
           cache: npm
           cache-dependency-path: projects/${{ matrix.project }}/package-lock.json
 
-      # Frontend tests import the generated clients (transaction.ts does).
+      # The linked typed clients for the frontend lane.
       - name: Download frontend clients
         if: matrix.project == 'frontend'
         uses: actions/download-artifact@v8
@@ -181,12 +201,30 @@ jobs:
           name: frontend-clients
           path: projects/frontend/src/contracts
 
+      # The SDK's codegen copies the compiled contract clients and ARC-56
+      # specs into src/generated/ (gitignored); the build job's artifacts are
+      # that input for the sdk lane and for the SDK build the frontend needs.
+      - name: Download contract artifacts
+        if: matrix.project != 'contracts'
+        uses: actions/download-artifact@v8
+        with:
+          name: contracts-artifacts
+          path: projects/contracts/smart_contracts/artifacts
+
       - name: Install dependencies
         run: npm ci
         working-directory: projects/${{ matrix.project }}
 
+      # Copy the generated clients in before running the SDK suite (the
+      # artifacts are already local, so codegen only copies).
+      - name: Run SDK codegen
+        if: matrix.project == 'sdk'
+        run: npm run codegen
+        working-directory: projects/sdk
+
       # The frontend lane resolves `@kasakame/sdk` (file:../sdk) and needs its
-      # built dist/ for the tests.
+      # built dist/ for the tests; the SDK build copies the generated clients
+      # via its prebuild codegen.
       - name: Install and build the SDK
         if: matrix.project == 'frontend'
         run: |

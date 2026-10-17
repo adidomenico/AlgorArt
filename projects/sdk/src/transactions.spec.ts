@@ -1,0 +1,352 @@
+import type { TransactionSigner } from 'algosdk'
+import algosdk from 'algosdk'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  cancelPledge,
+  claim,
+  createCampaign,
+  deleteCampaign,
+  fetchVaultBox,
+  fetchVaultConfig,
+  isStaleProofError,
+  pledge,
+  refund,
+  vaultAddress,
+} from './transactions.js'
+
+const {
+  sendCreateMock,
+  sendRegisterMock,
+  sendUnregisterMock,
+  sendClaimMock,
+  sendRefundMock,
+  sendCancelPledgeMock,
+  sendDeleteMock,
+  sendVaultRefundMock,
+  paramsPledgeMock,
+  paramsCreditMock,
+  paramsUnregisterMock,
+  paymentMock,
+  composerAddMock,
+  composerSendMock,
+  setSignerMock,
+  campaignBoxValueMock,
+  refundWindowMock,
+  sweepTargetMock,
+  waitForIndexerRoundMock,
+  waitForIndexerCatchUpMock,
+  loadTreeMock,
+  clearTreeCacheMock,
+  frontierMock,
+  pathBlobMock,
+  factoryAppIdMock,
+} = vi.hoisted(() => ({
+  sendCreateMock: vi.fn(),
+  sendRegisterMock: vi.fn(),
+  sendUnregisterMock: vi.fn(),
+  sendClaimMock: vi.fn(),
+  sendRefundMock: vi.fn(),
+  sendCancelPledgeMock: vi.fn(),
+  sendDeleteMock: vi.fn(),
+  sendVaultRefundMock: vi.fn(),
+  paramsPledgeMock: vi.fn(),
+  paramsCreditMock: vi.fn(),
+  paramsUnregisterMock: vi.fn(),
+  paymentMock: vi.fn(),
+  composerAddMock: vi.fn(),
+  composerSendMock: vi.fn(),
+  setSignerMock: vi.fn(),
+  campaignBoxValueMock: vi.fn(),
+  refundWindowMock: vi.fn(),
+  sweepTargetMock: vi.fn(),
+  waitForIndexerRoundMock: vi.fn(),
+  waitForIndexerCatchUpMock: vi.fn(),
+  loadTreeMock: vi.fn(),
+  clearTreeCacheMock: vi.fn(),
+  frontierMock: vi.fn(),
+  pathBlobMock: vi.fn(),
+  factoryAppIdMock: vi.fn(),
+}))
+
+vi.mock('./generated/CampaignClient.js', () => ({
+  CampaignClient: class {
+    appAddress = 'ESCROWADDRESS'
+    params = {
+      pledge: (...args: unknown[]) => paramsPledgeMock(...args),
+      cancelPledge: (...args: unknown[]) => paramsPledgeMock(...args),
+      refund: (...args: unknown[]) => paramsPledgeMock(...args),
+      claim: (...args: unknown[]) => paramsPledgeMock(...args),
+      delete: { delete: (...args: unknown[]) => paramsPledgeMock(...args) },
+    }
+    send = {
+      claim: sendClaimMock,
+      refund: sendRefundMock,
+      cancelPledge: sendCancelPledgeMock,
+      delete: { delete: sendDeleteMock },
+    }
+  },
+  CampaignFactory: class {
+    send = { create: { create: sendCreateMock } }
+  },
+}))
+
+vi.mock('./generated/ClaimsVaultClient.js', () => ({
+  ClaimsVaultClient: class {
+    appAddress = 'VAULTADDRESS'
+    params = {
+      credit: (...args: unknown[]) => paramsCreditMock(...args),
+    }
+    send = {
+      refund: sendVaultRefundMock,
+    }
+    state = {
+      box: { campaignBox: { value: (...args: unknown[]) => campaignBoxValueMock(...args) } },
+      global: {
+        refundWindow: (...args: unknown[]) => refundWindowMock(...args),
+        sweepTarget: (...args: unknown[]) => sweepTargetMock(...args),
+      },
+    }
+  },
+}))
+
+vi.mock('./generated/FactoryClient.js', () => ({
+  FactoryClient: class {
+    appAddress = 'FACTORYADDRESS'
+    params = {
+      unregister: (...args: unknown[]) => paramsUnregisterMock(...args),
+    }
+    send = {
+      register: sendRegisterMock,
+      unregister: sendUnregisterMock,
+    }
+  },
+}))
+
+vi.mock('./chain.js', () => ({
+  getSdkConfig: () => ({
+    algorand: {
+      createTransaction: { payment: paymentMock },
+      send: {
+        newGroup: () => ({ addAppCallMethodCall: (...args: unknown[]) => composerAddMock(...args), send: composerSendMock }),
+      },
+      account: { setSigner: (...args: unknown[]) => setSignerMock(...args) },
+    },
+    factoryAppId: factoryAppIdMock(),
+    vaultAppId: 2002n,
+  }),
+  waitForIndexerRound: (...args: unknown[]) => waitForIndexerRoundMock(...args),
+  waitForIndexerCatchUp: (...args: unknown[]) => waitForIndexerCatchUpMock(...args),
+}))
+
+vi.mock('./claim-tree.js', () => ({
+  clearTreeCache: (...args: unknown[]) => clearTreeCacheMock(...args),
+  loadTree: (...args: unknown[]) => loadTreeMock(...args),
+  frontierForPledge: (...args: unknown[]) => frontierMock(...args),
+  pathBlobForRefund: (...args: unknown[]) => pathBlobMock(...args),
+}))
+
+const session = {
+  address: 'ADDRESS',
+  signer: (() => new Uint8Array()) as unknown as TransactionSigner,
+}
+
+// The real app-account address of the configured vault (app id 2002).
+const VAULT_APP_ADDRESS = algosdk.getApplicationAddress(2002n).toString()
+
+describe('transaction helpers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    waitForIndexerRoundMock.mockResolvedValue(undefined)
+    waitForIndexerCatchUpMock.mockResolvedValue(undefined)
+    loadTreeMock.mockResolvedValue({})
+    frontierMock.mockReturnValue(new Uint8Array())
+    pathBlobMock.mockReturnValue(new Uint8Array())
+    factoryAppIdMock.mockReturnValue(1001n)
+    paramsPledgeMock.mockResolvedValue({ pledge: 'params' })
+    paramsCreditMock.mockResolvedValue({ credit: 'params' })
+    paramsUnregisterMock.mockResolvedValue({ unregister: 'params' })
+    paymentMock.mockResolvedValue({ payment: 'pay-txn' })
+    composerSendMock.mockResolvedValue({ confirmation: { confirmedRound: 99n } })
+    sendCreateMock.mockResolvedValue({ result: { appId: 9n, appAddress: { toString: () => 'ESCROW' } } })
+    for (const mock of [
+      sendRegisterMock,
+      sendUnregisterMock,
+      sendClaimMock,
+      sendRefundMock,
+      sendCancelPledgeMock,
+      sendDeleteMock,
+      sendVaultRefundMock,
+    ]) {
+      mock.mockResolvedValue({ confirmation: { confirmedRound: 99n } })
+    }
+  })
+
+  it('vaultAddress derives from the configured vault app id', () => {
+    expect(vaultAddress()).toBe(VAULT_APP_ADDRESS)
+  })
+
+  it('createCampaign runs create then register (nothing funded)', async () => {
+    await createCampaign(session, 'Title', 'ipfs://meta', 1_000_000n, 2_000n)
+
+    expect(sendCreateMock).toHaveBeenCalledOnce()
+    expect(sendRegisterMock).toHaveBeenCalledOnce()
+    expect(waitForIndexerCatchUpMock).toHaveBeenCalledOnce()
+  })
+
+  it('creates without registering when no factory is configured', async () => {
+    factoryAppIdMock.mockReturnValue(0n)
+    await createCampaign(session, 'Title', 'ipfs://meta', 1_000_000n, 2_000n)
+
+    expect(sendCreateMock).toHaveBeenCalledOnce()
+    expect(sendRegisterMock).not.toHaveBeenCalled()
+  })
+
+  it('deletes without unregistering when no factory is configured', async () => {
+    factoryAppIdMock.mockReturnValue(0n)
+    await deleteCampaign(9n, session)
+
+    expect(composerAddMock).toHaveBeenCalledTimes(1)
+    expect(paramsUnregisterMock).not.toHaveBeenCalled()
+    expect(composerSendMock).toHaveBeenCalledOnce()
+  })
+
+  it('skips the indexer wait when confirmations carry no round', async () => {
+    composerSendMock.mockResolvedValue({ confirmation: {} })
+    for (const mock of [sendCancelPledgeMock, sendRefundMock, sendClaimMock, sendDeleteMock, sendVaultRefundMock]) {
+      mock.mockResolvedValue({ confirmation: {} })
+    }
+    campaignBoxValueMock.mockResolvedValue(new Uint8Array(65).fill(1))
+
+    await pledge(9n, session, 1_000_000n)
+    await cancelPledge(9n, session, { position: 2, amount: 1_000_000n, txidHex: 'ab'.repeat(32) })
+    await refund(9n, session, { position: 0, amount: 1_000_000n, txidHex: 'ab'.repeat(32) })
+    await claim(9n, session)
+    await deleteCampaign(9n, session)
+    expect(waitForIndexerRoundMock).not.toHaveBeenCalled()
+  })
+
+  it('pledge submits one atomic [pay, pledge, credit] group with a fresh frontier', async () => {
+    await pledge(9n, session, 1_000_000n)
+
+    expect(setSignerMock).toHaveBeenCalledWith('ADDRESS', session.signer)
+    expect(loadTreeMock).toHaveBeenCalledOnce()
+    expect(frontierMock).toHaveBeenCalledOnce()
+    expect(paramsPledgeMock).toHaveBeenCalledOnce()
+    expect(paramsCreditMock).toHaveBeenCalledOnce()
+    // Two app calls in one group (the payment rides along as the pledge's txn arg).
+    expect(composerAddMock).toHaveBeenCalledTimes(2)
+    expect(composerSendMock).toHaveBeenCalledOnce()
+    // Once before building proofs (fresh tree on the first attempt), once after for UI refresh.
+    expect(waitForIndexerCatchUpMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('pledge retries once on a stale frontier, then throws', async () => {
+    composerSendMock.mockRejectedValueOnce(new Error('stale or forged frontier')).mockResolvedValueOnce({})
+    await pledge(9n, session, 1_000_000n)
+    expect(loadTreeMock).toHaveBeenCalledTimes(2)
+
+    composerSendMock
+      .mockRejectedValueOnce(new Error('stale or forged frontier'))
+      .mockRejectedValueOnce(new Error('stale or forged frontier'))
+    await expect(pledge(9n, session, 1_000_000n)).rejects.toThrow('stale or forged frontier')
+
+    composerSendMock.mockRejectedValueOnce(new Error('boom'))
+    await expect(pledge(9n, session, 1_000_000n)).rejects.toThrow('boom')
+  })
+
+  it('cancelPledge spends one leaf with a fresh path', async () => {
+    await cancelPledge(9n, session, { position: 2, amount: 1_000_000n, txidHex: 'ab'.repeat(32) })
+
+    expect(setSignerMock).toHaveBeenCalledWith('ADDRESS', session.signer)
+    expect(pathBlobMock).toHaveBeenCalledOnce()
+    expect(sendCancelPledgeMock).toHaveBeenCalledOnce()
+    const call = sendCancelPledgeMock.mock.calls[0]?.[0] as {
+      args: { k: number; amount: bigint }
+      extraFee: unknown
+      boxReferences: unknown[]
+    }
+    expect(call.args.k).toEqual(2)
+    expect(call.args.amount).toEqual(1_000_000n)
+    expect(call.boxReferences).toHaveLength(1)
+    expect(waitForIndexerRoundMock).toHaveBeenCalledWith(99n)
+  })
+
+  it('refund routes through the campaign while the box is open', async () => {
+    campaignBoxValueMock.mockResolvedValue(new Uint8Array(65).fill(1))
+    await refund(9n, session, { position: 0, amount: 1_000_000n, txidHex: 'ab'.repeat(32) })
+
+    expect(setSignerMock).toHaveBeenCalledWith('ADDRESS', session.signer)
+    expect(sendRefundMock).toHaveBeenCalledOnce()
+    expect(sendVaultRefundMock).not.toHaveBeenCalled()
+  })
+
+  it('refund routes straight to the vault once settled', async () => {
+    const box = new Uint8Array(65)
+    box[56] = 2
+    campaignBoxValueMock.mockResolvedValue(box)
+    await refund(9n, session, { position: 0, amount: 1_000_000n, txidHex: 'ab'.repeat(32) })
+
+    expect(setSignerMock).toHaveBeenCalledWith('ADDRESS', session.signer)
+    expect(sendVaultRefundMock).toHaveBeenCalledOnce()
+    expect(sendRefundMock).not.toHaveBeenCalled()
+  })
+
+  it('refund routes through the campaign when no box exists yet', async () => {
+    campaignBoxValueMock.mockRejectedValue(new Error('box not found'))
+    await refund(9n, session, { position: 0, amount: 1_000_000n, txidHex: 'ab'.repeat(32) })
+
+    expect(sendRefundMock).toHaveBeenCalledOnce()
+  })
+
+  it('claim pays the vault-derived total', async () => {
+    await claim(9n, session)
+
+    expect(setSignerMock).toHaveBeenCalledWith('ADDRESS', session.signer)
+    expect(sendClaimMock).toHaveBeenCalledOnce()
+    const call = sendClaimMock.mock.calls[0]?.[0] as { extraFee: unknown; boxReferences: unknown[] }
+    expect(call.boxReferences).toHaveLength(1)
+    expect(waitForIndexerRoundMock).toHaveBeenCalledWith(99n)
+  })
+
+  it('deleteCampaign settles, closes, and unregisters in one atomic group', async () => {
+    await deleteCampaign(9n, session)
+
+    expect(setSignerMock).toHaveBeenCalledWith('ADDRESS', session.signer)
+    expect(paramsUnregisterMock).toHaveBeenCalledOnce()
+    expect(paramsPledgeMock).toHaveBeenCalledOnce()
+    // Unregister first (references resolve while the app exists), delete second: one group, one approval.
+    expect(composerAddMock).toHaveBeenCalledTimes(2)
+    expect(composerSendMock).toHaveBeenCalledOnce()
+    expect(waitForIndexerCatchUpMock).toHaveBeenCalledOnce()
+    expect(sendDeleteMock).not.toHaveBeenCalled()
+    expect(sendUnregisterMock).not.toHaveBeenCalled()
+  })
+
+  it('fetchVaultBox unpacks the 65-byte box, or undefined when missing', async () => {
+    const box = new Uint8Array(65)
+    box[56] = 2
+    campaignBoxValueMock.mockResolvedValue(box)
+    await expect(fetchVaultBox(9n)).resolves.toMatchObject({ status: 2 })
+
+    campaignBoxValueMock.mockRejectedValue(new Error('missing'))
+    await expect(fetchVaultBox(9n)).resolves.toBeUndefined()
+
+    campaignBoxValueMock.mockResolvedValue(new Uint8Array(3))
+    await expect(fetchVaultBox(9n)).resolves.toBeUndefined()
+  })
+
+  it('fetchVaultConfig reads window and sweep target', async () => {
+    refundWindowMock.mockResolvedValue(63_072_000n)
+    sweepTargetMock.mockResolvedValue('SWEEP')
+    await expect(fetchVaultConfig()).resolves.toEqual({ window: 63_072_000n, sweepTarget: 'SWEEP' })
+  })
+})
+
+describe('isStaleProofError', () => {
+  it('matches stale proofs only', () => {
+    expect(isStaleProofError(new Error('stale or forged frontier'))).toBe(true)
+    expect(isStaleProofError(new Error('proof does not match root'))).toBe(true)
+    expect(isStaleProofError(new Error('boom'))).toBe(false)
+    expect(isStaleProofError('boom')).toBe(false)
+  })
+})

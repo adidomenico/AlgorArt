@@ -25,6 +25,7 @@
     "algosdk": "^3.9.0"
   },
   "scripts": {
+    "prebuild": "node scripts/codegen.mjs",
     "build": "tsc -p tsconfig.build.json",
     "codegen": "node scripts/codegen.mjs",
     "check-types": "tsc --noEmit",

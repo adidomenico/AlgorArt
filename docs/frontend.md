@@ -41,10 +41,10 @@ projects/frontend/src/
 │       └── Footer.tsx              # brand, disclaimer
 ├── lib/                      # shared services
 │   ├── algorand.ts           # AlgorandClient + IndexerClient singletons; configures the SDK session
-│   ├── campaign.ts           # env app-id readers + re-export of the SDK campaign read model
+│   ├── campaign.ts           # re-exports the SDK campaign read model
 │   ├── claimtree.ts          # re-exports the SDK proof builder (tree math + indexer replay)
 │   ├── metadata.ts           # campaign metadata blob type
-│   ├── transaction.ts        # create/register/pledge/claim/refund/cancel/delete send helpers
+│   ├── transaction.ts        # wallet disconnect helper + re-export of the SDK write path
 │   └── format.ts             # microAlgo / deadline formatting
 ├── contracts/                # generated typed clients (gitignored)
 │   ├── Campaign.ts
@@ -380,16 +380,14 @@ Genuinely unreachable defensive branches carry `/* v8 ignore next */` with a
 reason instead of theater tests:
 
 - `lib/format.ts` - ALGO/microAlgo conversion, deadline/countdown formatting.
-- `lib/campaign.ts` - the env app-id readers (the read model - global-state
-  decoding, status derivation, pledge sums, registry reads, and the session
-  caches - lives in `@kasakame/sdk`).
+- `lib/campaign.ts` - a re-export of the SDK campaign read model.
 - `lib/claimtree.ts` - a re-export of the SDK's proof builder (tree math,
   oracle vectors, and indexer replay); its replay tests live in the SDK.
 - `lib/algorand.ts` / `lib/transaction.ts` - client singletons and the SDK
   session config (the timestamp/indexer waiters are re-exported from
-  `@kasakame/sdk`) plus the create/register/pledge/claim/refund/cancel/delete
-  helpers (mocked at the client/composer boundary, proof builder mocked for
-  flow tests).
+  `@kasakame/sdk`) plus the wallet `disconnectQuietly` helper; the
+  create/register/pledge/claim/refund/cancel/delete helpers are re-exported
+  from the SDK (mocked at the client/composer boundary in its suite).
 - `features/campaigns/*` and `features/app/*`, `components/*`,
   `utils/*`.
 

@@ -4,18 +4,18 @@
  * category, a log line, and a message instead of silence.
  *
  * Detection is message matching (verified against the installed sources - see the patterns below):
- * - Contract asserts (`campaign/contract.algo.ts`, `claimsvault/contract.algo.ts`): plain strings, but ours and
- *   stable - covered by contract tests when they change.
+ * - Stale proofs are contract assert strings (protocol knowledge the CLI needs too) and detected by the SDK.
  * - Pera/Defly/Exodus failures: plain `Error`s with vendor vocabulary (adapter packages bundle the vendor SDKs);
  *   matched here, `unknown` fallback stays sane when vendors reword.
  */
+
+import { isStaleProofError } from '@kasakame/sdk'
 
 export type ErrorKind = 'session' | 'stale-proof' | 'rejected' | 'unknown'
 
 export type FailedAction = 'pledge' | 'create' | 'transaction'
 
 const SESSION_PATTERN = /not initialized correctly|session expired|no session|has disconnected|disconnected|no signer found/i
-const STALE_PROOF_PATTERN = /stale or forged frontier|proof does not match root/i
 const REJECTION_PATTERN = /\breject|\bdenied|dismissed|cancelled by user|\bcancelled\b/i
 // Connect-flow dismissals (verified against the installed vendor bundles): closing the wallet popup
 // rejects `connect()` with one of these instead of connecting.
@@ -31,7 +31,7 @@ export function classifyError(error: unknown): ErrorKind {
   if (!(error instanceof Error)) return 'unknown'
   if (REJECTION_PATTERN.test(error.message)) return 'rejected'
   if (SESSION_PATTERN.test(error.message)) return 'session'
-  if (STALE_PROOF_PATTERN.test(error.message)) return 'stale-proof'
+  if (isStaleProofError(error)) return 'stale-proof'
   return 'unknown'
 }
 
@@ -55,16 +55,6 @@ export function isSessionError(error: unknown): boolean {
  */
 export function isDismissalError(error: unknown): boolean {
   return error instanceof Error && DISMISSAL_PATTERN.test(error.message)
-}
-
-/**
- * Whether a submission failed on a stale Merkle proof (a concurrent pledge/refund moved the root).
- *
- * @param error The failure from a chain submission.
- * @returns True when rebuilding proofs and retrying once is correct.
- */
-export function isStaleProofError(error: unknown): boolean {
-  return classifyError(error) === 'stale-proof'
 }
 
 /**

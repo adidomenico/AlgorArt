@@ -1,12 +1,20 @@
 import react from '@vitejs/plugin-react'
+import { createRequire } from 'node:module'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 import { defineConfig } from 'vitest/config'
+
+const require = createRequire(import.meta.url)
 
 // https://vitest.dev/config/
 export default defineConfig({
   // Mirror vite.config.ts: keep one copy of the SDK's shared runtime deps.
   resolve: {
-    dedupe: ['algosdk', '@noble/hashes'],
+    dedupe: ['algosdk', '@algorandfoundation/algokit-utils', '@noble/hashes'],
+    // Mirror vite.config.ts: pin the polyfill shim the plugin injects into the
+    // SDK's dist/ modules, which cannot resolve it from outside this package.
+    alias: {
+      'vite-plugin-node-polyfills/shims/buffer': require.resolve('vite-plugin-node-polyfills/shims/buffer'),
+    },
   },
   plugins: [
     react(),

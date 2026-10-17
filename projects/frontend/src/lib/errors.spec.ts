@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyError, errorMessage, isDismissalError, isSessionError, isStaleProofError } from './errors'
+import { classifyError, errorMessage, isDismissalError, isSessionError } from './errors'
 
 describe('classifyError', () => {
   it('detects dead wallet sessions', () => {
@@ -40,11 +40,6 @@ describe('error predicates', () => {
   it('isSessionError matches sessions only', () => {
     expect(isSessionError(new Error('Wallet session expired'))).toBe(true)
     expect(isSessionError(new Error('boom'))).toBe(false)
-  })
-
-  it('isStaleProofError matches stale proofs only', () => {
-    expect(isStaleProofError(new Error('proof does not match root'))).toBe(true)
-    expect(isStaleProofError(new Error('boom'))).toBe(false)
   })
 })
 
