@@ -73,7 +73,7 @@ Agent guidance (commands, gotchas, definition of done) is in [`AGENTS.md`](AGENT
 
 ## Status
 
-Live on TestNet. Factory [`773811780`](https://lora.algokit.io/testnet/application/773811780/), ClaimsVault [`773811800`](https://lora.algokit.io/testnet/application/773811800/). Current work is tracked in [`docs/roadmap.md`](docs/roadmap.md).
+Live on TestNet. Factory [`774437557`](https://lora.algokit.io/testnet/application/774437557/), ClaimsVault [`774437570`](https://lora.algokit.io/testnet/application/774437570/). Current work is tracked in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## License
 

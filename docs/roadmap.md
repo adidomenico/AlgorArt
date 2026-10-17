@@ -91,8 +91,11 @@ transparency rule in [`AGENTS.md`](../AGENTS.md).
 
 ## TestNet & deployment
 
-- [x] **TestNet deploy** - Factory `773811780` + ClaimsVault `773811800`
-      (approval hash set at deploy; sweep target = deployer, 730-day window).
+- [x] **TestNet deploy** - Factory `774437557` + ClaimsVault `774437570`, both created by the
+      project wallet (owner = deployer; the deploy scripts derive a signer from its 24-word Pera
+      Universal Wallet phrase via `DEPLOYER_MNEMONIC` + `DEPLOYER_ADDRESS`). Sweep target =
+      deployer, 730-day window. Supersedes the initial deploy (`773811780`/`773811800`), which
+      has no delete path and is left orphaned.
       View on Lora: `https://lora.algokit.io/testnet/application/<id>/`.
 - [ ] **TestNet smoke test** - run create → pledge → claim and create → pledge → refund
       against the deployed apps with a real wallet (Pera/Defly). This de-risks
