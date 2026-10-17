@@ -7,9 +7,8 @@ on:
 
 jobs:
   # Build once: compile contracts (TEAL + generated clients), copy the
-  # clients into the SDK and build it, link the typed clients into the
-  # frontend, and bundle the frontend. All outputs are gitignored and
-  # regenerable; the contract artifacts and linked clients are shared as
+  # clients into the SDK and build it, and bundle the frontend. All outputs
+  # are gitignored and regenerable; the contract artifacts are shared as
   # artifacts instead of being rebuilt by every consumer.
   build:
     name: Build contracts, frontend, and SDK
@@ -76,34 +75,16 @@ jobs:
         run: npm ci
         working-directory: projects/frontend
 
-      # Link the contracts' generated clients into src/contracts (gitignored).
-      - name: Link clients into frontend
-        run: algokit project link --all
-        working-directory: projects/frontend
-
-      # Generated clients contain unused imports that trip noUnusedLocals; tag
-      # them so tsc skips them (they must not be edited by hand).
-      - name: Tag generated clients with ts-nocheck
-        run: node scripts/ts-nocheck-generated.mjs
-        working-directory: projects/frontend
-
       - name: Build frontend bundle (Vite)
         run: npx vite build
         working-directory: projects/frontend
 
-      # Share the two build outputs with the downstream jobs.
+      # Share the contract artifacts with the downstream jobs.
       - name: Upload contract artifacts
         uses: actions/upload-artifact@v7
         with:
           name: contracts-artifacts
           path: projects/contracts/smart_contracts/artifacts
-          if-no-files-found: error
-
-      - name: Upload linked frontend clients
-        uses: actions/upload-artifact@v7
-        with:
-          name: frontend-clients
-          path: projects/frontend/src/contracts
           if-no-files-found: error
 
   # Pure static checks - no build, no AlgoKit. Symmetric across projects.
@@ -124,14 +105,6 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: projects/${{ matrix.project }}/package-lock.json
-
-      # The linked typed clients for the frontend lane.
-      - name: Download frontend clients
-        if: matrix.project == 'frontend'
-        uses: actions/download-artifact@v8
-        with:
-          name: frontend-clients
-          path: projects/frontend/src/contracts
 
       # The SDK's codegen copies the compiled contract clients and ARC-56
       # specs into src/generated/ (gitignored); the build job's artifacts are
@@ -192,14 +165,6 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: projects/${{ matrix.project }}/package-lock.json
-
-      # The linked typed clients for the frontend lane.
-      - name: Download frontend clients
-        if: matrix.project == 'frontend'
-        uses: actions/download-artifact@v8
-        with:
-          name: frontend-clients
-          path: projects/frontend/src/contracts
 
       # The SDK's codegen copies the compiled contract clients and ARC-56
       # specs into src/generated/ (gitignored); the build job's artifacts are

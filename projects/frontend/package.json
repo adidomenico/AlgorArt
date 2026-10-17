@@ -64,13 +64,12 @@
     "tslib": "^2.6.2"
   },
   "scripts": {
-    "generate:app-clients": "algokit project link --all && node scripts/ts-nocheck-generated.mjs",
     "reclaim": "node --env-file=.env --import tsx scripts/reclaim.ts",
     "build:sdk": "npm --prefix ../sdk run build",
     "predev": "npm run build:sdk",
-    "dev": "npm run generate:app-clients && vite",
+    "dev": "vite",
     "prebuild": "npm run build:sdk",
-    "build": "npm run generate:app-clients && tsc && vite build",
+    "build": "tsc && vite build",
     "preview": "vite preview",
     "precheck-types": "npm run build:sdk",
     "check-types": "tsc --noEmit",

@@ -95,9 +95,9 @@ Or from the repo root: `algokit project run lint` / `algokit project run format`
 ## Conventions
 
 - **Generated files are gitignored.** `smart_contracts/artifacts/` (compiled TEAL, specs,
-  `*Client.ts`), the frontend's linked clients, and the SDK's `src/generated/` codegen
-  output are build outputs - never edit or commit them. Rebuild instead (`npm run
-  codegen` in `projects/sdk` refreshes the SDK copies).
+  `*Client.ts`) and the SDK's `src/generated/` codegen output (`*Client.ts`, `*.arc56.json`)
+  are build outputs - never edit or commit them. Rebuild instead (`npm run build` in
+  `projects/contracts`; `npm run codegen` in `projects/sdk` refreshes the SDK copies).
 - **Never commit secrets.** `.env` files are gitignored; mnemonics/API keys never go in code.
 - **Lint, format, and compiler rules** (ESLint, Prettier, and `tsconfig.json` options)
   are documented in [`docs/conventions.md`](docs/conventions.md).

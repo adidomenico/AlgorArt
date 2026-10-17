@@ -8,15 +8,13 @@ the reasoning behind the split.
 ## Principles
 
 - **Build once, share the output.** The generated contract artifacts (TEAL +
-  ARC specs), the frontend's linked typed clients, and the SDK's
-  `src/generated/` clients are gitignored and regenerable. One `build` job
-  produces them and uploads them as artifacts; downstream jobs download what
-  they need instead of recompiling.
-- **Split by prerequisites.** Lint/format/type-check and unit-test jobs need
-  only Node.js, so they never install the heavier toolchain. The `build` job
-  needs the AlgoKit CLI (Python) and no Docker; the `integration-test` job
-  needs Docker. Keeping those in separate jobs (not separate workflows) keeps
-  feedback fast and failures attributable to the right lane.
+  ARC specs) and the SDK's `src/generated/` clients are gitignored and
+  regenerable. One `build` job produces them and uploads them as artifacts;
+  downstream jobs download what they need instead of recompiling.
+- **Split by prerequisites.** Lint, format, type-check, unit-test, and build
+  jobs need only Node.js; the `integration-test` job needs Docker for LocalNet
+  and Python for the AlgoKit CLI. Keeping those in separate jobs (not separate
+  workflows) keeps feedback fast and failures attributable to the right lane.
 - **Parallel lanes per project.** `contracts`, `frontend`, and `sdk` are
   independent npm projects; the per-project jobs run them side by side via a
   matrix. The backend runs as its own job (it needs a Postgres service, so it
@@ -32,14 +30,14 @@ the reasoning behind the split.
 
 ```mermaid
 flowchart TD
-    build["build<br/>(compile contracts, codegen + build SDK, link clients, Vite bundle)"]
+    build["build<br/>(compile contracts, codegen + build SDK, Vite bundle)"]
     lint["lint-format-type-check<br/>(matrix: contracts, frontend, sdk)"]
     unit["unit-test<br/>(matrix: contracts, frontend, sdk)"]
     backend["backend<br/>(lint, format, types, tests + Postgres)"]
     integration["integration-test<br/>(localnet)"]
 
-    build -->|"contracts + frontend clients artifacts"| lint
-    build -->|"contracts + frontend clients artifacts"| unit
+    build -->|"contracts artifacts"| lint
+    build -->|"contracts artifacts"| unit
     build -->|"contracts artifacts"| integration
 ```
 
@@ -89,15 +87,12 @@ Implemented at `.github/workflows/build-and-test.yml`. Five jobs, with
 - **`build`** - installs Node + AlgoKit, compiles the contracts (`npm run
   build` → TEAL + clients), builds the SDK (`npm run build`; its prebuild
   codegen copies the compiled clients and ARC-56 specs into `src/generated/`),
-  links the clients into the frontend (`algokit project link --all`), tags them
-  so `tsc` skips them (`scripts/ts-nocheck-generated.mjs`), bundles the
-  frontend (`npx vite build`), and uploads two artifacts:
-  `contracts-artifacts` and `frontend-clients`.
+  bundles the frontend (`npx vite build`), and uploads one artifact:
+  `contracts-artifacts`.
 - **`lint-format-type-check`** - matrix over `[contracts, frontend, sdk]`. The
-  frontend lane downloads `frontend-clients`; the sdk and frontend lanes
-  download `contracts-artifacts` (the sdk lane runs `npm run codegen`, the
-  frontend lane's SDK build does it via its prebuild hook). Then each lane runs
-  lint, format, and type-check. `fail-fast` is off so one project's failure
+  sdk and frontend lanes download `contracts-artifacts` (the sdk lane runs
+  `npm run codegen`, the frontend lane's SDK build does it via its prebuild
+  hook). Then each lane runs lint, format, and type-check. `fail-fast` is off so one project's failure
   doesn't cancel the other lanes.
 - **`unit-test`** - matrix over `[contracts, frontend, sdk]`. The same
   artifact/codegen downloads as the lint lane, then each lane runs
@@ -135,8 +130,8 @@ generated clients resolve at import time. All are described in
 
 The offline contract tests don't need the AlgoKit CLI or Docker because the
 `algorand-typescript-testing` transformer runs the contract source directly
-under Node. That's why the unit-test job is pure Node - it only consumes the
-frontend clients artifact for import resolution, never the compiled TEAL.
+under Node. That's why the unit-test job is pure Node - it consumes nothing from the
+build job, never the compiled TEAL.
 
 ## Caching
 
@@ -157,16 +152,10 @@ CI image, publish it once to GHCR and rebuild only when its `Dockerfile` changes
 
 ## Artifacts - sharing build output between jobs
 
-The `build` job uploads two artifacts that downstream jobs download, so nothing
+The `build` job uploads one artifact that downstream jobs download, so nothing
 is compiled twice:
 
 - **`contracts-artifacts`** - `projects/contracts/smart_contracts/artifacts`
   (TEAL, ARC-32/56 specs). Consumed by `integration-test`, and by
   `lint-format-type-check` and `unit-test` (the sdk lane runs the SDK's codegen
   on it; the frontend lane's SDK build does the same).
-- **`frontend-clients`** - `projects/frontend/src/contracts` (the linked typed
-  clients). Consumed by `lint-format-type-check` (frontend lane) and
-  `unit-test` (frontend lane).
-
-Downstream jobs download these artifacts instead of recompiling, so the
-consumer jobs get freshly generated clients without an AlgoKit install.

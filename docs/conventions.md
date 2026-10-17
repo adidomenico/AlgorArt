@@ -25,14 +25,11 @@ documents the rules and the reasoning behind them.
 - **`noUnusedLocals`/`noUnusedParameters` are on.** `tsconfig.json` in both projects
   enables them, so unused variables/parameters are caught by `tsc --noEmit`, not just
   ESLint. Generated client files are exempt: contracts exclude
-  `smart_contracts/artifacts` from `tsc`, and the frontend prepends `// @ts-nocheck` to
-  the linked `src/contracts/*.ts` files via `scripts/ts-nocheck-generated.mjs` (wired
-  into `generate:app-clients` and the CI link step).
+  `smart_contracts/artifacts` from `tsc`; the SDK prepends `// @ts-nocheck` to its
+  gitignored `src/generated/` clients via `scripts/codegen.mjs`.
 - **`verbatimModuleSyntax` is on (contracts).** The contracts `tsconfig.json` enables
   it, so type-only imports must be written `import type` and the compiler no longer
-  elides them silently. The frontend omits it - Vite (rolldown) does not elide
-  type-only imports in the generated client, which imports them as value imports and
-  would fail the bundle step. The frontend instead relies on
+  elides them silently. The frontend omits it and relies on
   `@typescript-eslint/consistent-type-imports`.
 - **`noUncheckedIndexedAccess` is on.** `tsconfig.json` in both projects enables it,
   so `arr[i]` and record access yield `T | undefined` and require explicit guards,

@@ -165,13 +165,13 @@ All reads use `algosdk.Indexer` configured from the same env as algod:
   it with no spinner, then refresh in the background. Pledge totals always
   stream fresh per viewer.
 
-## Writes (generated clients)
+## Writes (SDK clients)
 
-All writes go through the generated `CampaignClient` / `ClaimsVaultClient` /
-`FactoryClient` (built from the ARC-56 specs by `algokit project link` - never
-edited by hand). Pledges pay the **vault** (its app address, derived from
-`VITE_VAULT_APP_ID` via `algosdk.getApplicationAddress`), never the campaign
-escrow.
+All writes go through `@kasakame/sdk`'s `CampaignClient` / `ClaimsVaultClient` /
+`FactoryClient` (generated from the ARC-56 specs by `npm run codegen` in
+`projects/sdk`, never edited by hand). Pledges pay the **vault** (its app
+address, derived from `VITE_VAULT_APP_ID` via `algosdk.getApplicationAddress`),
+never the campaign escrow.
 
 ### create - create + register
 
