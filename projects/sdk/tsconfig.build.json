@@ -3,5 +3,5 @@
   "compilerOptions": {
     "noEmit": false
   },
-  "exclude": ["src/**/*.spec.ts"]
+  "exclude": ["src/**/*.spec.ts", "src/**/*.vectors.ts"]
 }
