@@ -16,10 +16,10 @@ the reasoning behind the split.
   needs the AlgoKit CLI (Python) and no Docker; the `integration-test` job
   needs Docker. Keeping those in separate jobs (not separate workflows) keeps
   feedback fast and failures attributable to the right lane.
-- **Parallel lanes per project.** `contracts` and `frontend` are independent
-  npm projects; the per-project jobs run them side by side via a matrix. The
-  backend runs as its own job (it needs a Postgres service, so it doesn't fit
-  the pure-Node matrix).
+- **Parallel lanes per project.** `contracts`, `frontend`, and `sdk` are
+  independent npm projects; the per-project jobs run them side by side via a
+  matrix. The backend runs as its own job (it needs a Postgres service, so it
+  doesn't fit the pure-Node matrix).
 - **CI calls the per-project npm scripts directly** (`npm run lint`, …), not
   `algokit project run`. The algokit wrapper is a local convenience and runs
   projects sequentially.
@@ -31,9 +31,9 @@ the reasoning behind the split.
 
 ```mermaid
 flowchart TD
-    build["build<br/>(compile contracts, link clients, Vite bundle)"]
-    lint["lint-format-type-check<br/>(matrix: contracts, frontend)"]
-    unit["unit-test<br/>(matrix: contracts, frontend)"]
+    build["build<br/>(compile contracts, link clients, Vite bundle, SDK build)"]
+    lint["lint-format-type-check<br/>(matrix: contracts, frontend, sdk)"]
+    unit["unit-test<br/>(matrix: contracts, frontend, sdk)"]
     backend["backend<br/>(lint, format, types, tests + Postgres)"]
     integration["integration-test<br/>(localnet)"]
 
@@ -77,13 +77,14 @@ Implemented at `.github/workflows/build-and-test.yml`. Five jobs, with
 - **`build`** - installs Node + AlgoKit, compiles the contracts
   (`npm run build` → TEAL + clients), links the clients into the frontend
   (`algokit project link --all`), tags them so `tsc` skips them
-  (`scripts/ts-nocheck-generated.mjs`), bundles the frontend (`npx vite build`), and
+  (`scripts/ts-nocheck-generated.mjs`), bundles the frontend (`npx vite build`),
+  builds the SDK (`npm run build` → `dist/`), and
   uploads two artifacts: `contracts-artifacts` and `frontend-clients`.
-- **`lint-format-type-check`** - matrix over `[contracts, frontend]`. The
+- **`lint-format-type-check`** - matrix over `[contracts, frontend, sdk]`. The
   frontend lane downloads `frontend-clients` first, then each lane runs lint,
   format, and type-check. `fail-fast` is off so one project's failure doesn't
-  cancel the other lane.
-- **`unit-test`** - matrix over `[contracts, frontend]`. The frontend lane
+  cancel the other lanes.
+- **`unit-test`** - matrix over `[contracts, frontend, sdk]`. The frontend lane
   downloads `frontend-clients`, then each lane runs `npm run test:coverage`.
 - **`backend`** - standalone (needs nothing from `build`): starts a Postgres
   service, runs migrations, then lint, format, type-check, and
@@ -110,7 +111,9 @@ under the per-project matrix. The lint command checks all
 
 Contracts and frontend test differently. Contract suites are offline AVM tests
 with a 100% lines/branches/functions gate; frontend suites are Vitest unit +
-component tests with a 100% gate on components and utils. Both are described in
+component tests with a 100% gate on components and utils. The SDK's suite is
+pure Vitest over the claim-tree math with a 100% gate on `src` (no artifacts
+needed). All are described in
 [`testing.md`](testing.md) (contracts) and [`frontend.md`](frontend.md) (frontend).
 
 The offline contract tests don't need the AlgoKit CLI or Docker because the
@@ -125,7 +128,7 @@ the runner and caches:
 
 - **Node** - `actions/setup-node@v7` with `cache: npm` and
   `cache-dependency-path` pointing at the project's `package-lock.json`. This
-  caches `node_modules`, so `npm ci` is ~seconds on cache hits. (Two setup-node
+  caches `node_modules`, so `npm ci` is ~seconds on cache hits. (Three setup-node
   steps in `build`, one per project's lockfile.)
 - **AlgoKit (Python)** - installed fresh via `pipx` in the `build` and
   `integration-test` jobs (not cached). The install is fast relative to the

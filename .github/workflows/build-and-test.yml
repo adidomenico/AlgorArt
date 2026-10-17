@@ -6,17 +6,18 @@ on:
     branches: [main]
 
 jobs:
-  # Build once: compile contracts (TEAL + generated clients) and link the typed
-  # clients into the frontend. Both outputs are gitignored and regenerable, so
-  # they're shared as artifacts instead of being rebuilt by every consumer.
+  # Build once: compile contracts (TEAL + generated clients), link the typed
+  # clients into the frontend, and build the SDK package. All outputs are
+  # gitignored and regenerable; the contract artifacts and linked clients are
+  # shared as artifacts instead of being rebuilt by every consumer.
   build:
-    name: Build contracts and frontend
+    name: Build contracts, frontend, and SDK
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      # Cache both projects' node_modules (setup-node keys its cache by a
+      # Cache each project's node_modules (setup-node keys its cache by a
       # single lockfile path, so one step per project).
       - name: Set up Node.js (contracts cache)
         uses: actions/setup-node@v7
@@ -30,6 +31,12 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: projects/frontend/package-lock.json
+      - name: Set up Node.js (sdk cache)
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: projects/sdk/package-lock.json
 
       - name: Set up Python (for AlgoKit CLI)
         uses: actions/setup-python@v7
@@ -71,6 +78,15 @@ jobs:
         run: npx vite build
         working-directory: projects/frontend
 
+      - name: Install SDK dependencies
+        run: npm ci
+        working-directory: projects/sdk
+
+      # The SDK's publishable output (gitignored, like the other build outputs).
+      - name: Build SDK package
+        run: npm run build
+        working-directory: projects/sdk
+
       # Share the two build outputs with the downstream jobs.
       - name: Upload contract artifacts
         uses: actions/upload-artifact@v7
@@ -94,7 +110,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [contracts, frontend]
+        project: [contracts, frontend, sdk]
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -134,7 +150,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [contracts, frontend]
+        project: [contracts, frontend, sdk]
     steps:
       - name: Check out repository
         uses: actions/checkout@v7

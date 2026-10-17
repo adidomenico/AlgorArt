@@ -6,6 +6,9 @@ Drives docs/claim-tree-protocol-reference.py through a fixed pledge/null scenari
 fixed seeds - no randomness - so regeneration is byte-identical.
 
 Usage (from projects/sdk):  python3 scripts/generate-claimtree-vectors.py
+
+Intentionally Python: the vectors are differential - expected values come from the
+independent reference implementation, not from the TypeScript under test.
 """
 
 import base64
