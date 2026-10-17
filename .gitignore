@@ -24,6 +24,9 @@ debug_traces/
 projects/frontend/src/contracts/*
 !projects/frontend/src/contracts/README.md
 
+# SDK codegen output (copied from contract artifacts by scripts/codegen.mjs)
+projects/sdk/src/generated/
+
 # Environment / secrets
 .env
 .env.*

@@ -26,6 +26,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "codegen": "node scripts/codegen.mjs",
     "check-types": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
