@@ -40,7 +40,7 @@ projects/frontend/src/
 │       ├── Nav.tsx                 # brand, wallet button, address badge
 │       └── Footer.tsx              # brand, disclaimer
 ├── lib/                      # shared services
-│   ├── algorand.ts           # lazy AlgorandClient + IndexerClient singletons
+│   ├── algorand.ts           # AlgorandClient + IndexerClient singletons; configures the SDK session
 │   ├── campaign.ts           # indexer -> CampaignViewModel mapping + Factory box search
 │   ├── claimtree.ts          # proof builder: indexer event replay → frontiers/paths (tree math re-exported from @kasakame/sdk)
 │   ├── metadata.ts           # campaign metadata blob type
@@ -382,9 +382,11 @@ reason instead of theater tests:
   reads, Factory box decoding, and the indexer-backed read helpers.
 - `lib/claimtree.ts` - the proof builder (indexer replay; the tree math and its
   oracle vectors live in `@kasakame/sdk`).
-- `lib/algorand.ts` / `lib/transaction.ts` - client singletons and the
-  create/register/pledge/claim/refund/cancel/delete helpers (mocked at the
-  client/composer boundary, proof builder mocked for flow tests).
+- `lib/algorand.ts` / `lib/transaction.ts` - client singletons and the SDK
+  session config (the timestamp/indexer waiters are re-exported from
+  `@kasakame/sdk`) plus the create/register/pledge/claim/refund/cancel/delete
+  helpers (mocked at the client/composer boundary, proof builder mocked for
+  flow tests).
 - `features/campaigns/*` and `features/app/*`, `components/*`,
   `utils/*`.
 

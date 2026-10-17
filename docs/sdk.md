@@ -1,6 +1,6 @@
 # SDK design
 
-The chain layer leaves `projects/frontend/src/lib` and becomes a versioned package, `projects/sdk` (published as `@kasakame/sdk`). SDK-first: the frontend clarity work, the escape-hatch CLI, and third-party clients all consume this package instead of reimplementing proofs. Status: in progress — stages 1–5 landed; the migration stages at the end are the build order. Related roadmap items: the SDK/CLI steps under CI & packaging, on-chain headers, and the Frontend clarity section.
+The chain layer leaves `projects/frontend/src/lib` and becomes a versioned package, `projects/sdk` (published as `@kasakame/sdk`). SDK-first: the frontend clarity work, the escape-hatch CLI, and third-party clients all consume this package instead of reimplementing proofs. Status: in progress — stages 1–6 landed; the migration stages at the end are the build order. Related roadmap items: the SDK/CLI steps under CI & packaging, on-chain headers, and the Frontend clarity section.
 
 ## Package identity and placement
 
@@ -50,7 +50,7 @@ Moved functions keep their names and signatures; new ones are marked. Only delib
 
 ### Campaign reads (`campaigns.ts`)
 
-`fetchRegisteredCampaignIds(factoryId)`, `listCampaigns(viewerAddress?)`, `getCampaign(appId, nowSeconds, viewerAddress?)`, `fetchMyPledge(appId, address)`, `decodeGlobalState(app)`, `isCampaignApp(app)`, session memoization (`get/set/clearCachedCampaigns`), `fetchChainTimestamp()`.
+`fetchRegisteredCampaignIds(factoryId)`, `listCampaigns(viewerAddress?)`, `getCampaign(appId, nowSeconds, viewerAddress?)`, `fetchMyPledge(appId, address)`, `decodeGlobalState(app)`, `isCampaignApp(app)`, session memoization (`get/set/clearCachedCampaigns`).
 
 ### Headers and discovery (`campaigns.ts`, new)
 
@@ -81,7 +81,7 @@ function getCampaignStatus(header: CampaignHeader, nowSeconds: bigint): 'open' |
 
 ### Chain plumbing (`chain.ts`)
 
-`configureSdk({ algorand, factoryAppId, vaultAppId })`, `waitForIndexerRound(round, timeoutMs?, pollMs?)`, `waitForIndexerCatchUp(timeoutMs?, pollMs?)`.
+`configureSdk({ algorand, factoryAppId, vaultAppId })`, `fetchChainTimestamp()`, `waitForIndexerRound(round, timeoutMs?, pollMs?)`, `waitForIndexerCatchUp(timeoutMs?, pollMs?)`.
 
 ## Conventions
 

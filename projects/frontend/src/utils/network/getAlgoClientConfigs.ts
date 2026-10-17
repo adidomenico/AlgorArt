@@ -16,6 +16,19 @@ function appEnv(): Record<string, string | undefined> {
 }
 
 /**
+ * Read an app id from the Vite environment.
+ *
+ * @param key Environment key (e.g. `VITE_FACTORY_APP_ID`).
+ * @returns The app id, or 0 when absent or not positive.
+ */
+export function appIdFromEnv(key: string): bigint {
+  const raw = appEnv()[key]
+  if (raw === undefined || raw === '') return 0n
+  const id = BigInt(raw)
+  return id > 0n ? id : 0n
+}
+
+/**
  * Read the algod client config from the Vite environment.
  *
  * @returns Algod client config.

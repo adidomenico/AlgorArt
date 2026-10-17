@@ -1,5 +1,6 @@
 import type algosdk from 'algosdk'
 import { encodeAddress, getApplicationAddress } from 'algosdk'
+import { appIdFromEnv } from '../utils/network/getAlgoClientConfigs'
 import { fetchChainTimestamp, indexer } from './algorand'
 import { fetchMyLeaves } from './claimtree'
 
@@ -49,7 +50,7 @@ export interface CampaignViewModel {
  * @returns The Factory app id, or 0 when not configured (registration filter disabled).
  */
 export function factoryAppId(): bigint {
-  return envAppId('VITE_FACTORY_APP_ID')
+  return appIdFromEnv('VITE_FACTORY_APP_ID')
 }
 
 /**
@@ -58,20 +59,7 @@ export function factoryAppId(): bigint {
  * @returns The vault app id, or 0 when not configured.
  */
 export function vaultAppId(): bigint {
-  return envAppId('VITE_VAULT_APP_ID')
-}
-
-function envAppId(key: string): bigint {
-  const env: Record<string, string | undefined> = {
-    // Browser-only builds have no process object; vitest always runs under node.
-    /* v8 ignore next */
-    ...(typeof process === 'undefined' ? {} : process.env),
-    ...import.meta.env,
-  }
-  const raw = env[key]
-  if (raw === undefined || raw === '') return 0n
-  const id = BigInt(raw)
-  return id > 0n ? id : 0n
+  return appIdFromEnv('VITE_VAULT_APP_ID')
 }
 
 const STATUS_UINT_TO_LABEL = {
