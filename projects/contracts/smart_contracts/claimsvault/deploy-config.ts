@@ -3,6 +3,7 @@ import type { Arc56Contract } from '@algorandfoundation/algokit-utils/types/app-
 import { AppFactory } from '@algorandfoundation/algokit-utils/types/app-factory'
 import fs from 'node:fs'
 import path from 'node:path'
+import { resolveDeployerAccount } from '../deployer'
 
 /**
  * Deploys the platform's `ClaimsVault` application - the permanent, pooled refund escrow.
@@ -20,10 +21,7 @@ import path from 'node:path'
 export async function deploy() {
   const algorand = AlgorandClient.fromEnvironment()
 
-  // Resolve the deployer account from the environment. On LocalNet this
-  // auto-creates and funds a KMD wallet called `DEPLOYER`; on other networks it
-  // reads the `DEPLOYER_MNEMONIC` env var.
-  const deployer = await algorand.account.fromEnvironment('DEPLOYER')
+  const deployer = await resolveDeployerAccount(algorand)
 
   const factoryId = process.env.FACTORY_APP_ID
   if (factoryId === undefined || factoryId === '') {

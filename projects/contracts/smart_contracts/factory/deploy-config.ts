@@ -4,6 +4,7 @@ import { AppFactory } from '@algorandfoundation/algokit-utils/types/app-factory'
 import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import { resolveDeployerAccount } from '../deployer'
 
 /**
  * Deploys the platform's `Factory` application - the canonical campaign registry.
@@ -17,10 +18,7 @@ import path from 'node:path'
 export async function deploy() {
   const algorand = AlgorandClient.fromEnvironment()
 
-  // Resolve the deployer account from the environment. On LocalNet this
-  // auto-creates and funds a KMD wallet called `DEPLOYER`; on other networks it
-  // reads the `DEPLOYER_MNEMONIC` env var.
-  const deployer = await algorand.account.fromEnvironment('DEPLOYER')
+  const deployer = await resolveDeployerAccount(algorand)
 
   const specPath = path.resolve(__dirname, '../artifacts/factory/Factory.arc56.json')
   const appSpec = JSON.parse(fs.readFileSync(specPath, 'utf8')) as Arc56Contract
