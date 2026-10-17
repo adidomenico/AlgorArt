@@ -41,7 +41,7 @@ projects/frontend/src/
 │       └── Footer.tsx              # brand, disclaimer
 ├── lib/                      # shared services
 │   ├── algorand.ts           # AlgorandClient + IndexerClient singletons; configures the SDK session
-│   ├── campaign.ts           # indexer -> CampaignViewModel mapping + Factory box search
+│   ├── campaign.ts           # env app-id readers + re-export of the SDK campaign read model
 │   ├── claimtree.ts          # re-exports the SDK proof builder (tree math + indexer replay)
 │   ├── metadata.ts           # campaign metadata blob type
 │   ├── transaction.ts        # create/register/pledge/claim/refund/cancel/delete send helpers
@@ -81,7 +81,7 @@ replays their pledge positions and drops the spent ones; the pledge total is
 the live sum.
 
 ```ts
-// lib/campaign.ts - the shape the UI renders
+// @kasakame/sdk - the shape the UI renders
 type CampaignStatus = 'open' | 'funded' | 'failed' | 'claimed'
 
 interface CampaignViewModel {
@@ -160,7 +160,8 @@ All reads use `algosdk.Indexer` configured from the same env as algod:
   Passive staleness (other users' pledges while you browse) resolves on the
   next write-triggered reload. Rejections are never cached.
 - **Instant paint** - the last good base list is cached (`getCachedCampaigns`
-  in `lib/campaign.ts`, pledge-free); list remounts and detail entries paint
+  in `@kasakame/sdk`, re-exported through `lib/campaign.ts`; pledge-free); list
+  remounts and detail entries paint
   it with no spinner, then refresh in the background. Pledge totals always
   stream fresh per viewer.
 
@@ -379,8 +380,9 @@ Genuinely unreachable defensive branches carry `/* v8 ignore next */` with a
 reason instead of theater tests:
 
 - `lib/format.ts` - ALGO/microAlgo conversion, deadline/countdown formatting.
-- `lib/campaign.ts` - global-state decoding, status derivation, tree-sum pledge
-  reads, Factory box decoding, and the indexer-backed read helpers.
+- `lib/campaign.ts` - the env app-id readers (the read model - global-state
+  decoding, status derivation, pledge sums, registry reads, and the session
+  caches - lives in `@kasakame/sdk`).
 - `lib/claimtree.ts` - a re-export of the SDK's proof builder (tree math,
   oracle vectors, and indexer replay); its replay tests live in the SDK.
 - `lib/algorand.ts` / `lib/transaction.ts` - client singletons and the SDK

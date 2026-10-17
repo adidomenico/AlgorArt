@@ -1,6 +1,15 @@
+import type { AlgorandClient } from '@algorandfoundation/algokit-utils'
 import algosdk from 'algosdk'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearCachedCampaigns, fetchMyPledge, fetchRegisteredCampaignIds, getCachedCampaigns, getCampaign, listCampaigns } from './campaign'
+import {
+  clearCachedCampaigns,
+  fetchMyPledge,
+  fetchRegisteredCampaignIds,
+  getCachedCampaigns,
+  getCampaign,
+  listCampaigns,
+} from './campaigns.js'
+import { configureSdk } from './chain.js'
 
 const indexerMock = vi.hoisted(() => ({
   lookupApplications: vi.fn(),
@@ -10,19 +19,23 @@ const indexerMock = vi.hoisted(() => ({
 
 const fetchMyLeavesMock = vi.hoisted(() => vi.fn())
 
-const fetchChainTimestampMock = vi.fn()
-fetchChainTimestampMock.mockResolvedValue(1_000n)
-
-vi.mock('./algorand', () => ({
-  indexer: indexerMock,
-  fetchChainTimestamp: (...args: unknown[]) => fetchChainTimestampMock(...args),
-}))
-
-vi.mock('./claimtree', () => ({
+vi.mock('./claim-tree.js', () => ({
   fetchMyLeaves: (...args: unknown[]) => fetchMyLeavesMock(...args),
 }))
 
 const ZERO_ADDRESS = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ'
+
+function fakeAlgorand(): AlgorandClient {
+  return {
+    client: {
+      indexer: indexerMock,
+      algod: {
+        status: () => ({ do: () => Promise.resolve({ lastRound: 5n }) }),
+        block: () => ({ do: () => Promise.resolve({ block: { header: { timestamp: 1_000n } } }) }),
+      },
+    },
+  } as unknown as AlgorandClient
+}
 
 function tealUint(value: bigint): algosdk.indexerModels.TealValue {
   return new algosdk.indexerModels.TealValue({ bytes: new Uint8Array(), type: 2, uint: value })
@@ -101,6 +114,8 @@ function registrationBoxName(appId: bigint): Uint8Array {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  clearCachedCampaigns()
+  configureSdk({ algorand: fakeAlgorand(), factoryAppId: 1001n, vaultAppId: 2002n })
 })
 
 describe('cached base list', () => {
@@ -191,45 +206,37 @@ describe('listCampaigns', () => {
   })
 
   it('falls back to the full scan without a factory', async () => {
-    vi.stubEnv('VITE_FACTORY_APP_ID', '')
-    try {
-      const official = campaignApp({ id: 42n })
-      const unrelated = new algosdk.indexerModels.Application({
-        id: 44n,
-        params: new algosdk.indexerModels.ApplicationParams({
-          approvalProgram: new Uint8Array(),
-          clearStateProgram: new Uint8Array(),
-          globalState: [kv('nope', tealUint(1n))],
-        }),
-      })
-      indexerMock.searchForApplications.mockImplementation(() => searchBuilder(() => [official, unrelated]))
+    configureSdk({ algorand: fakeAlgorand(), factoryAppId: 0n, vaultAppId: 2002n })
+    const official = campaignApp({ id: 42n })
+    const unrelated = new algosdk.indexerModels.Application({
+      id: 44n,
+      params: new algosdk.indexerModels.ApplicationParams({
+        approvalProgram: new Uint8Array(),
+        clearStateProgram: new Uint8Array(),
+        globalState: [kv('nope', tealUint(1n))],
+      }),
+    })
+    indexerMock.searchForApplications.mockImplementation(() => searchBuilder(() => [official, unrelated]))
 
-      const { campaigns } = await listCampaigns()
-      expect(campaigns.map((c) => c.id)).toEqual([42n])
-      expect(indexerMock.searchForApplicationBoxes).not.toHaveBeenCalled()
-    } finally {
-      vi.unstubAllEnvs()
-    }
+    const { campaigns } = await listCampaigns()
+    expect(campaigns.map((c) => c.id)).toEqual([42n])
+    expect(indexerMock.searchForApplicationBoxes).not.toHaveBeenCalled()
   })
 
   it('follows application scan pages without a factory', async () => {
-    vi.stubEnv('VITE_FACTORY_APP_ID', '')
-    try {
-      const pages = [{ applications: [campaignApp({ id: 42n })], nextToken: 't' }, { applications: [campaignApp({ id: 43n })] }]
-      indexerMock.searchForApplications.mockImplementation(() => ({
-        limit: () => ({
-          nextToken: () => ({
-            do: () => Promise.resolve(pages.shift() ?? { applications: [] }),
-          }),
+    configureSdk({ algorand: fakeAlgorand(), factoryAppId: 0n, vaultAppId: 2002n })
+    const pages = [{ applications: [campaignApp({ id: 42n })], nextToken: 't' }, { applications: [campaignApp({ id: 43n })] }]
+    indexerMock.searchForApplications.mockImplementation(() => ({
+      limit: () => ({
+        nextToken: () => ({
           do: () => Promise.resolve(pages.shift() ?? { applications: [] }),
         }),
-      }))
+        do: () => Promise.resolve(pages.shift() ?? { applications: [] }),
+      }),
+    }))
 
-      const { campaigns } = await listCampaigns()
-      expect(campaigns.map((c) => c.id)).toEqual([42n, 43n])
-    } finally {
-      vi.unstubAllEnvs()
-    }
+    const { campaigns } = await listCampaigns()
+    expect(campaigns.map((c) => c.id)).toEqual([42n, 43n])
   })
 
   it('returns undefined for a missing application', async () => {
@@ -238,16 +245,12 @@ describe('listCampaigns', () => {
   })
 
   it('includes viewer pledges in the full scan without a factory', async () => {
-    vi.stubEnv('VITE_FACTORY_APP_ID', '')
-    try {
-      indexerMock.searchForApplications.mockImplementation(() => searchBuilder(() => [campaignApp({ id: 42n })]))
-      fetchMyLeavesMock.mockResolvedValue([{ position: 0, amount: 250_000n, txidHex: 'aa' }])
+    configureSdk({ algorand: fakeAlgorand(), factoryAppId: 0n, vaultAppId: 2002n })
+    indexerMock.searchForApplications.mockImplementation(() => searchBuilder(() => [campaignApp({ id: 42n })]))
+    fetchMyLeavesMock.mockResolvedValue([{ position: 0, amount: 250_000n, txidHex: 'aa' }])
 
-      const { campaigns } = await listCampaigns('ADDRESS')
-      expect(campaigns[0]?.myPledgeMicroAlgos).toBe(250_000n)
-    } finally {
-      vi.unstubAllEnvs()
-    }
+    const { campaigns } = await listCampaigns('ADDRESS')
+    expect(campaigns[0]?.myPledgeMicroAlgos).toBe(250_000n)
   })
 })
 
