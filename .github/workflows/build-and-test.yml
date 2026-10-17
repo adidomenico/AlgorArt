@@ -21,13 +21,13 @@ jobs:
       - name: Set up Node.js (contracts cache)
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: projects/contracts/package-lock.json
       - name: Set up Node.js (frontend cache)
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: projects/frontend/package-lock.json
 
@@ -101,7 +101,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: projects/${{ matrix.project }}/package-lock.json
 
@@ -141,7 +141,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: projects/${{ matrix.project }}/package-lock.json
 
@@ -187,7 +187,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: projects/backend/package-lock.json
       - name: Install dependencies
@@ -222,7 +222,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: projects/contracts/package-lock.json
 

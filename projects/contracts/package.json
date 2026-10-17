@@ -20,7 +20,7 @@
     "format:fix": "prettier --write ."
   },
   "engines": {
-    "node": ">=22.0",
+    "node": ">=24.0.0",
     "npm": ">=9.0"
   },
   "dependencies": {
@@ -35,7 +35,7 @@
     "@algorandfoundation/xhd-wallet-api": "^1.0.3",
     "@eslint/js": "^9.39.5",
     "@rollup/plugin-typescript": "^12.3.0",
-    "@tsconfig/node22": "^22.0.0",
+    "@tsconfig/node24": "^24.0.0",
     "@vitest/coverage-v8": "^4.1.11",
     "algosdk": "^3.0.0",
     "bip39": "^3.1.0",

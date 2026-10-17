@@ -8,7 +8,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": "^20.19.0 || >=22.12.0",
+    "node": ">=24.0.0",
     "npm": ">=9.0"
   },
   "devDependencies": {
@@ -18,7 +18,7 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.6",
-    "@types/node": "^22.0.0",
+    "@types/node": "^24.0.0",
     "@types/react": "^18.2.11",
     "@types/react-dom": "^18.2.4",
     "@types/testing-library__jest-dom": "^5.14.9",
@@ -93,6 +93,6 @@
     "ws@>7.0.0 <7.5.9": "7.5.10"
   },
   "allowScripts": {
-    "esbuild@0.21.5": true
+    "esbuild": true
   }
 }
