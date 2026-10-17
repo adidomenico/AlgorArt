@@ -599,7 +599,7 @@ describe('Campaign + ClaimsVault claim-tree (localnet)', () => {
     const addrB = backerB.addr.toString()
     const { appClient, appId } = await deployCampaign(caddr)
 
-    const txA = await pledge(appClient, appId, addrA, 3n * ALGO)
+    await pledge(appClient, appId, addrA, 3n * ALGO)
     const txB = await pledge(appClient, appId, addrB, 1n * ALGO)
     await advanceTime(900)
 
@@ -652,7 +652,6 @@ describe('Campaign + ClaimsVault claim-tree (localnet)', () => {
     })
     expect(await balanceOf(sweeperAddr)).toEqual(balS0 + 3n * ALGO)
     expect(await boxExists(appId)).toEqual(false)
-    void txA
   })
 
   test('pristine and all-cancelled campaigns delete cleanly', async () => {

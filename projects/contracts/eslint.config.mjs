@@ -77,9 +77,12 @@ export default defineConfig(
       },
     },
     rules: {
-      // Vitest mocks return `any`; relaxing these here keeps test files from
-      // fighting the type-checker over mock factories.
+      // Vitest mocks return `any` and the simulator vendors its own
+      // `algorand-typescript` copy (nominally-distinct enums); relaxing these
+      // here keeps test files from fighting the type-checker over mock
+      // boundaries.
       '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-enum-assignment': 'off',
       '@typescript-eslint/no-unsafe-return': 'off',
       '@typescript-eslint/no-unsafe-member-access': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',

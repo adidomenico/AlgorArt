@@ -12,7 +12,9 @@ documents the rules and the reasoning behind them.
   preset via `projectService`, so rules like `no-floating-promises`,
   `no-misused-promises`, `no-unnecessary-condition`, and the `no-unsafe-*` family run
   with full type information. The `no-unsafe-*` rules are relaxed in test files (Vitest
-  mocks return `any`). Config files outside any `tsconfig.json` are listed in
+  mocks return `any`, and the simulator vendors its own `algorand-typescript` copy, so
+  its enums are nominally distinct from the project's). Config files outside any
+  `tsconfig.json` are listed in
   `allowDefaultProject`.
 - **Cheap safety rails.** `eqeqeq` (always use `===`/`!==`) and
   `@typescript-eslint/no-non-null-assertion` (no `!` assertions) are both at `error`
